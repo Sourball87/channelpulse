@@ -496,7 +496,7 @@ function WhitespaceSection({ week, category }: { week: string; category: string 
               <div key={i} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/40 text-sm">
                 <div className="flex-1 min-w-0">
                   <span className="font-mono text-xs">{g.part_no}</span>
-                  <span className="text-muted-foreground mx-1">not at</span>
+                  {' '}<span className="text-muted-foreground">not at</span>{' '}
                   <span className="font-medium">{g.reseller_name}</span>
                   <span className="text-muted-foreground ml-2 text-xs">
                     {fmt(g.channel_total_st)} units/wk channel · est. +{fmt(g.est_opportunity_units_per_week)}/wk

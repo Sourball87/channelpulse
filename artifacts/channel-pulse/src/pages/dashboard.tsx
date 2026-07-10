@@ -207,7 +207,7 @@ export default function Dashboard() {
 
                           let woiDisplay = "—";
                           if (cell.woi !== null) {
-                            woiDisplay = cell.woi.toFixed(1);
+                            woiDisplay = String(Math.round(cell.woi));
                           } else if (cell.st === 0 && cell.soh > 0) {
                             woiDisplay = "∞";
                           }
