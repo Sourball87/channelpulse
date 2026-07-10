@@ -1,13 +1,13 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import { db, uploads, inventorySnapshots, resellers, parts, columnMappings } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import {
   parseFile,
   applyMappingsToRows,
   hashBuffer,
   computeHeaderFingerprint,
-  currentWeekIso,
+  previousCompletedWeekIso,
   type MappingField,
 } from "../lib/parser";
 import { deriveCategory } from "./parts";
@@ -27,20 +27,6 @@ async function getAllResellers() {
     filenamePatterns: r.filenamePatterns ?? [],
     aliases: r.aliases ?? [],
   }));
-}
-
-async function getSavedMappings(resellerId: number): Promise<MappingField[] | null> {
-  const rows = await db
-    .select()
-    .from(columnMappings)
-    .where(eq(columnMappings.resellerId, resellerId))
-    .limit(10);
-  if (rows.length === 0) return null;
-  // Return the most recent mapping
-  const latest = rows[rows.length - 1];
-  const mapping = latest.mapping as Record<string, unknown>;
-  if (Array.isArray(mapping)) return mapping as MappingField[];
-  return null;
 }
 
 router.get("/uploads", async (req, res) => {
@@ -103,13 +89,39 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
 
     const allResellers = await getAllResellers();
     const reviewCards: unknown[] = [];
+    // Track hashes seen within this batch to catch same-batch duplicates
+    const batchHashes = new Set<string>();
 
     for (const file of files) {
       const buf = file.buffer;
       const filename = file.originalname;
 
-      // Check for duplicate (same hash already committed)
+      // Check for duplicate (same hash already committed, or seen in this batch)
       const fileHash = hashBuffer(buf);
+
+      if (batchHashes.has(fileHash)) {
+        reviewCards.push({
+          upload_id: null,
+          filename,
+          status: "duplicate",
+          detected_reseller_id: null,
+          detected_reseller_name: null,
+          detected_week_iso: null,
+          detected_report_date: null,
+          confidence: 0,
+          rows_parsed: null,
+          rows_flagged: null,
+          mappings: [],
+          preview_rows: [],
+          error_message: "Identical file already in this batch — skipped",
+          overwrites_existing: false,
+          existing_snapshot_count: null,
+          week_not_detected: false,
+        });
+        continue;
+      }
+      batchHashes.add(fileHash);
+
       const existing = await db
         .select()
         .from(uploads)
@@ -133,12 +145,12 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           error_message: "Exact duplicate file already committed",
           overwrites_existing: false,
           existing_snapshot_count: null,
+          week_not_detected: false,
         });
         continue;
       }
 
       try {
-        // Load saved mappings for this reseller if known
         const parseResult = await parseFile(buf, filename, allResellers);
 
         // Build saved mappings lookup if reseller detected
@@ -158,29 +170,43 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           }
         }
 
-        // Check if this would overwrite existing data
+        // Week detection result
+        const weekNotDetected = !parseResult.detectedWeekIso;
+        const detectedWeek = parseResult.detectedWeekIso ?? previousCompletedWeekIso();
+
+        // Check if this would overwrite existing data — scoped to incoming parts
         let overwritesExisting = false;
         let existingSnapshotCount: number | null = null;
-        if (parseResult.detectedResellerId && parseResult.detectedWeekIso) {
-          const existing = await db
-            .select()
-            .from(inventorySnapshots)
-            .where(
-              and(
-                eq(inventorySnapshots.resellerId, parseResult.detectedResellerId),
-                eq(inventorySnapshots.weekIso, parseResult.detectedWeekIso),
-              ),
-            );
-          if (existing.length > 0) {
-            overwritesExisting = true;
-            existingSnapshotCount = existing.length;
+        if (parseResult.detectedResellerId && !weekNotDetected) {
+          // Determine incoming part numbers to scope the check
+          const parsedRows = applyMappingsToRows(parseResult.rawRows, finalMappings);
+          const incomingPartNos = [...new Set(parsedRows.map(r => r.part_no).filter(Boolean))] as string[];
+
+          if (incomingPartNos.length > 0) {
+            const knownParts = await db.select({ id: parts.id }).from(parts)
+              .where(inArray(parts.partNo, incomingPartNos));
+            const knownPartIds = knownParts.map(p => p.id);
+
+            if (knownPartIds.length > 0) {
+              const existingSnaps = await db
+                .select()
+                .from(inventorySnapshots)
+                .where(
+                  and(
+                    eq(inventorySnapshots.resellerId, parseResult.detectedResellerId),
+                    eq(inventorySnapshots.weekIso, detectedWeek),
+                    inArray(inventorySnapshots.partId, knownPartIds),
+                  ),
+                );
+              if (existingSnaps.length > 0) {
+                overwritesExisting = true;
+                existingSnapshotCount = existingSnaps.length;
+              }
+            }
           }
         }
 
-        // Save upload record
-        const confidence = parseResult.overallConfidence;
-        const status = confidence >= 0.9 ? "review" : "review";
-        const detectedWeek = parseResult.detectedWeekIso ?? currentWeekIso();
+        const status = "review";
 
         const [uploadRow] = await db
           .insert(uploads)
@@ -192,7 +218,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
             weekIso: detectedWeek,
             status,
             parserUsed: parseResult.parserUsed,
-            confidence: String(confidence),
+            confidence: String(parseResult.overallConfidence),
             rowsParsed: parseResult.rowsParsed,
             rowsFlagged: parseResult.rowsFlagged,
             rawHeaders: parseResult.headers as unknown as Record<string, unknown>,
@@ -201,10 +227,14 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           })
           .returning();
 
-        // Auto-commit if confidence >= 0.9 and no overwrite
+        // Auto-commit only when: high confidence + reseller known + week detected + no overwrite
         let finalStatus = "needs_review";
-        if (confidence >= 0.9 && !overwritesExisting && parseResult.detectedResellerId) {
-          // Auto commit
+        if (
+          parseResult.overallConfidence >= 0.9 &&
+          !overwritesExisting &&
+          parseResult.detectedResellerId &&
+          !weekNotDetected
+        ) {
           await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId, detectedWeek, finalMappings, parseResult.rawRows, false);
           finalStatus = "auto_committed";
         }
@@ -217,7 +247,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           detected_reseller_name: parseResult.detectedResellerName,
           detected_week_iso: detectedWeek,
           detected_report_date: parseResult.detectedReportDate,
-          confidence,
+          confidence: parseResult.overallConfidence,
           rows_parsed: parseResult.rowsParsed,
           rows_flagged: parseResult.rowsFlagged,
           mappings: finalMappings.map((m) => ({
@@ -230,6 +260,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           error_message: null,
           overwrites_existing: overwritesExisting,
           existing_snapshot_count: existingSnapshotCount,
+          week_not_detected: weekNotDetected,
         });
       } catch (parseErr) {
         req.log.error({ err: parseErr, filename }, "Failed to parse file");
@@ -263,6 +294,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           error_message: String(parseErr instanceof Error ? parseErr.message : parseErr),
           overwrites_existing: false,
           existing_snapshot_count: null,
+          week_not_detected: false,
         });
       }
     }
@@ -292,13 +324,13 @@ async function commitUploadInternal(
   }
 
   const snapshotValues = [];
+  const incomingPartIds: number[] = [];
 
   for (const row of parsedRows) {
     if (!row.part_no) continue;
 
     let partId = partMap.get(row.part_no);
     if (!partId) {
-      // Create new part
       const category = deriveCategory(row.part_no);
       const [newPart] = await db
         .insert(parts)
@@ -310,7 +342,6 @@ async function commitUploadInternal(
         partId = newPart.id;
         partMap.set(row.part_no, partId);
       } else {
-        // Race condition — fetch the existing
         const existing = await db
           .select()
           .from(parts)
@@ -325,6 +356,7 @@ async function commitUploadInternal(
 
     if (!partId) continue;
 
+    incomingPartIds.push(partId);
     snapshotValues.push({
       uploadId,
       resellerId,
@@ -340,35 +372,55 @@ async function commitUploadInternal(
     });
   }
 
-  // Delete existing snapshots for this reseller+week if overwriting
-  if (confirmOverwrite) {
+  // Delete existing snapshots scoped ONLY to the incoming part IDs (not the whole reseller+week)
+  if (confirmOverwrite && incomingPartIds.length > 0) {
     await db
       .delete(inventorySnapshots)
       .where(
         and(
           eq(inventorySnapshots.resellerId, resellerId),
           eq(inventorySnapshots.weekIso, weekIso),
+          inArray(inventorySnapshots.partId, incomingPartIds),
         ),
       );
   }
 
-  // Batch insert with conflict resolution (upsert)
-  if (snapshotValues.length > 0) {
-    // Insert in batches to avoid parameter limits
+  // Deduplicate by partId — some reseller exports have duplicate SKU rows
+  const seenPartIds = new Set<number>();
+  const deduplicatedValues = snapshotValues.filter(row => {
+    if (seenPartIds.has(row.partId)) return false;
+    seenPartIds.add(row.partId);
+    return true;
+  });
+
+  // Upsert snapshots — a corrected re-upload replaces the old data
+  if (deduplicatedValues.length > 0) {
     const batchSize = 100;
-    for (let i = 0; i < snapshotValues.length; i += batchSize) {
-      const batch = snapshotValues.slice(i, i + batchSize);
+    for (let i = 0; i < deduplicatedValues.length; i += batchSize) {
+      const batch = deduplicatedValues.slice(i, i + batchSize);
       await db
         .insert(inventorySnapshots)
         .values(batch)
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [inventorySnapshots.resellerId, inventorySnapshots.partId, inventorySnapshots.weekIso],
+          set: {
+            uploadId: sql`excluded.upload_id`,
+            soh: sql`excluded.soh`,
+            sellThrough7d: sql`excluded.sell_through_7d`,
+            soldMtd: sql`excluded.sold_mtd`,
+            onOrder: sql`excluded.on_order`,
+            avgCost: sql`excluded.avg_cost`,
+            sold14d: sql`excluded.sold_14d`,
+            sold30d: sql`excluded.sold_30d`,
+          },
+        });
     }
   }
 
-  // Update upload status
+  // Update upload record — persist the committed reseller and week
   await db
     .update(uploads)
-    .set({ status: "committed" })
+    .set({ status: "committed", resellerId, weekIso })
     .where(eq(uploads.id, uploadId));
 }
 
@@ -393,22 +445,36 @@ router.post("/uploads/:id/commit", async (req, res) => {
     const rawRows = (uploadRow[0].rawRows as Record<string, unknown>[]) ?? [];
 
     if (!confirm_overwrite) {
-      // Check for existing snapshots
-      const existing = await db
-        .select()
-        .from(inventorySnapshots)
-        .where(
-          and(
-            eq(inventorySnapshots.resellerId, reseller_id),
-            eq(inventorySnapshots.weekIso, week_iso),
-          ),
-        );
-      if (existing.length > 0) {
-        return res.status(409).json({
-          error: "conflict",
-          message: `This would overwrite ${existing.length} existing snapshots for ${week_iso}. Set confirm_overwrite=true to proceed.`,
-          existing_count: existing.length,
-        });
+      // Scope the conflict check to only the incoming part IDs
+      const parsedRows = applyMappingsToRows(rawRows, mappings as MappingField[]);
+      const incomingPartNos = [...new Set(parsedRows.map(r => r.part_no).filter(Boolean))] as string[];
+
+      if (incomingPartNos.length > 0) {
+        const knownParts = await db.select({ id: parts.id, partNo: parts.partNo })
+          .from(parts)
+          .where(inArray(parts.partNo, incomingPartNos));
+        const knownPartIds = knownParts.map(p => p.id);
+
+        if (knownPartIds.length > 0) {
+          const existing = await db
+            .select()
+            .from(inventorySnapshots)
+            .where(
+              and(
+                eq(inventorySnapshots.resellerId, reseller_id),
+                eq(inventorySnapshots.weekIso, week_iso),
+                inArray(inventorySnapshots.partId, knownPartIds),
+              ),
+            );
+          if (existing.length > 0) {
+            return res.status(409).json({
+              error: "conflict",
+              message: `This would overwrite ${existing.length} existing snapshots for ${week_iso}. Confirm to proceed.`,
+              existing_count: existing.length,
+              part_count: knownPartIds.length,
+            });
+          }
+        }
       }
     }
 

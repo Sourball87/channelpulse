@@ -53,6 +53,17 @@ When adding category filter support to insight endpoints, ensure ALL sub-queries
 
 Share-of-channel WoW delta must use the **previous week's** channel total as the denominator for prevShare (not the current week's total). Using current total makes all resellers' shares look flat even when the channel itself grew/shrank.
 
+## Upload pipeline: multi-file upsert correctness rules
+
+- DELETE before upsert is scoped to `(reseller_id, week_iso, part_id IN incoming)` — never full reseller+week wipe.
+- Upsert uses `onConflictDoUpdate` (not `onConflictDoNothing`) so corrected re-uploads replace old data.
+- Deduplicate by `partId` before batch upsert — some exports contain duplicate SKU rows.
+- 409 conflict check is also part-level: filing KS Monitor does NOT conflict with KS SSD snapshots.
+- Auto-commit requires: confidence ≥ 0.9 + reseller detected + **week detected** (no fallback auto-commit).
+- Week fallback = `previousCompletedWeekIso()`, always queues for review with a warning banner.
+- Filename pattern save: always GET current patterns first, then append-merge; never overwrite.
+- Token extraction skips purely numeric, date-like, and generic words (samsung, report, etc.).
+
 ## Seed data approach
 
 Used deterministic seeded-random (no Math.random) to generate 432 inventory snapshots across 3 weeks (2026-W25/W26/W27), 9 resellers, 27 parts. Math.random() is disabled in the durable PTC CodeExecution runtime — use a custom LCG instead.

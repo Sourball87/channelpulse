@@ -55,7 +55,7 @@ export interface ResellerProfile {
 const SYNONYMS: Record<string, string[]> = {
   part_no: [
     "model", "modelcode", "partnumber", "sku", "manufacturermodel",
-    "productmodel", "sapcode", "partno", "productcode", "itemcode",
+    "productmodel", "partno", "productcode", "itemcode",
     "itemno", "itemsku",
   ],
   soh: [
@@ -192,15 +192,26 @@ export function currentWeekIso(): string {
   return dateStringToWeekIso(new Date().toISOString().split("T")[0]);
 }
 
+/** Returns the most recently completed ISO week (the week that ended last Sunday). */
+export function previousCompletedWeekIso(): string {
+  const now = new Date();
+  const dow = now.getUTCDay() || 7; // 1=Mon..7=Sun
+  // Go back to last Sunday (end of the previous full week), then use Thursday of that week
+  const lastSunday = new Date(now.getTime() - dow * 86400000);
+  return dateStringToWeekIso(lastSunday.toISOString().split("T")[0]);
+}
+
+/** Returns the ISO week immediately before weekIso, correctly handling 53-week years. */
 export function previousWeekIso(weekIso: string): string {
   const [yearStr, weekStr] = weekIso.split("-W");
   const year = parseInt(yearStr);
   const week = parseInt(weekStr);
-  if (week > 1) {
-    return `${year}-W${String(week - 1).padStart(2, "0")}`;
-  }
-  // last week of previous year: approximate as 52
-  return `${year - 1}-W52`;
+  // Find Monday of the given week via ISO week arithmetic, then subtract 7 days
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dow = jan4.getUTCDay() || 7;
+  const weekMonday = new Date(jan4.getTime() - (dow - 1) * 86400000 + (week - 1) * 7 * 86400000);
+  const prevMonday = new Date(weekMonday.getTime() - 7 * 86400000);
+  return dateStringToWeekIso(prevMonday.toISOString().split("T")[0]);
 }
 
 // ─── Reseller detection ───────────────────────────────────────────────────────

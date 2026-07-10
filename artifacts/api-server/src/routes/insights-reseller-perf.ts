@@ -109,7 +109,8 @@ router.get("/insights/reseller-performance", async (req, res) => {
     const concentrationRisks = skuConc
       .filter(r => {
         const total = skuTotals.get(r.part_id!) ?? 0;
-        return total > 0 && Number(r.st) / total > 0.6;
+        // Minimum 10 units channel ST to be a meaningful signal
+        return total >= 10 && Number(r.st) / total > 0.6;
       })
       .map(r => ({
         part_id: r.part_id,
@@ -122,8 +123,28 @@ router.get("/insights/reseller-performance", async (req, res) => {
       }))
       .sort((a, b) => b.share_pct - a.share_pct);
 
-    // ── Anomalies (ST spikes) ─────────────────────────────────────────────────
+    // ── Anomalies (ST spikes + negative SOH) ─────────────────────────────────
     const anomalies: unknown[] = [];
+
+    // Get existing annotations to mark as dismissed
+    const annotations = await db.select().from(insightAnnotations)
+      .where(and(eq(insightAnnotations.weekIso, weekIso), eq(insightAnnotations.dismissed, false)));
+    const annotatedKeys = new Set(annotations.map(a => `${a.partId}:${a.resellerId}:${a.weekIso}`));
+
+    const perfCurRows = await db.select({
+      part_id: inventorySnapshots.partId,
+      reseller_id: inventorySnapshots.resellerId,
+      part_no: parts.partNo,
+      reseller_name: resellers.name,
+      soh: inventorySnapshots.soh,
+      st: inventorySnapshots.sellThrough7d,
+      avg_cost: inventorySnapshots.avgCost,
+    }).from(inventorySnapshots)
+      .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
+      .leftJoin(resellers, eq(inventorySnapshots.resellerId, resellers.id))
+      .where(catJoin(weekIso));
+
+    let trailingMap = new Map<string, number>();
     if (prev4Weeks.length > 0) {
       const trailingRows = await db.select({
         part_id: inventorySnapshots.partId,
@@ -132,68 +153,51 @@ router.get("/insights/reseller-performance", async (req, res) => {
       }).from(inventorySnapshots)
         .where(inArray(inventorySnapshots.weekIso, prev4Weeks))
         .groupBy(inventorySnapshots.partId, inventorySnapshots.resellerId);
-      const trailingMap = new Map(trailingRows.map(r => [`${r.part_id}:${r.reseller_id}`, Number(r.avg_st)]));
+      trailingMap = new Map(trailingRows.map(r => [`${r.part_id}:${r.reseller_id}`, Number(r.avg_st)]));
+    }
 
-      // Get existing annotations to mark as dismissed
-      const annotations = await db.select().from(insightAnnotations)
-        .where(and(eq(insightAnnotations.weekIso, weekIso), eq(insightAnnotations.dismissed, false)));
-      const annotatedKeys = new Set(annotations.map(a => `${a.partId}:${a.resellerId}:${a.weekIso}`));
+    for (const r of perfCurRows) {
+      const key = `${r.part_id}:${r.reseller_id}`;
+      const trailingAvg = trailingMap.get(key) ?? 0;
+      const st = r.st ?? 0;
+      const annoKey = `${r.part_id}:${r.reseller_id}:${weekIso}`;
+      const isDismissed = annotatedKeys.has(annoKey);
 
-      const curRows = await db.select({
-        part_id: inventorySnapshots.partId,
-        reseller_id: inventorySnapshots.resellerId,
-        part_no: parts.partNo,
-        reseller_name: resellers.name,
-        soh: inventorySnapshots.soh,
-        st: inventorySnapshots.sellThrough7d,
-        avg_cost: inventorySnapshots.avgCost,
-      }).from(inventorySnapshots)
-        .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
-        .leftJoin(resellers, eq(inventorySnapshots.resellerId, resellers.id))
-        .where(catJoin(weekIso));
+      // ST spike anomaly (requires trailing history)
+      if (prev4Weeks.length > 0 && trailingAvg > 0 && st > trailingAvg * Number(settings.spikeMultiplier)) {
+        anomalies.push({
+          type: "st_spike",
+          part_id: r.part_id,
+          part_no: r.part_no,
+          reseller_id: r.reseller_id,
+          reseller_name: r.reseller_name,
+          week_iso: weekIso,
+          st,
+          trailing_avg_st: trailingAvg,
+          spike_ratio: st / trailingAvg,
+          soh: r.soh,
+          note: `ST ${st} vs ${trailingAvg.toFixed(1)} avg — likely bulk/commercial deal`,
+          dismissed: isDismissed,
+          action: "Confirm bulk deal to exclude from run-rate",
+        });
+      }
 
-      for (const r of curRows) {
-        const key = `${r.part_id}:${r.reseller_id}`;
-        const trailingAvg = trailingMap.get(key) ?? 0;
-        const st = r.st ?? 0;
-        const annoKey = `${r.part_id}:${r.reseller_id}:${weekIso}`;
-        const isDismissed = annotatedKeys.has(annoKey);
-
-        if (trailingAvg > 0 && st > trailingAvg * Number(settings.spikeMultiplier)) {
-          anomalies.push({
-            type: "st_spike",
-            part_id: r.part_id,
-            part_no: r.part_no,
-            reseller_id: r.reseller_id,
-            reseller_name: r.reseller_name,
-            week_iso: weekIso,
-            st,
-            trailing_avg_st: trailingAvg,
-            spike_ratio: st / trailingAvg,
-            soh: r.soh,
-            note: `ST ${st} vs ${trailingAvg.toFixed(1)} avg — likely bulk/commercial deal`,
-            dismissed: isDismissed,
-            action: "Confirm bulk deal to exclude from run-rate",
-          });
-        }
-
-        // Negative SOH
-        if ((r.soh ?? 0) < 0) {
-          anomalies.push({
-            type: "negative_soh",
-            part_id: r.part_id,
-            part_no: r.part_no,
-            reseller_id: r.reseller_id,
-            reseller_name: r.reseller_name,
-            week_iso: weekIso,
-            st,
-            trailing_avg_st: trailingAvg,
-            soh: r.soh,
-            note: `Negative SOH (${r.soh}) — data quality issue`,
-            dismissed: isDismissed,
-            action: "Investigate data with reseller",
-          });
-        }
+      // Negative SOH — checked regardless of history availability
+      if ((r.soh ?? 0) < 0) {
+        anomalies.push({
+          type: "negative_soh",
+          part_id: r.part_id,
+          part_no: r.part_no,
+          reseller_id: r.reseller_id,
+          reseller_name: r.reseller_name,
+          week_iso: weekIso,
+          st,
+          trailing_avg_st: trailingAvg,
+          soh: r.soh,
+          note: `Negative SOH (${r.soh}) — data quality issue`,
+          dismissed: isDismissed,
+          action: "Investigate data with reseller",
+        });
       }
     }
 

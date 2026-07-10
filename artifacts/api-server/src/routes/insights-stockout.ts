@@ -125,6 +125,62 @@ router.get("/insights/stockout-risk", async (req, res) => {
       }
     }
 
+    // ── Vanished SKU detection ────────────────────────────────────────────────
+    // Resellers that reported this week (have at least one snapshot)
+    const reportingResellers = new Set(curRows.map(r => r.reseller_id!));
+    // Keys already covered by current-week rows
+    const coveredKeys = new Set(curRows.map(r => `${r.part_id}:${r.reseller_id}`));
+
+    if (prev4Weeks.length > 0) {
+      // Get display info for parts/resellers in trailing data
+      const trailingWithInfo = await db.select({
+        part_id: inventorySnapshots.partId,
+        reseller_id: inventorySnapshots.resellerId,
+        part_no: parts.partNo,
+        display_name: parts.displayName,
+        category: parts.category,
+        reseller_name: resellers.name,
+        avg_st: sql<number>`avg(${inventorySnapshots.sellThrough7d})::numeric`,
+        avg_cost: sql<number>`avg(${inventorySnapshots.avgCost}::numeric)::numeric`,
+      }).from(inventorySnapshots)
+        .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
+        .leftJoin(resellers, eq(inventorySnapshots.resellerId, resellers.id))
+        .where(
+          category && category !== "All"
+            ? and(inArray(inventorySnapshots.weekIso, prev4Weeks), eq(parts.category, category))
+            : inArray(inventorySnapshots.weekIso, prev4Weeks)
+        )
+        .groupBy(
+          inventorySnapshots.partId, inventorySnapshots.resellerId,
+          parts.partNo, parts.displayName, parts.category, resellers.name
+        );
+
+      for (const r of trailingWithInfo) {
+        if (!reportingResellers.has(r.reseller_id!)) continue; // reseller didn't report
+        const key = `${r.part_id}:${r.reseller_id}`;
+        if (coveredKeys.has(key)) continue; // already in current-week rows
+        const avgSt = Number(r.avg_st ?? 0);
+        if (avgSt <= 0) continue;
+        const avgCost = r.avg_cost != null ? Number(r.avg_cost) : null;
+        activeStockouts.push({
+          part_id: r.part_id,
+          part_no: r.part_no,
+          display_name: r.display_name,
+          category: r.category,
+          reseller_id: r.reseller_id,
+          reseller_name: r.reseller_name,
+          soh: 0,
+          trailing_avg_st: avgSt,
+          est_lost_units_per_week: avgSt,
+          est_lost_value_per_week: avgCost != null ? avgSt * avgCost : null,
+          confidence: dataWeeks >= 4 ? "high" : `low (${dataWeeks} weeks of data)`,
+          note: "SKU missing from reseller file — likely out of stock",
+          action: "Urgent replenish",
+          explorer_link: `/explorer?part_id=${r.part_id}&reseller_id=${r.reseller_id}`,
+        });
+      }
+    }
+
     // Sort: projected by weekly ST (biggest run-rate risk first), active by lost units
     (projectedStockouts as Array<{ trailing_avg_st: number }>)
       .sort((a, b) => b.trailing_avg_st - a.trailing_avg_st);
