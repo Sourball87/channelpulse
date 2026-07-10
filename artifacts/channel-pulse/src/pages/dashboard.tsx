@@ -220,17 +220,12 @@ export default function Dashboard() {
                                     {woiDisplay}
                                   </div>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  <div className="text-xs space-y-1">
-                                    <div className="font-semibold">{part} @ {res}</div>
-                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
-                                      <span className="text-muted-foreground">SOH:</span>
-                                      <span className="font-medium">{cell.soh.toLocaleString()}</span>
-                                      <span className="text-muted-foreground">ST:</span>
-                                      <span className="font-medium">{cell.st.toLocaleString()}</span>
-                                      <span className="text-muted-foreground">WOI:</span>
-                                      <span className="font-medium">{woiDisplay}</span>
-                                    </div>
+                                <TooltipContent side="top" className="text-xs">
+                                  <div className="font-semibold mb-1.5">{part} @ {res}</div>
+                                  <div className="space-y-1">
+                                    <div>SOH: <span className="font-bold">{cell.soh.toLocaleString()}</span> units</div>
+                                    <div>ST: <span className="font-bold">{cell.st.toLocaleString()}</span> units/wk</div>
+                                    <div>WOI: <span className="font-bold">{woiDisplay}</span> weeks</div>
                                   </div>
                                 </TooltipContent>
                               </Tooltip>
