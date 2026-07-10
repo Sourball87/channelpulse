@@ -1,8 +1,40 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import dashboardRouter from "./dashboard";
+import explorerRouter from "./explorer";
+import trendsRouter from "./trends";
+import alertsRouter from "./alerts";
+import uploadsRouter from "./uploads";
+import resellersRouter from "./resellers";
+import partsRouter from "./parts";
+import columnMappingsRouter from "./column-mappings";
+import insightsSettingsRouter from "./insights-settings";
+import insightsAnnotationsRouter from "./insights-annotations";
+import insightsHealthRouter from "./insights-health";
+import insightsStockoutRouter from "./insights-stockout";
+import insightsOverstockRouter from "./insights-overstock";
+import insightsRebalancingRouter from "./insights-rebalancing";
+import insightsWhitespaceRouter from "./insights-whitespace";
+import insightsResellerPerfRouter from "./insights-reseller-perf";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(dashboardRouter);
+router.use(explorerRouter);
+router.use(trendsRouter);
+router.use(alertsRouter);
+router.use(uploadsRouter);
+router.use(resellersRouter);
+router.use(partsRouter);
+router.use(columnMappingsRouter);
+router.use(insightsSettingsRouter);
+router.use(insightsAnnotationsRouter);
+router.use(insightsHealthRouter);
+router.use(insightsStockoutRouter);
+router.use(insightsOverstockRouter);
+router.use(insightsRebalancingRouter);
+router.use(insightsWhitespaceRouter);
+router.use(insightsResellerPerfRouter);
 
 export default router;

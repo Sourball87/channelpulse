@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "ChannelPulse"
+version = "1.0.0"
+id = "artifacts/channel-pulse"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24134
+
+[services.development]
+run = "pnpm --filter @workspace/channel-pulse run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/channel-pulse", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/channel-pulse/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24134"
+BASE_PATH = "/"

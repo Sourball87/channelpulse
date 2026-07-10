@@ -1,0 +1,148 @@
+# Replit Build Prompt: Reseller SOH & Sell-Through Monitoring Tool
+
+Copy everything below this line into Replit.
+
+---
+
+Build a full-stack web application called **ChannelPulse** that monitors reseller stock on hand (SOH) and sell-through (ST) for Samsung products across an Australian reseller channel. It replaces a manual Excel dashboard. The core experience must feel like Phocas: fast pivot-style drill-down from total, to category, to model, to reseller, to weekly trend, with everything clickable.
+
+## Tech stack
+
+- Node.js + TypeScript backend (Express or Fastify)
+- React + TypeScript frontend
+- AG Grid Community for all data grids (pivot, tree data, cell styling)
+- PostgreSQL (Replit built-in) for storage
+- Recharts for trend charts
+- SheetJS (xlsx package) for parsing .xlsx and legacy .xls, papaparse for CSV
+- Multer or equivalent for multipart bulk file upload
+
+## The business context
+
+Dicker Data (an IT distributor) receives weekly inventory/sales reports from ~9 retail resellers: Computer Alliance (CA), Centrecom, Scorptec, PLE, PCCG, Umart, KS Computer Tech (KS), JW, and DigiDirect. Each reseller sends a differently formatted file (xlsx, xls, or csv). A vendor manager currently pastes these into a master Excel sheet each week. This tool automates ingestion, normalizes the data, and provides analytics.
+
+Key metrics:
+- **SOH**: units of stock on hand at the reseller
+- **ST (sell-through)**: units sold in the last 7 days
+- **Sold MTD**: units sold month to date (where available)
+- **On Order**: units the reseller has on purchase order (where available)
+- **WOI (weeks of inventory)**: SOH ÷ ST for the week. If ST = 0, display "∞" or "No sales", never #DIV/0!. This is the headline health metric.
+- **Avg Cost**: reseller's average cost (ex GST) where provided
+
+Product categories: SSD, Monitor, Mobility (phones/tablets), HDD/Memory. Category is derived from part number prefix:
+- `MZ-*` = SSD (internal), `MU-*` = SSD (portable/external), `MUF-*`/`MB-MC*` = Flash Memory
+- `LS*`/`LU*` = Monitor
+- `SM-*` = Mobility
+- Anything unmatched goes to "Uncategorized" and is flagged for the user to classify (their choice is remembered in a part-number master table).
+
+## Data model (Postgres)
+
+```
+resellers(id, name, code, aliases text[])
+parts(id, part_no unique, display_name, category, active)
+uploads(id, reseller_id, filename, file_hash, report_date, week_iso, uploaded_at, status, parser_used, confidence, raw_headers jsonb)
+inventory_snapshots(id, upload_id, reseller_id, part_id, report_date, week_iso, soh int, sell_through_7d int, sold_mtd int, on_order int, avg_cost numeric, sold_14d int null, sold_30d int null)
+column_mappings(id, reseller_id, fingerprint, mapping jsonb, created_at)  -- learned mappings
+```
+
+- `week_iso` is the ISO week (e.g. 2026-W27). All reporting rolls up by week.
+- Unique constraint on (reseller_id, part_id, week_iso): re-uploading the same week for the same reseller **replaces** that week's snapshot (with a confirmation prompt showing what will be overwritten).
+- `file_hash` (SHA-256) blocks exact duplicate uploads silently with a friendly message.
+
+## File ingestion: the critical feature
+
+Bulk upload: user drags in 5 to 15 files at once. For each file the pipeline runs:
+
+### Step 1: Detect reseller and report type
+Use a **fingerprinting cascade**, in order:
+1. **Filename hints**: e.g. "Scorptec_stock_on_hand" → Scorptec; "KS" in filename → KS; "sell_thru_and_soh_Report" → Umart. Maintain a filename-pattern table per reseller (editable in settings).
+2. **Header fingerprint**: normalize the header row (lowercase, strip punctuation/whitespace) and compare against known fingerprints per reseller (Jaccard similarity on the header token set). ≥0.8 similarity = confident match.
+3. **Sheet name hints**: e.g. sheet named "ComputerAlliance" → CA; "Samsung SOH report" → KS; "ItemForcastReport*" → Umart; "Forecast" → the legacy Centrecom combined format.
+4. If still ambiguous, show a review card: "Which reseller is this file from?" with a dropdown, and remember the choice as a new fingerprint.
+
+### Step 2: Column mapping with drift tolerance
+Never hardcode column positions. Map headers to canonical fields using a synonym dictionary with fuzzy matching (case-insensitive, ignore punctuation, allow Levenshtein distance ≤ 2 for typos like "Forcast"):
+
+| Canonical field | Known synonyms seen in real files |
+|---|---|
+| part_no | Model, Model Code, Part Number, Sku, ManufacturerModel, Product Model |
+| soh | SOH, Stock On Hand, On Hand, TotalOnHand, QuantityOnHand, Stock |
+| sell_through_7d | Sold Last 7 Days, SoldQty, 7 D, InvoicedQuantity |
+| sold_mtd | Sold MTD |
+| sold_14d | 14 D |
+| sold_30d | 30 D |
+| on_order | Qty On PO, Stock On order, Qty On Order, OnOrderQty, QuantityOnOrder |
+| avg_cost | Avg Cost, AVG Cost, Average Cost (Ex GST), Item Average Cost (Ex GST), AverageCostExTax, Avg Stock Value, Cost |
+
+Rules:
+- If a known reseller's file arrives with new/renamed/reordered columns, map whatever matches confidently, and surface unmatched columns in a **mapping review screen**: side-by-side "their column → our field" with dropdowns pre-filled by best guess and a data preview of the first 5 rows. One click to confirm. Confirmed mappings are saved to `column_mappings` so the same layout never asks again.
+- Confidence score per file (0-100). ≥90 auto-processes; below that, queue for review. Never silently guess on low confidence.
+- Validate part numbers against the `parts` master. Unknown part numbers are still ingested but flagged as "new part" for one-click categorization.
+- Coerce values: strip commas, handle floats like "3.00" as ints for quantities, treat blanks/nulls as 0 for quantities and null for cost, tolerate negative SOH (data quality flag, don't reject).
+- Skip non-Samsung noise rows gracefully (rows with no recognizable part number pattern get flagged, not fatal).
+
+### Step 3: Report date detection
+- From filename where present (e.g. `2026_WK_27`, `29_06_2026`, `2026-06-29_2026-07-05`, `20260705060455`).
+- Else from file content or upload date, defaulting to the most recent completed week, always confirmable in the review screen before commit.
+
+### Known real formats to build parsers/fingerprints for (all live examples)
+
+1. **Computer Alliance / KS style (xlsx)**: columns `Model | Stock On Hand | Stock On order | Sold Last 7 Days | Sold MTD | Average Cost (Ex GST)`. KS sends 3 separate files per week (SSD, Monitor, Mobility) in this same layout, sheet name "Samsung SOH report". CA sheet name "ComputerAlliance".
+2. **Scorptec (csv)**: `# | Category | Model | On Hand | Sold Last 7 Days | Item Average Cost (Ex GST) | Item Average Cost (Inc GST) | Qty On Order`. Includes non-SSD categories in one file.
+3. **PLE-style procurement CSV**: `InventoryItemId | ManufacturerModel | QuantityOnHand | QuantityOnOrder | InvoicedQuantity | AverageCostExTax`. InvoicedQuantity = weekly sell-through. Quantities arrive as floats ("3.00").
+4. **Umart forecast report (xlsx)**: sheet "ItemForcastReport_*", columns include `SapCode | Sku | TotalOnHand | OtherOnHand | DaysToSale | OnOrderQty | SoldQty | SapPrice | Cost | Revenue | Ageing90 | Ageing90Cost | Ageing120 | Ageing120Cost`. Map SoldQty → sell_through_7d, TotalOnHand → soh. Store ageing fields as extra jsonb for future use.
+5. **JW-style weekly (xlsx)**: `Model Code | SOH | Sold Last 7 Days | Sold MTD | Qty On PO | Avg Cost`.
+6. **V_ Report style (xlsx)**: `Part Number | SOH | Sold last 7 days | Sold MTD | AVG Cost` (no on-order column).
+7. **Legacy combined .xls**: sheet "Forecast", columns `Product Name | Product Model | 30 D | 14 D | 7 D | Stock | Avg Stock Value`. `7 D` → sell_through_7d, `Stock` → soh, also capture 14 D / 30 D. Must parse old BIFF .xls format, not just xlsx.
+
+## The Phocas-style analytics experience
+
+### 1. Dashboard (home)
+- KPI cards for the selected week: Total channel SOH, Total ST, blended WOI, week-over-week deltas with up/down arrows, count of resellers reported vs expected (e.g. "7 of 9 reported for WK27" with the missing ones named).
+- **Heatmap grid** replicating the current Excel view: rows = part numbers, columns = resellers, cells = WOI, color-coded: green ≤ 8 weeks, amber 9-15, red > 15 or no sales with stock, grey = no stock. Click any cell to drill into that reseller × model trend.
+- Category filter tabs: All / SSD / Monitor / Mobility / HDD & Memory.
+
+### 2. Drill-down explorer (the Phocas bit)
+- AG Grid with tree/pivot: Category → Model → Reseller, expandable. Columns: ST, SOH, WOI, Sold MTD, On Order, each with WoW delta. Every level aggregates correctly.
+- One-click pivot flip: view by Reseller → Model instead.
+- Clicking any row opens a right-side panel with a 12-week trend chart (SOH bars + ST line, WOI as secondary axis) for that slice.
+- Column sorting, filtering, and CSV/XLSX export of any view.
+
+### 3. Trends
+- Multi-week line/bar charts: pick any combination of models and resellers, compare SOH and ST over time. Week selector defaults to last 12 weeks.
+
+### 4. Alerts / exceptions view
+Auto-generated exception list per week:
+- WOI > 15 with SOH > 20 (overstocked)
+- SOH = 0 but ST > 0 previous week (stock-out risk)
+- ST spike > 3x trailing 4-week average (flag as possible bulk/commercial deal, e.g. one unit selling 195 in a week)
+- Reseller hasn't uploaded for the current week
+- Negative SOH values (data quality)
+
+### 5. Upload center
+- Drag-and-drop multi-file zone. Per-file status cards: Detected reseller, detected week, confidence, rows parsed, rows flagged. Green auto-committed, amber needs review, red failed with reason.
+- Review screen as described in ingestion. Nothing commits without either high confidence or explicit confirmation.
+- Upload history log with rollback (delete an upload and its snapshots).
+
+### 6. Admin/settings
+- Manage resellers (add/rename, filename patterns, expected weekly reports count, e.g. KS = 3 files).
+- Parts master: part number, friendly name, category, active flag. Bulk edit.
+- Saved column mappings viewer.
+
+## UX requirements
+
+- Clean, dense, data-first design. Think Phocas/Looker, not a marketing site. Light theme, generous use of the heatmap coloring.
+- Everything reachable in ≤ 2 clicks from the dashboard. Breadcrumbs on drill-down.
+- Fast: grids virtualize, aggregate queries indexed on (week_iso, reseller_id, part_id).
+- Numbers formatted with thousands separators; WOI to 1 decimal.
+- No login required for v1 (single team tool), but structure routes so auth can be added later.
+
+## Build order
+
+1. Schema + seed the 9 resellers and part-number category rules.
+2. Ingestion pipeline with the 7 known format parsers + fingerprinting + mapping review UI.
+3. Dashboard with heatmap and KPI cards.
+4. Drill-down explorer with AG Grid pivot.
+5. Trends + alerts.
+6. Admin screens + export.
+
+Include realistic seed/demo data (2-3 weeks, 9 resellers, ~25 SSD part numbers like MZ-V9P2T0BW, MZ-77E1T0BW, plus a few LS monitors and SM mobility SKUs) so the app demonstrates fully before real files are uploaded.

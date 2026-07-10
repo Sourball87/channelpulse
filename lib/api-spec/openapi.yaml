@@ -1,22 +1,28 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ChannelPulse - Reseller SOH & Sell-Through Monitoring API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: dashboard
+  - name: explorer
+  - name: trends
+  - name: alerts
+  - name: uploads
+  - name: resellers
+  - name: parts
+  - name: column-mappings
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +30,949 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # Dashboard endpoints
+  /dashboard/kpis:
+    get:
+      operationId: getDashboardKpis
+      tags: [dashboard]
+      summary: Get KPI cards and reseller reporting status for a given week
+      parameters:
+        - name: week_iso
+          in: query
+          schema:
+            type: string
+          description: ISO week string e.g. 2026-W27 (defaults to latest)
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dashboard KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardKpis"
+
+  /dashboard/heatmap:
+    get:
+      operationId: getDashboardHeatmap
+      tags: [dashboard]
+      summary: Get heatmap grid (parts x resellers, WOI values) for a given week
+      parameters:
+        - name: week_iso
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Heatmap data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeatmapData"
+
+  /dashboard/weeks:
+    get:
+      operationId: getAvailableWeeks
+      tags: [dashboard]
+      summary: Get list of available ISO weeks with data
+      responses:
+        "200":
+          description: List of available weeks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WeekSummary"
+
+  # Explorer
+  /explorer:
+    get:
+      operationId: getExplorerData
+      tags: [explorer]
+      summary: Get drill-down tree data (category -> model -> reseller)
+      parameters:
+        - name: week_iso
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: pivot
+          in: query
+          schema:
+            type: string
+            enum: [category_model_reseller, reseller_model]
+          description: Pivot mode
+      responses:
+        "200":
+          description: Explorer tree rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExplorerRow"
+
+  /explorer/trend:
+    get:
+      operationId: getExplorerTrend
+      tags: [explorer]
+      summary: Get 12-week trend for a specific part+reseller or part or reseller
+      parameters:
+        - name: part_id
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: reseller_id
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            default: 12
+      responses:
+        "200":
+          description: Trend data points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendPoint"
+
+  # Trends
+  /trends:
+    get:
+      operationId: getTrends
+      tags: [trends]
+      summary: Get multi-week trend data for selected parts and resellers
+      parameters:
+        - name: part_ids
+          in: query
+          schema:
+            type: string
+          description: Comma-separated part IDs
+        - name: reseller_ids
+          in: query
+          schema:
+            type: string
+          description: Comma-separated reseller IDs
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            default: 12
+        - name: metric
+          in: query
+          schema:
+            type: string
+            enum: [soh, st, woi]
+            default: soh
+      responses:
+        "200":
+          description: Trend series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendSeries"
+
+  # Alerts
+  /alerts:
+    get:
+      operationId: getAlerts
+      tags: [alerts]
+      summary: Get auto-generated exception alerts for a week
+      parameters:
+        - name: week_iso
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alert"
+
+  # Uploads
+  /uploads:
+    get:
+      operationId: getUploads
+      tags: [uploads]
+      summary: Get upload history
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Upload history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Upload"
+    post:
+      operationId: createUpload
+      tags: [uploads]
+      summary: Upload one or more reseller files (multipart/form-data)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadFilesInput"
+      responses:
+        "200":
+          description: Per-file detection and review cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UploadReviewCard"
+
+  /uploads/{id}:
+    delete:
+      operationId: deleteUpload
+      tags: [uploads]
+      summary: Delete an upload and roll back its inventory snapshots
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  /uploads/{id}/commit:
+    post:
+      operationId: commitUpload
+      tags: [uploads]
+      summary: Commit a reviewed upload (confirm reseller, date, column mapping)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommitUploadInput"
+      responses:
+        "200":
+          description: Committed upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Upload"
+
+  /uploads/{id}/mapping:
+    post:
+      operationId: saveUploadMapping
+      tags: [uploads]
+      summary: Save confirmed column mapping for future use
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveMappingInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ColumnMapping"
+
+  # Resellers
+  /resellers:
+    get:
+      operationId: getResellers
+      tags: [resellers]
+      summary: List all resellers
+      responses:
+        "200":
+          description: Resellers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Reseller"
+    post:
+      operationId: createReseller
+      tags: [resellers]
+      summary: Create a reseller
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResellerInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reseller"
+
+  /resellers/{id}:
+    patch:
+      operationId: updateReseller
+      tags: [resellers]
+      summary: Update a reseller
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResellerUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reseller"
+    delete:
+      operationId: deleteReseller
+      tags: [resellers]
+      summary: Delete a reseller
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
+  # Parts
+  /parts:
+    get:
+      operationId: getParts
+      tags: [parts]
+      summary: List all parts
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: uncategorized
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Parts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Part"
+    post:
+      operationId: createPart
+      tags: [parts]
+      summary: Create a part
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+
+  /parts/{id}:
+    patch:
+      operationId: updatePart
+      tags: [parts]
+      summary: Update a part (category, display name, active flag)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Part"
+
+  # Column Mappings
+  /column-mappings:
+    get:
+      operationId: getColumnMappings
+      tags: [column-mappings]
+      summary: List saved column mappings
+      responses:
+        "200":
+          description: Column mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ColumnMapping"
+
+  /column-mappings/{id}:
+    delete:
+      operationId: deleteColumnMapping
+      tags: [column-mappings]
+      summary: Delete a saved column mapping
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    DeleteResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: ["string", "null"]
+
+    WeekSummary:
+      type: object
+      required: [week_iso, reseller_count, snapshot_count]
+      properties:
+        week_iso:
+          type: string
+        reseller_count:
+          type: integer
+        snapshot_count:
+          type: integer
+
+    KpiCard:
+      type: object
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: ["number", "null"]
+        formatted:
+          type: string
+        delta:
+          type: ["number", "null"]
+        delta_pct:
+          type: ["number", "null"]
+        delta_direction:
+          type: ["string", "null"]
+          enum: [up, down, flat, null]
+
+    ResellerStatus:
+      type: object
+      required: [reseller_id, name, code, reported]
+      properties:
+        reseller_id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
+        reported:
+          type: boolean
+        upload_id:
+          type: ["integer", "null"]
+
+    DashboardKpis:
+      type: object
+      required: [week_iso, kpis, reseller_statuses]
+      properties:
+        week_iso:
+          type: string
+        kpis:
+          type: array
+          items:
+            $ref: "#/components/schemas/KpiCard"
+        reseller_statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResellerStatus"
+
+    HeatmapCell:
+      type: object
+      required: [part_no, reseller_code, woi, soh, st, color]
+      properties:
+        part_no:
+          type: string
+        display_name:
+          type: ["string", "null"]
+        reseller_code:
+          type: string
+        reseller_id:
+          type: integer
+        part_id:
+          type: integer
+        woi:
+          type: ["number", "null"]
+        soh:
+          type: integer
+        st:
+          type: integer
+        color:
+          type: string
+          enum: [green, amber, red, grey, empty]
+
+    HeatmapData:
+      type: object
+      required: [week_iso, parts, resellers, cells]
+      properties:
+        week_iso:
+          type: string
+        parts:
+          type: array
+          items:
+            type: string
+        resellers:
+          type: array
+          items:
+            type: string
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeatmapCell"
+
+    ExplorerRow:
+      type: object
+      required: [id, label, level, st, soh, woi]
+      properties:
+        id:
+          type: string
+        parent_id:
+          type: ["string", "null"]
+        label:
+          type: string
+        level:
+          type: string
+          enum: [category, model, reseller]
+        category:
+          type: ["string", "null"]
+        part_no:
+          type: ["string", "null"]
+        part_id:
+          type: ["integer", "null"]
+        reseller_id:
+          type: ["integer", "null"]
+        reseller_code:
+          type: ["string", "null"]
+        st:
+          type: ["integer", "null"]
+        st_delta:
+          type: ["integer", "null"]
+        soh:
+          type: ["integer", "null"]
+        soh_delta:
+          type: ["integer", "null"]
+        woi:
+          type: ["number", "null"]
+        sold_mtd:
+          type: ["integer", "null"]
+        on_order:
+          type: ["integer", "null"]
+        avg_cost:
+          type: ["number", "null"]
+
+    TrendPoint:
+      type: object
+      required: [week_iso, soh, st, woi]
+      properties:
+        week_iso:
+          type: string
+        soh:
+          type: integer
+        st:
+          type: integer
+        woi:
+          type: ["number", "null"]
+        sold_mtd:
+          type: ["integer", "null"]
+        on_order:
+          type: ["integer", "null"]
+
+    TrendSeries:
+      type: object
+      required: [key, label, points]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        part_no:
+          type: ["string", "null"]
+        reseller_code:
+          type: ["string", "null"]
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrendPoint"
+
+    Alert:
+      type: object
+      required: [id, type, severity, week_iso, message]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [overstocked, stockout_risk, st_spike, missing_upload, negative_soh]
+        severity:
+          type: string
+          enum: [warning, critical, info]
+        week_iso:
+          type: string
+        message:
+          type: string
+        part_no:
+          type: ["string", "null"]
+        part_id:
+          type: ["integer", "null"]
+        reseller_name:
+          type: ["string", "null"]
+        reseller_id:
+          type: ["integer", "null"]
+        soh:
+          type: ["integer", "null"]
+        st:
+          type: ["integer", "null"]
+        woi:
+          type: ["number", "null"]
+        trailing_avg_st:
+          type: ["number", "null"]
+
+    Upload:
+      type: object
+      required: [id, filename, status, uploaded_at]
+      properties:
+        id:
+          type: integer
+        reseller_id:
+          type: ["integer", "null"]
+        reseller_name:
+          type: ["string", "null"]
+        filename:
+          type: string
+        report_date:
+          type: ["string", "null"]
+        week_iso:
+          type: ["string", "null"]
+        uploaded_at:
+          type: string
+        status:
+          type: string
+          enum: [pending, review, committed, failed, duplicate]
+        parser_used:
+          type: ["string", "null"]
+        confidence:
+          type: ["number", "null"]
+        rows_parsed:
+          type: ["integer", "null"]
+        rows_flagged:
+          type: ["integer", "null"]
+        raw_headers:
+          type: ["object", "null"]
+          additionalProperties: true
+
+    MappingField:
+      type: object
+      required: [source_col, canonical_field, confidence]
+      properties:
+        source_col:
+          type: string
+        canonical_field:
+          type: ["string", "null"]
+        confidence:
+          type: number
+        sample_values:
+          type: array
+          items:
+            type: string
+
+    UploadReviewCard:
+      type: object
+      required: [upload_id, filename, status, confidence]
+      properties:
+        upload_id:
+          type: integer
+        filename:
+          type: string
+        status:
+          type: string
+          enum: [auto_committed, needs_review, failed, duplicate]
+        detected_reseller_id:
+          type: ["integer", "null"]
+        detected_reseller_name:
+          type: ["string", "null"]
+        detected_week_iso:
+          type: ["string", "null"]
+        detected_report_date:
+          type: ["string", "null"]
+        confidence:
+          type: number
+        rows_parsed:
+          type: ["integer", "null"]
+        rows_flagged:
+          type: ["integer", "null"]
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/MappingField"
+        preview_rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        error_message:
+          type: ["string", "null"]
+        overwrites_existing:
+          type: boolean
+        existing_snapshot_count:
+          type: ["integer", "null"]
+
+    UploadFilesInput:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: string
+          description: Multipart file field (handled as FormData in client)
+
+    CommitUploadInput:
+      type: object
+      required: [reseller_id, week_iso, mappings]
+      properties:
+        reseller_id:
+          type: integer
+        week_iso:
+          type: string
+        report_date:
+          type: ["string", "null"]
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/MappingField"
+        confirm_overwrite:
+          type: boolean
+          default: false
+
+    SaveMappingInput:
+      type: object
+      required: [reseller_id, fingerprint, mapping]
+      properties:
+        reseller_id:
+          type: integer
+        fingerprint:
+          type: string
+        mapping:
+          type: object
+          additionalProperties: true
+
+    ColumnMapping:
+      type: object
+      required: [id, reseller_id, fingerprint, mapping, created_at]
+      properties:
+        id:
+          type: integer
+        reseller_id:
+          type: integer
+        reseller_name:
+          type: ["string", "null"]
+        fingerprint:
+          type: string
+        mapping:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+
+    Reseller:
+      type: object
+      required: [id, name, code]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        filename_patterns:
+          type: array
+          items:
+            type: string
+        expected_weekly_files:
+          type: integer
+        active:
+          type: boolean
+
+    ResellerInput:
+      type: object
+      required: [name, code]
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        filename_patterns:
+          type: array
+          items:
+            type: string
+        expected_weekly_files:
+          type: integer
+
+    ResellerUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        filename_patterns:
+          type: array
+          items:
+            type: string
+        expected_weekly_files:
+          type: integer
+        active:
+          type: boolean
+
+    Part:
+      type: object
+      required: [id, part_no, category]
+      properties:
+        id:
+          type: integer
+        part_no:
+          type: string
+        display_name:
+          type: ["string", "null"]
+        category:
+          type: string
+        active:
+          type: boolean
+
+    PartInput:
+      type: object
+      required: [part_no, category]
+      properties:
+        part_no:
+          type: string
+        display_name:
+          type: ["string", "null"]
+        category:
+          type: string
+
+    PartUpdate:
+      type: object
+      properties:
+        display_name:
+          type: ["string", "null"]
+        category:
+          type: string
+        active:
+          type: boolean

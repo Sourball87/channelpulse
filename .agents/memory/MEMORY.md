@@ -1,0 +1,1 @@
+- [ChannelPulse build decisions](channel-pulse.md) — key architecture choices and gotchas for this project

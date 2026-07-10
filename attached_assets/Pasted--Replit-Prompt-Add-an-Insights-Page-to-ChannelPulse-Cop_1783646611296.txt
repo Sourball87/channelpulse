@@ -1,0 +1,60 @@
+# Replit Prompt: Add an "Insights" Page to ChannelPulse
+
+Copy everything below this line into Replit as a follow-up to the existing build.
+
+---
+
+Add a new top-level page called **Insights**. This is the "so what" layer of the app: instead of the user hunting through grids, the tool reads the data and tells a distributor vendor manager what matters this week and what action to take. Every insight must be computed from the actual snapshot data, be explainable (click to see the underlying numbers), and link through to the relevant drill-down view.
+
+## Who this is for
+
+A distributor's vendor/product manager whose job is to: keep the right stock in the right resellers, protect sell-through run rate, avoid aged inventory and price-protection exposure, find whitespace to sell more range into resellers, and report channel health to the vendor (Samsung) weekly. Insights are written in plain business language with the numbers inline, e.g. "Scorptec will run out of MZ-V9P4T0CW in ~2.1 weeks at current run rate. Umart holds 76 units at 30+ WOI. Rebalancing opportunity."
+
+## Page layout
+
+Top: week selector (defaults to latest complete week) + category filter + a one-line channel health summary sentence auto-generated from the data.
+
+Then six insight sections, each a card group with a headline stat, a ranked list of specific findings (max 5-7, sorted by impact), and a "view all" link to a filtered explorer view. Every finding row shows: what, the numbers behind it, and a suggested action tag.
+
+### 1. Channel Health Scorecard
+- Total channel SOH units and estimated value (SOH × avg cost), total weekly ST, blended WOI, each with WoW and 4-week trend sparkline.
+- Sell-through momentum: 4-week ST trend by category (accelerating / stable / declining, with % change).
+- Channel coverage: % of active SKUs with stock somewhere in channel; resellers reported vs expected this week.
+- A health score (0-100) computed from: blended WOI vs target band, % of SKU-reseller cells in green WOI, ST momentum, and reporting compliance. Show the formula in a tooltip so it's defensible.
+
+### 2. Stock-Out Risk & Lost Sales (protect the run rate)
+- **Projected stock-outs**: for every reseller × SKU with ST > 0, projected weeks to zero = SOH ÷ trailing 4-week avg ST. Flag anything < 3 weeks, ranked by weekly ST (biggest run-rate risk first). Action tag: "Sell-in opportunity".
+- **Active stock-outs**: SOH = 0 now but had ST in the prior 4 weeks. Estimate lost sales/week = trailing avg ST. Rank by estimated lost units and lost value. Action tag: "Urgent replenish".
+- **Estimated lost sales this week** headline: sum of trailing avg ST across all stocked-out cells, in units and $.
+
+### 3. Overstock & Ageing Risk (protect margin and avoid price protection)
+- **Overstocked positions**: reseller × SKU with WOI > threshold (default 15, configurable) and SOH above a minimum (default 20). Rank by inventory value at risk (SOH × avg cost). Show weeks of supply and the last 4 weeks of ST. Action tags: "Run promo", "Rebalance", "Review pricing".
+- **Dead stock**: SOH > 0 with zero ST for 4+ consecutive weeks. Total dead stock value as headline.
+- **Ageing exposure** (where reseller supplies it, e.g. Umart's Ageing90/120 fields): total 90+ and 120+ day value by reseller.
+- **Channel-level overhang**: SKUs where total channel WOI > 20 → sell-in should pause; flag so the user doesn't keep shipping into a full channel.
+
+### 4. Rebalancing Opportunities (move stock, not discount it)
+- Auto-matched pairs: SKU where reseller A is < 3 WOI (or stocked out) and reseller B is > 15 WOI with SOH ≥ the shortfall. Show suggested transfer quantity to bring both into the healthy band. Rank by the ST of the starved reseller. This is the single most actionable list on the page; make it prominent.
+
+### 5. Range & Whitespace (sell more breadth)
+- **Range gap matrix insight**: SKUs that are top-quartile sellers channel-wide but not ranged (never any SOH or ST) at specific resellers. "MZ-V9P2T0BW sells 62/week across 7 resellers; JW and DigiDirect don't range it. Est. opportunity X units/week based on their share of channel ST." Rank by estimated units.
+- **Range breadth score per reseller**: % of active SKUs ranged, with WoW change.
+- **New line adoption**: for SKUs first seen in channel in the last 8 weeks, show ramp: how many resellers have ranged it, weekly ST curve. Flag slow ramps.
+
+### 6. Reseller Performance & Concentration
+- **Reseller leaderboard**: share of channel ST (units and $ through-put), WoW share change, avg WOI, range breadth, reporting compliance. Rank movers up/down.
+- **Concentration risk**: % of channel ST from the top reseller and top 3 per category. Flag any SKU where one reseller is > 60% of ST.
+- **Anomalies**: ST spikes > 3x trailing average (likely commercial/bulk deal, exclude from run-rate calcs and say so), negative SOH, and week-on-week SOH jumps with no corresponding sell-in explanation. Each anomaly is dismissible/annotatable ("confirmed bulk deal") and annotations persist.
+
+## Weekly Vendor Summary (export)
+
+A "Generate weekly summary" button that produces a clean one-page export (PDF or formatted HTML for copy-paste into email) for the vendor QBR/WBR: channel health scorecard, top 5 risks, top 5 opportunities, reseller leaderboard, and the WOI heatmap snapshot. Use the same computed insights, no extra data entry.
+
+## Implementation notes
+
+- All thresholds (WOI bands, stock-out horizon, spike multiplier, dead-stock weeks) live in a settings object and are editable in Admin; insights recompute on change.
+- Compute insights server-side in one endpoint per section (`/api/insights/...`) with SQL over `inventory_snapshots`; do not compute in the browser. Cache per (week, category, thresholds hash).
+- Use trailing 4-week average ST for all run-rate math, excluding weeks flagged as bulk-deal anomalies. Where fewer than 4 weeks of history exist, use what's available and label the insight "low confidence (n weeks of data)".
+- Every finding row deep-links to the drill-down explorer pre-filtered to that reseller/SKU with the trend panel open.
+- Empty states matter: if there's only 1 week of data, show the sections with "needs 2+ weeks of history" placeholders rather than hiding them.
+- Keep the visual language consistent with the dashboard: dense, data-first, same WOI colour bands, sparklines over big charts.
