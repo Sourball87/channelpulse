@@ -3,6 +3,7 @@ import { db, inventorySnapshots, parts, resellers, insightAnnotations } from "@w
 import { sql, eq, and, desc, inArray, gt } from "drizzle-orm";
 import { previousWeekIso } from "../lib/parser";
 import { getOrCreateSettings } from "./insights-settings";
+import { parseFilterParams, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
@@ -28,9 +29,11 @@ router.get("/insights/reseller-performance", async (req, res) => {
     const prev4Weeks = prev4Rows.map(r => r.week!);
     const dataWeeks = prev4Weeks.length;
 
-    const catJoin = category && category !== "All"
-      ? (week: string) => and(eq(inventorySnapshots.weekIso, week), eq(parts.category, category))
-      : (week: string) => eq(inventorySnapshots.weekIso, week);
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const catJoin = (week: string) => buildConditions([
+      eq(inventorySnapshots.weekIso, week),
+      category && category !== "All" ? eq(parts.category, category) : undefined,
+    ], filters);
 
     // ── Current & prev week per-reseller aggregates ───────────────────────────
     const curAgg = await db.select({
@@ -151,7 +154,7 @@ router.get("/insights/reseller-performance", async (req, res) => {
         reseller_id: inventorySnapshots.resellerId,
         avg_st: sql<number>`avg(${inventorySnapshots.sellThrough7d})::numeric`,
       }).from(inventorySnapshots)
-        .where(inArray(inventorySnapshots.weekIso, prev4Weeks))
+        .where(buildConditions([inArray(inventorySnapshots.weekIso, prev4Weeks)], filters))
         .groupBy(inventorySnapshots.partId, inventorySnapshots.resellerId);
       trailingMap = new Map(trailingRows.map(r => [`${r.part_id}:${r.reseller_id}`, Number(r.avg_st)]));
     }

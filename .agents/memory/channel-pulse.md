@@ -1,69 +1,46 @@
 ---
 name: ChannelPulse build decisions
-description: Architecture choices, gotchas, and non-obvious decisions for the ChannelPulse Samsung channel inventory app
+description: Key architecture choices, gotchas, and conventions for the ChannelPulse project
 ---
 
-## TypeScript project references with @workspace/db
+## Stack
+- **Backend:** Express + TypeScript, Drizzle ORM, PostgreSQL — `artifacts/api-server/`
+- **Frontend:** React + Vite, Wouter routing, TanStack Query, Shadcn UI — `artifacts/channel-pulse/`
 
-The db package (`lib/db`) uses `composite: true` in its tsconfig and `emitDeclarationOnly`. It has NO `build` script by default. Before typechecking the api-server, run `npx tsc -p lib/db/tsconfig.json` to generate declarations so TypeScript project references resolve.
+## Library packages (composite TypeScript)
+- `lib/api-client-react` and `lib/api-zod` use `composite: true` with `emitDeclarationOnly` to `dist/`.
+- **After editing any source in these libs, you MUST run `npx tsc --build lib/api-client-react lib/api-zod`** to regenerate the `.d.ts` files — otherwise downstream artifacts see stale types.
+- The `api-client-react` package.json exports `./src/index.ts` but TypeScript project references resolve through the composite `dist/` declarations.
 
-**Why:** api-server tsconfig lists `lib/db` as a reference — without declarations in `lib/db/dist/`, TypeScript can't resolve `@workspace/db` named exports.
+## Global Filter Bar (Phase 2)
+- `FilterProvider` lives inside `WouterRouter` (in `Router()` in App.tsx) so it can use wouter's `useSearch`.
+- Filter state is URL-driven (`?parts=1,2&resellers=3&period=last4` or `from=`/`to=` for custom range).
+- `apiParams` from `useFilters()` is passed directly to all backend queries via `part_ids`/`reseller_ids`/`week_from`/`week_to`.
+- `insightWeek` = `weekTo ?? resolvedWeek` — always a single point-in-time for insight calls.
+- Nav links in layout.tsx preserve `?search` params when navigating between filter-enabled pages.
 
-**How to apply:** Any time typecheck errors say `Module '@workspace/db' has no exported member 'X'`, build the db package first.
+## Backend filter utility
+- `artifacts/api-server/src/lib/filter-params.ts` exports `parseFilterParams`, `resolveRange`, `buildConditions`.
+- `buildConditions(bases, filters)` — `bases` array may contain `undefined`/`false`/`null`; filtered out. Adds `inArray(partId, ...)` and `inArray(resellerId, ...)` from filter params.
+- **Apply buildConditions to ALL queries including history/trailing queries**, not just the main current-week queries. Missing it on history queries causes inconsistent results within a single response.
 
-## noImplicitReturns and Express route handlers
+## Period mode conventions
+- SOH = `latestWeek` (most recent in range)
+- ST = sum or avg over `weekList`
+- WOI = `Math.round(latestSOH / avgWeeklyST)` — always integer, never decimals
+- Delta comparison: prior period of equal length to the selected range
 
-The workspace `tsconfig.base.json` has `noImplicitReturns: true`. Express route handlers where `res.json()` is called as a side-effect (not returned) trigger TS7030. Override in api-server's tsconfig:
+## Explorer pivot types
+- Valid pivots: `category_model_reseller`, `reseller_model`, `model_week`
+- `model_week` pivot only works in period mode (requires `isPeriod`)
+- Added `model_week` to `GetExplorerDataPivot` in both `lib/api-zod` and `lib/api-client-react`
 
-```json
-"noImplicitReturns": false
-```
+## Generated type patterns
+- `useGetExplorerTrend` and `useGetTrends` accept `{ query?: UseQueryOptions<...> }` but `UseQueryOptions` requires `queryKey`. Workaround: cast `{ enabled: bool } as any`.
+- AG Grid `columnDefs` field must be `NestedFieldPaths<RowType>` in v32+. Workaround: type the `colDefs` array as `any[]`.
 
-**Why:** Express handlers don't use their return value — the response is a side-effect. Requiring `return` everywhere pollutes the code. The override is scoped only to api-server.
-
-## Zod import in workspace packages
-
-The db schema uses `zod/v4` (valid since the workspace uses Zod v4 via catalog). Route files should not import `zod` directly unless it's a declared dependency — api-server doesn't list `zod` as a dep. Use schemas from `@workspace/api-zod` instead.
-
-## Canonical field name for sell-through
-
-The parser uses `sell_through_7d` as the canonical field name (not `st`). The upload commit pipeline calls `applyMappingsToRows()` which outputs `row.sell_through_7d`. Any frontend manual review UI mapping must map to `"sell_through_7d"` not `"st"`.
-
-## Explorer category delta calculation
-
-When computing WoW delta for category-level rows in the explorer, filter prevRows to only parts belonging to that category (use a `catPartIds` Map). Using all prevRows for every category produces inflated/incorrect deltas.
-
-## Explorer trend endpoint week constraint
-
-`/explorer/trend` must add `inArray(inventorySnapshots.weekIso, weekList)` to the query conditions. Without it, all historical data is returned regardless of the `weeks` param.
-
-## Insights page: custom hooks vs codegen
-
-The Insights page uses inline `useQuery` with direct `fetch` calls rather than generated hooks from `@workspace/api-client-react`. This avoids needing to extend the OpenAPI spec + run codegen for endpoints that are only consumed by one page. Pattern: `useInsightQuery<T>(key, path, week, category)` helper defined at the top of insights.tsx.
-
-**Why:** Codegen for Insights would require adding ~10 schema definitions to openapi.yaml and re-running orval. Not worth it for a single-page consumer. Use codegen when multiple packages need the types.
-
-## Insights: category scoping pitfall
-
-When adding category filter support to insight endpoints, ensure ALL sub-queries are category-scoped — not just the main aggregate. Specifically in health endpoint: `totalSkus` and `coveredSkus` both need `eq(parts.category, category)` added via a join.
-
-**Why:** Coverage metric (X/27 SKUs) becomes misleading if it reports all categories while other KPIs are filtered to one category.
-
-## Insights: reseller share delta denominator
-
-Share-of-channel WoW delta must use the **previous week's** channel total as the denominator for prevShare (not the current week's total). Using current total makes all resellers' shares look flat even when the channel itself grew/shrank.
-
-## Upload pipeline: multi-file upsert correctness rules
-
-- DELETE before upsert is scoped to `(reseller_id, week_iso, part_id IN incoming)` — never full reseller+week wipe.
-- Upsert uses `onConflictDoUpdate` (not `onConflictDoNothing`) so corrected re-uploads replace old data.
-- Deduplicate by `partId` before batch upsert — some exports contain duplicate SKU rows.
-- 409 conflict check is also part-level: filing KS Monitor does NOT conflict with KS SSD snapshots.
-- Auto-commit requires: confidence ≥ 0.9 + reseller detected + **week detected** (no fallback auto-commit).
-- Week fallback = `previousCompletedWeekIso()`, always queues for review with a warning banner.
-- Filename pattern save: always GET current patterns first, then append-merge; never overwrite.
-- Token extraction skips purely numeric, date-like, and generic words (samsung, report, etc.).
-
-## Seed data approach
-
-Used deterministic seeded-random (no Math.random) to generate 432 inventory snapshots across 3 weeks (2026-W25/W26/W27), 9 resellers, 27 parts. Math.random() is disabled in the durable PTC CodeExecution runtime — use a custom LCG instead.
+## Insights routes
+- All 6 insights routes (`health`, `stockout`, `overstock`, `rebalancing`, `whitespace`, `reseller-perf`) updated to use `parseFilterParams` + `buildConditions`.
+- `catFilter`/`catJoin` pattern replaced with `buildConditions([week condition, category condition?], filters)`.
+- Insights page (`insights.tsx`) uses `insightWeek` from `useFilters()` as the reference week (no own week Select). Category Select remains.
+- `useInsightQuery` passes `part_ids`/`reseller_ids` from `apiParams` and includes them in `queryKey`.

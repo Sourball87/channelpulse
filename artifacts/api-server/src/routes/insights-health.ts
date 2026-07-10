@@ -3,6 +3,7 @@ import { db, inventorySnapshots, parts, resellers, uploads } from "@workspace/db
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
 import { previousWeekIso } from "../lib/parser";
 import { getOrCreateSettings } from "./insights-settings";
+import { parseFilterParams, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
@@ -32,10 +33,11 @@ router.get("/insights/health", async (req, res) => {
     const prev4Weeks = await getPrevNWeeks(weekIso, 4);
     const historyWeeks = [weekIso, ...prev4Weeks];
 
-    const catFilter = (week: string) =>
-      category && category !== "All"
-        ? and(eq(inventorySnapshots.weekIso, week), eq(parts.category, category))
-        : eq(inventorySnapshots.weekIso, week);
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const catFilter = (week: string) => buildConditions([
+      eq(inventorySnapshots.weekIso, week),
+      category && category !== "All" ? eq(parts.category, category) : undefined,
+    ], filters);
 
     // ── Current & prev week aggregates ───────────────────────────────────────
     const [curAgg] = await db.select({
@@ -71,7 +73,7 @@ router.get("/insights/health", async (req, res) => {
       st: sql<number>`coalesce(sum(${inventorySnapshots.sellThrough7d}), 0)::int`,
     }).from(inventorySnapshots)
       .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
-      .where(inArray(inventorySnapshots.weekIso, historyWeeks.slice(0, 5)))
+      .where(buildConditions([inArray(inventorySnapshots.weekIso, historyWeeks.slice(0, 5))], filters))
       .groupBy(inventorySnapshots.weekIso, parts.category)
       .orderBy(parts.category, inventorySnapshots.weekIso);
 
@@ -138,7 +140,7 @@ router.get("/insights/health", async (req, res) => {
       st: sql<number>`coalesce(sum(${inventorySnapshots.sellThrough7d}), 0)::int`,
     }).from(inventorySnapshots)
       .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
-      .where(inArray(inventorySnapshots.weekIso, historyWeeks.slice(0, 5)))
+      .where(buildConditions([inArray(inventorySnapshots.weekIso, historyWeeks.slice(0, 5))], filters))
       .groupBy(inventorySnapshots.weekIso)
       .orderBy(inventorySnapshots.weekIso);
 

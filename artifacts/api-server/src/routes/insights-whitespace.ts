@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers } from "@workspace/db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
+import { parseFilterParams, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
@@ -25,9 +26,11 @@ router.get("/insights/whitespace", async (req, res) => {
     const allWeeks = prev8Rows.map(r => r.week!);
     const dataWeeks = allWeeks.length;
 
-    const catFilter = category && category !== "All"
-      ? and(eq(inventorySnapshots.weekIso, weekIso), eq(parts.category, category))
-      : eq(inventorySnapshots.weekIso, weekIso);
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const catFilter = buildConditions([
+      eq(inventorySnapshots.weekIso, weekIso),
+      category && category !== "All" ? eq(parts.category, category) : undefined,
+    ], filters);
 
     // ── Channel-wide ST per SKU (current week) ────────────────────────────────
     const channelSt = await db.select({

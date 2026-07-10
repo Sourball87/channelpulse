@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers } from "@workspace/db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
 import { getOrCreateSettings } from "./insights-settings";
+import { parseFilterParams, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
@@ -27,9 +28,11 @@ router.get("/insights/rebalancing", async (req, res) => {
     const prev4Weeks = prev4Rows.map(r => r.week!);
     const dataWeeks = prev4Weeks.length;
 
-    const catFilter = category && category !== "All"
-      ? and(eq(inventorySnapshots.weekIso, weekIso), eq(parts.category, category))
-      : eq(inventorySnapshots.weekIso, weekIso);
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const catFilter = buildConditions([
+      eq(inventorySnapshots.weekIso, weekIso),
+      category && category !== "All" ? eq(parts.category, category) : undefined,
+    ], filters);
 
     // Current week snapshots
     const curRows = await db.select({
@@ -55,7 +58,7 @@ router.get("/insights/rebalancing", async (req, res) => {
         reseller_id: inventorySnapshots.resellerId,
         avg_st: sql<number>`avg(${inventorySnapshots.sellThrough7d})::numeric`,
       }).from(inventorySnapshots)
-        .where(inArray(inventorySnapshots.weekIso, prev4Weeks))
+        .where(buildConditions([inArray(inventorySnapshots.weekIso, prev4Weeks)], filters))
         .groupBy(inventorySnapshots.partId, inventorySnapshots.resellerId);
       for (const r of tRows) {
         trailingAvgMap.set(`${r.part_id}:${r.reseller_id}`, Number(r.avg_st));

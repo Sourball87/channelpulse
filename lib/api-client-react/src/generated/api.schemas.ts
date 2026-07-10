@@ -59,6 +59,9 @@ export interface DashboardKpis {
   week_iso: string;
   kpis: KpiCard[];
   reseller_statuses: ResellerStatus[];
+  is_period?: boolean;
+  period_label?: string;
+  delta_label?: string;
 }
 
 export type HeatmapCellColor = typeof HeatmapCellColor[keyof typeof HeatmapCellColor];
@@ -401,6 +404,7 @@ export type GetExplorerDataPivot = typeof GetExplorerDataPivot[keyof typeof GetE
 export const GetExplorerDataPivot = {
   category_model_reseller: 'category_model_reseller',
   reseller_model: 'reseller_model',
+  model_week: 'model_week',
 } as const;
 
 export type GetExplorerTrendParams = {

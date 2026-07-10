@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers } from "@workspace/db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
 import { getOrCreateSettings } from "./insights-settings";
+import { parseFilterParams, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,8 @@ router.get("/insights/stockout-risk", async (req, res) => {
     const dataWeeks = prev4Weeks.length;
     const insufficient_data = dataWeeks < 2;
 
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+
     // ── Trailing 4-week avg ST per reseller×part ──────────────────────────────
     let trailingRows: { part_id: number; reseller_id: number; avg_st: number; avg_cost: number | null }[] = [];
     if (prev4Weeks.length > 0) {
@@ -38,11 +41,10 @@ router.get("/insights/stockout-risk", async (req, res) => {
         avg_cost: sql<number>`avg(${inventorySnapshots.avgCost}::numeric)::numeric`,
       }).from(inventorySnapshots)
         .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
-        .where(
-          category && category !== "All"
-            ? and(inArray(inventorySnapshots.weekIso, prev4Weeks), eq(parts.category, category))
-            : inArray(inventorySnapshots.weekIso, prev4Weeks)
-        )
+        .where(buildConditions([
+          inArray(inventorySnapshots.weekIso, prev4Weeks),
+          category && category !== "All" ? eq(parts.category, category) : undefined,
+        ], filters))
         .groupBy(inventorySnapshots.partId, inventorySnapshots.resellerId);
       trailingRows = tRows.map(r => ({
         part_id: r.part_id!,
@@ -54,9 +56,10 @@ router.get("/insights/stockout-risk", async (req, res) => {
     const trailingMap = new Map(trailingRows.map(r => [`${r.part_id}:${r.reseller_id}`, r]));
 
     // ── Current week snapshots ────────────────────────────────────────────────
-    const curFilter = category && category !== "All"
-      ? and(eq(inventorySnapshots.weekIso, weekIso), eq(parts.category, category))
-      : eq(inventorySnapshots.weekIso, weekIso);
+    const curFilter = buildConditions([
+      eq(inventorySnapshots.weekIso, weekIso),
+      category && category !== "All" ? eq(parts.category, category) : undefined,
+    ], filters);
 
     const curRows = await db.select({
       part_id: inventorySnapshots.partId,

@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 import { AppLayout } from '@/components/layout';
+import { FilterProvider } from '@/context/filter-context';
 import NotFound from '@/pages/not-found';
 
 import Dashboard from '@/pages/dashboard';
@@ -17,18 +18,20 @@ const queryClient = new QueryClient();
 
 function Router() {
   return (
-    <AppLayout>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/insights" component={Insights} />
-        <Route path="/explorer" component={Explorer} />
-        <Route path="/trends" component={Trends} />
-        <Route path="/alerts" component={Alerts} />
-        <Route path="/upload" component={UploadCenter} />
-        <Route path="/admin" component={AdminSettings} />
-        <Route component={NotFound} />
-      </Switch>
-    </AppLayout>
+    <FilterProvider>
+      <AppLayout>
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/insights" component={Insights} />
+          <Route path="/explorer" component={Explorer} />
+          <Route path="/trends" component={Trends} />
+          <Route path="/alerts" component={Alerts} />
+          <Route path="/upload" component={UploadCenter} />
+          <Route path="/admin" component={AdminSettings} />
+          <Route component={NotFound} />
+        </Switch>
+      </AppLayout>
+    </FilterProvider>
   );
 }
 

@@ -1,54 +1,49 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { 
   useGetDashboardKpis, 
   useGetDashboardHeatmap, 
-  useGetAvailableWeeks 
 } from "@workspace/api-client-react";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ArrowDown, ArrowRight, ArrowUp, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFilters } from "@/context/filter-context";
 
 const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
 
 export default function Dashboard() {
-  const [week, setWeek] = useState<string>("latest");
   const [category, setCategory] = useState<string>("All");
+  const { apiParams } = useFilters();
 
-  const { data: weeks } = useGetAvailableWeeks();
-  
-  const queryWeek = week === "latest" && weeks?.length ? weeks[0].week_iso : week !== "latest" ? week : undefined;
   const queryCategory = category === "All" ? undefined : category;
 
   const { data: kpiData, isLoading: isLoadingKpis } = useGetDashboardKpis({ 
-    week_iso: queryWeek, 
+    ...apiParams,
     category: queryCategory 
   });
   
   const { data: heatmapData, isLoading: isLoadingHeatmap } = useGetDashboardHeatmap({ 
-    week_iso: queryWeek, 
+    ...apiParams,
     category: queryCategory 
   });
 
   const reportedCount = kpiData?.reseller_statuses.filter(r => r.reported).length || 0;
   const totalResellers = kpiData?.reseller_statuses.length || 9;
+  const deltaLabel = kpiData?.delta_label ?? "vs last week";
 
   return (
     <div className="flex flex-col h-full bg-muted/20">
       <header className="flex-none bg-background border-b px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">SOH and Sell-Through Overview</p>
+          <p className="text-sm text-muted-foreground">
+            {kpiData?.is_period
+              ? `Period: ${kpiData.period_label}`
+              : `SOH & Sell-Through — ${kpiData?.week_iso ?? "Latest week"}`}
+          </p>
         </div>
         <div className="flex items-center gap-4">
           <Tabs value={category} onValueChange={setCategory} className="w-auto">
@@ -60,20 +55,6 @@ export default function Dashboard() {
               ))}
             </TabsList>
           </Tabs>
-          
-          <Select value={week} onValueChange={setWeek}>
-            <SelectTrigger className="w-[180px] bg-background">
-              <SelectValue placeholder="Select week" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest">Latest Week</SelectItem>
-              {weeks?.map((w) => (
-                <SelectItem key={w.week_iso} value={w.week_iso}>
-                  {w.week_iso}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
       </header>
 
@@ -103,7 +84,7 @@ export default function Dashboard() {
                   }>
                     {kpi.delta_pct != null ? `${kpi.delta_pct > 0 ? '+' : ''}${kpi.delta_pct.toFixed(1)}%` : '0%'}
                   </span>
-                  <span> vs last week</span>
+                  <span> {deltaLabel}</span>
                 </div>
               </CardContent>
             </Card>
@@ -140,6 +121,11 @@ export default function Dashboard() {
           <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               Weeks of Inventory (WOI) Heatmap
+              {kpiData?.is_period && (
+                <Badge variant="secondary" className="text-xs font-normal">
+                  SOH: latest week · ST: avg over period
+                </Badge>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-4 w-4 text-muted-foreground" />
@@ -161,7 +147,8 @@ export default function Dashboard() {
             ) : !heatmapData || heatmapData.parts.length === 0 ? (
               <div className="p-8 flex flex-col items-center justify-center h-full text-muted-foreground">
                 <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
-                <p>No data available for this week/category.</p>
+                <p>No data for this selection.</p>
+                <p className="text-xs mt-1">Try adjusting the filters above.</p>
               </div>
             ) : (
               <div className="inline-block min-w-full relative p-4">
@@ -184,7 +171,6 @@ export default function Dashboard() {
                   {/* Data Rows */}
                   {heatmapData.parts.map(part => {
                     const rowCells = heatmapData.cells.filter(c => c.part_no === part);
-                    // Create a lookup for quick access
                     const cellMap = new Map(rowCells.map(c => [c.reseller_code, c]));
                     
                     return (
@@ -224,7 +210,7 @@ export default function Dashboard() {
                                   <div className="font-semibold mb-1.5">{part} @ {res}</div>
                                   <div className="space-y-1">
                                     <div>SOH: <span className="font-bold">{cell.soh.toLocaleString()}</span> units</div>
-                                    <div>ST: <span className="font-bold">{cell.st.toLocaleString()}</span> units/wk</div>
+                                    <div>Avg ST: <span className="font-bold">{cell.st.toLocaleString()}</span> units/wk</div>
                                     <div>WOI: <span className="font-bold">{woiDisplay}</span> weeks</div>
                                   </div>
                                 </TooltipContent>

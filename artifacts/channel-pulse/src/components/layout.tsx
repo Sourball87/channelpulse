@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +18,7 @@ import {
   Lightbulb,
   Activity,
 } from "lucide-react";
+import { GlobalFilterBar } from "@/components/global-filter-bar";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -29,8 +30,14 @@ const navigation = [
   { name: "Settings", href: "/admin", icon: Settings },
 ];
 
+// Pages that show the global filter bar
+const FILTER_PATHS = ["/", "/insights", "/explorer", "/trends", "/alerts"];
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const search = useSearch();
+
+  const showFilterBar = FILTER_PATHS.includes(location);
 
   return (
     <SidebarProvider>
@@ -49,25 +56,35 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarContent>
             <div className="py-4">
               <SidebarMenu>
-                {navigation.map((item) => (
-                  <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location === item.href}
-                      tooltip={item.name}
-                    >
-                      <Link href={item.href} className="flex items-center gap-3">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.name}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {navigation.map((item) => {
+                  // Preserve filter params when navigating between filter-enabled pages
+                  const targetIsFilterPage = FILTER_PATHS.includes(item.href);
+                  const sourceIsFilterPage = FILTER_PATHS.includes(location);
+                  const href = targetIsFilterPage && sourceIsFilterPage && search
+                    ? `${item.href}?${search}`
+                    : item.href;
+
+                  return (
+                    <SidebarMenuItem key={item.name}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={location === item.href}
+                        tooltip={item.name}
+                      >
+                        <Link href={href} className="flex items-center gap-3">
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </div>
           </SidebarContent>
         </Sidebar>
         <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          {showFilterBar && <GlobalFilterBar />}
           {children}
         </main>
       </div>

@@ -87,7 +87,7 @@ export const GetAvailableWeeksResponse = zod.array(GetAvailableWeeksResponseItem
 export const GetExplorerDataQueryParams = zod.object({
   "week_iso": zod.coerce.string().optional(),
   "category": zod.coerce.string().optional(),
-  "pivot": zod.enum(['category_model_reseller', 'reseller_model']).optional().describe('Pivot mode')
+  "pivot": zod.enum(['category_model_reseller', 'reseller_model', 'model_week']).optional().describe('Pivot mode')
 })
 
 export const GetExplorerDataResponseItem = zod.object({

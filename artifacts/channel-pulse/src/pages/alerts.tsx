@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
-import { useGetAlerts, useGetAvailableWeeks } from "@workspace/api-client-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useGetAlerts } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,45 +14,38 @@ import {
   FileWarning,
   ChevronRight
 } from "lucide-react";
+import { useFilters } from "@/context/filter-context";
 
-const SEVERITY_ORDER = { critical: 1, warning: 2, info: 3 };
+const SEVERITY_ORDER: Record<string, number> = { critical: 1, warning: 2, info: 3 };
 
-const ALERT_ICONS = {
+const ALERT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   overstocked: PackageMinus,
   stockout_risk: PackageX,
   st_spike: TrendingUp,
   missing_upload: FileWarning,
-  negative_soh: AlertCircle
+  negative_soh: AlertCircle,
 };
 
-const ALERT_TITLES = {
+const ALERT_TITLES: Record<string, string> = {
   overstocked: "Overstocked",
   stockout_risk: "Stockout Risk",
   st_spike: "Sell-Through Spike",
   missing_upload: "Missing Upload",
-  negative_soh: "Negative SOH"
+  negative_soh: "Negative SOH",
 };
 
 export default function Alerts() {
-  const [week, setWeek] = useState<string>("latest");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const { apiParams, periodLabel, mode } = useFilters();
 
-  const { data: weeks } = useGetAvailableWeeks();
-  const queryWeek = week === "latest" && weeks?.length ? weeks[0].week_iso : week !== "latest" ? week : undefined;
-
-  const { data: alerts, isLoading } = useGetAlerts({ week_iso: queryWeek });
+  const { data: alerts, isLoading } = useGetAlerts(apiParams);
 
   const filteredAlerts = useMemo(() => {
     if (!alerts) return [];
-    let filtered = alerts;
-    if (typeFilter !== "all") {
-      filtered = filtered.filter(a => a.type === typeFilter);
-    }
+    const filtered = typeFilter !== "all" ? alerts.filter(a => a.type === typeFilter) : [...alerts];
     return filtered.sort((a, b) => {
-      // Sort by severity first
-      const sevDiff = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
+      const sevDiff = (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9);
       if (sevDiff !== 0) return sevDiff;
-      // Then by type
       return a.type.localeCompare(b.type);
     });
   }, [alerts, typeFilter]);
@@ -71,22 +63,9 @@ export default function Alerts() {
       <header className="flex-none bg-background border-b px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Exceptions & Alerts</h1>
-          <p className="text-sm text-muted-foreground">Auto-generated risks and opportunities</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Select value={week} onValueChange={setWeek}>
-            <SelectTrigger className="w-[180px] bg-background">
-              <SelectValue placeholder="Select week" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest">Latest Week</SelectItem>
-              {weeks?.map((w) => (
-                <SelectItem key={w.week_iso} value={w.week_iso}>
-                  {w.week_iso}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <p className="text-sm text-muted-foreground">
+            {mode === "period" ? `Period: ${periodLabel}` : "Auto-generated risks and opportunities"}
+          </p>
         </div>
       </header>
 
@@ -116,8 +95,8 @@ export default function Alerts() {
                     >
                       <div className="flex items-center gap-2">
                         {(() => {
-                          const Icon = ALERT_ICONS[type as keyof typeof ALERT_ICONS];
-                          return <Icon className="h-4 w-4 text-muted-foreground" />;
+                          const Icon = ALERT_ICONS[type];
+                          return Icon ? <Icon className="h-4 w-4 text-muted-foreground" /> : null;
                         })()}
                         <span>{title}</span>
                       </div>
@@ -153,19 +132,21 @@ export default function Alerts() {
                   <AlertCircle className="h-6 w-6 opacity-50" />
                 </div>
                 <h3 className="text-lg font-medium text-foreground">No alerts found</h3>
-                <p className="mt-1">There are no {typeFilter !== 'all' ? ALERT_TITLES[typeFilter as keyof typeof ALERT_TITLES].toLowerCase() : ''} exceptions for this week.</p>
+                <p className="mt-1">
+                  There are no {typeFilter !== "all" ? (ALERT_TITLES[typeFilter] ?? "").toLowerCase() : ""} exceptions for this selection.
+                </p>
               </div>
             ) : (
               filteredAlerts.map(alert => {
-                const Icon = ALERT_ICONS[alert.type] || Info;
+                const Icon = ALERT_ICONS[alert.type] ?? Info;
                 
                 let severityColor = "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800";
                 let iconColor = "text-blue-500";
                 
-                if (alert.severity === 'critical') {
+                if (alert.severity === "critical") {
                   severityColor = "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border-rose-200 dark:border-rose-800";
                   iconColor = "text-rose-500";
-                } else if (alert.severity === 'warning') {
+                } else if (alert.severity === "warning") {
                   severityColor = "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800";
                   iconColor = "text-amber-500";
                 }
@@ -173,10 +154,9 @@ export default function Alerts() {
                 return (
                   <Card key={alert.id} className="shadow-xs hover:shadow-md transition-shadow group overflow-hidden">
                     <div className="flex relative">
-                      {/* Left color bar indicator */}
                       <div className={`w-1 absolute inset-y-0 left-0 ${
-                        alert.severity === 'critical' ? 'bg-rose-500' : 
-                        alert.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
+                        alert.severity === "critical" ? "bg-rose-500" : 
+                        alert.severity === "warning" ? "bg-amber-500" : "bg-blue-500"
                       }`} />
                       
                       <CardContent className="p-4 pl-6 flex-1 flex items-start gap-4">
@@ -187,7 +167,7 @@ export default function Alerts() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-foreground tracking-tight">
-                              {ALERT_TITLES[alert.type as keyof typeof ALERT_TITLES] || alert.type}
+                              {ALERT_TITLES[alert.type] ?? alert.type}
                             </span>
                             <Badge variant="outline" className={`text-[10px] uppercase font-bold tracking-wider ${severityColor}`}>
                               {alert.severity}
@@ -202,7 +182,6 @@ export default function Alerts() {
                           
                           <p className="text-sm text-muted-foreground">{alert.message}</p>
                           
-                          {/* Metrics row if applicable */}
                           {(alert.soh != null || alert.st != null || alert.woi != null) && (
                             <div className="flex gap-6 mt-3 text-sm">
                               {alert.soh != null && (
@@ -221,9 +200,8 @@ export default function Alerts() {
                           )}
                         </div>
 
-                        {/* Action link if relevant */}
                         {alert.part_id && alert.reseller_id && (
-                          <Link href={`/explorer`} className="shrink-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
+                          <Link href="/explorer" className="shrink-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
                             <div className="flex items-center gap-1 text-sm font-medium">
                               Drill <ChevronRight className="h-4 w-4" />
                             </div>

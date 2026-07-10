@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGetAvailableWeeks } from "@workspace/api-client-react";
+import { useFilters } from "@/context/filter-context";
 import {
   ArrowUp, ArrowDown, Minus, AlertTriangle, TrendingDown, TrendingUp, Zap,
   RefreshCw, ArrowRightLeft, Package, Users, ChevronRight, Info, Printer,
@@ -23,12 +24,15 @@ function apiFetch(path: string) {
 }
 
 function useInsightQuery<T>(key: string[], path: string, week: string, category: string) {
+  const { apiParams } = useFilters();
   const params = new URLSearchParams();
   if (week !== "latest") params.set("week_iso", week);
   if (category !== "All") params.set("category", category);
+  if (apiParams.part_ids) params.set("part_ids", apiParams.part_ids);
+  if (apiParams.reseller_ids) params.set("reseller_ids", apiParams.reseller_ids);
   const qs = params.toString();
   return useQuery<T>({
-    queryKey: [...key, week, category],
+    queryKey: [...key, week, category, apiParams.part_ids ?? "", apiParams.reseller_ids ?? ""],
     queryFn: () => apiFetch(`/api${path}${qs ? "?" + qs : ""}`),
     staleTime: 60_000,
   });
@@ -728,12 +732,12 @@ ${(resellerPerf?.leaderboard ?? []).map((r: any, i: number) => `<tr><td>${i + 1}
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Insights() {
-  const [week, setWeek] = useState("latest");
   const [category, setCategory] = useState("All");
   const queryClient = useQueryClient();
 
+  const { insightWeek, partIds, resellerIds } = useFilters();
   const { data: weeks } = useGetAvailableWeeks();
-  const queryWeek = week === "latest" ? (weeks?.[0]?.week_iso ?? "latest") : week;
+  const queryWeek = insightWeek ?? weeks?.[0]?.week_iso ?? "latest";
 
   const { data: health } = useInsightQuery<any>(["insights-health"], "/insights/health", queryWeek, category);
   const { data: stockout } = useInsightQuery<any>(["insights-stockout"], "/insights/stockout-risk", queryWeek, category);
@@ -779,17 +783,6 @@ export default function Insights() {
             </SelectTrigger>
             <SelectContent>
               {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={week} onValueChange={setWeek}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="Latest Week" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest">Latest Week</SelectItem>
-              {(weeks ?? []).map((w: any) => (
-                <SelectItem key={w.week_iso} value={w.week_iso}>{w.week_iso}</SelectItem>
-              ))}
             </SelectContent>
           </Select>
         </div>

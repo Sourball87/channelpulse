@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers } from "@workspace/db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
 import { getOrCreateSettings } from "./insights-settings";
+import { parseFilterParams, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
@@ -27,9 +28,11 @@ router.get("/insights/overstock", async (req, res) => {
     const prev4Weeks = prev4Rows.map(r => r.week!);
     const dataWeeks = prev4Weeks.length;
 
-    const catFilter = category && category !== "All"
-      ? and(eq(inventorySnapshots.weekIso, weekIso), eq(parts.category, category))
-      : eq(inventorySnapshots.weekIso, weekIso);
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const catFilter = buildConditions([
+      eq(inventorySnapshots.weekIso, weekIso),
+      category && category !== "All" ? eq(parts.category, category) : undefined,
+    ], filters);
 
     // ── Current week snapshots ────────────────────────────────────────────────
     const curRows = await db.select({
@@ -56,7 +59,7 @@ router.get("/insights/overstock", async (req, res) => {
         week_iso: inventorySnapshots.weekIso,
         st: inventorySnapshots.sellThrough7d,
       }).from(inventorySnapshots)
-        .where(inArray(inventorySnapshots.weekIso, prev4Weeks))
+        .where(buildConditions([inArray(inventorySnapshots.weekIso, prev4Weeks)], filters))
         .orderBy(inventorySnapshots.weekIso);
 
       // Group by part+reseller

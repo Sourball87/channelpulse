@@ -5,14 +5,15 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
-import { useGetExplorerData, useGetExplorerTrend, useGetAvailableWeeks } from "@workspace/api-client-react";
+import { useGetExplorerData, useGetExplorerTrend } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, LayoutList, ArrowUp, ArrowDown, X, BarChart2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ArrowUp, ArrowDown, BarChart2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ComposedChart } from "recharts";
 import { Badge } from "@/components/ui/badge";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ComposedChart } from "recharts";
+import { useFilters } from "@/context/filter-context";
 
 const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
 
@@ -33,28 +34,24 @@ function ValueWithDelta({ value, delta }: { value: number | null | undefined, de
 }
 
 export default function Explorer() {
-  const [week, setWeek] = useState<string>("latest");
   const [category, setCategory] = useState<string>("All");
-  const [pivot, setPivot] = useState<"category_model_reseller" | "reseller_model">("category_model_reseller");
-  
+  const [pivot, setPivot] = useState<"category_model_reseller" | "reseller_model" | "model_week">("category_model_reseller");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [selectedRow, setSelectedRow] = useState<any>(null);
 
-  const { data: weeks } = useGetAvailableWeeks();
-  const queryWeek = week === "latest" && weeks?.length ? weeks[0].week_iso : week !== "latest" ? week : undefined;
+  const { apiParams, mode } = useFilters();
   const queryCategory = category === "All" ? undefined : category;
 
   const { data: rows, isLoading } = useGetExplorerData({ 
-    week_iso: queryWeek, 
+    ...apiParams,
     category: queryCategory,
-    pivot
+    pivot,
   });
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }, []);
@@ -72,11 +69,10 @@ export default function Explorer() {
     });
   }, [rows, expandedIds]);
 
-  const hasChildren = useCallback((id: string) => {
-    return rows?.some(r => r.parent_id === id) || false;
-  }, [rows]);
+  const hasChildren = useCallback((id: string) => rows?.some(r => r.parent_id === id) || false, [rows]);
 
-  const colDefs = useMemo(() => [
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const colDefs: any[] = useMemo(() => [
     { 
       field: "label", 
       headerName: "Hierarchy", 
@@ -85,8 +81,8 @@ export default function Explorer() {
         const row = params.data;
         const isExpanded = expandedIds.has(row.id);
         const childrenExist = hasChildren(row.id);
-        const padLeft = row.level === 'category' || row.level === 'reseller' && pivot === 'reseller_model' ? 0 : 
-                        row.level === 'model' ? 24 : 48;
+        const isTopLevel = pivot === "reseller_model" ? row.level === "reseller" : pivot === "model_week" ? row.level === "model" : row.level === "category";
+        const padLeft = isTopLevel ? 0 : row.level === "week" ? 48 : 24;
         
         return (
           <div 
@@ -99,10 +95,10 @@ export default function Explorer() {
                 {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </span>
             ) : <span className="w-4" />}
-            <span className={row.level === 'category' || (row.level === 'reseller' && pivot === 'reseller_model') ? "font-semibold" : ""}>
+            <span className={isTopLevel ? "font-semibold" : ""}>
               {row.label}
             </span>
-            {!childrenExist && (
+            {!childrenExist && row.level !== "week" && (
               <BarChart2 className="h-3 w-3 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100" />
             )}
           </div>
@@ -111,21 +107,15 @@ export default function Explorer() {
     },
     { field: "level", headerName: "Level", width: 100 },
     { 
-      headerName: "SOH", 
-      field: "soh",
-      width: 120,
+      headerName: "SOH", field: "soh", width: 120,
       cellRenderer: (params: any) => <ValueWithDelta value={params.data.soh} delta={params.data.soh_delta} />
     },
     { 
-      headerName: "ST", 
-      field: "st",
-      width: 120,
+      headerName: "ST", field: "st", width: 120,
       cellRenderer: (params: any) => <ValueWithDelta value={params.data.st} delta={params.data.st_delta} />
     },
     { 
-      headerName: "WOI", 
-      field: "woi",
-      width: 100,
+      headerName: "WOI", field: "woi", width: 100,
       cellRenderer: (params: any) => {
         const val = params.value;
         if (val === null || val === undefined) return <span className="text-muted-foreground">—</span>;
@@ -137,23 +127,19 @@ export default function Explorer() {
       }
     },
     { 
-      headerName: "Sold MTD", 
-      field: "sold_mtd",
-      width: 100,
+      headerName: "Sold MTD", field: "sold_mtd", width: 100,
       cellRenderer: (params: any) => <div className="text-right w-full">{params.value?.toLocaleString() || '—'}</div>
     },
     { 
-      headerName: "On Order", 
-      field: "on_order",
-      width: 100,
+      headerName: "On Order", field: "on_order", width: 100,
       cellRenderer: (params: any) => <div className="text-right w-full">{params.value?.toLocaleString() || '—'}</div>
-    }
+    },
   ], [expandedIds, hasChildren, toggleExpand, pivot]);
 
-  // Trend Panel
   const { data: trendData, isLoading: isLoadingTrend } = useGetExplorerTrend(
     { part_id: selectedRow?.part_id, reseller_id: selectedRow?.reseller_id, weeks: 12 },
-    { query: { enabled: !!selectedRow } }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { query: { enabled: !!selectedRow } as any }
   );
 
   return (
@@ -181,6 +167,16 @@ export default function Explorer() {
             >
               Reseller → Model
             </Button>
+            {mode === "period" && (
+              <Button 
+                variant={pivot === "model_week" ? "secondary" : "ghost"} 
+                size="sm"
+                onClick={() => setPivot("model_week")}
+                className="text-xs h-7"
+              >
+                Model → Week
+              </Button>
+            )}
           </div>
 
           <Select value={category} onValueChange={setCategory}>
@@ -190,20 +186,6 @@ export default function Explorer() {
             <SelectContent>
               {CATEGORIES.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={week} onValueChange={setWeek}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Select week" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest">Latest Week</SelectItem>
-              {weeks?.map((w) => (
-                <SelectItem key={w.week_iso} value={w.week_iso}>
-                  {w.week_iso}
-                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -218,6 +200,12 @@ export default function Explorer() {
               <Skeleton className="h-8 w-[80%]" />
               <Skeleton className="h-8 w-[90%]" />
             </div>
+          ) : !rows || rows.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+              <BarChart2 className="h-12 w-12 mb-4 opacity-20" />
+              <p className="text-base">No data for this selection.</p>
+              <p className="text-sm mt-1">Try adjusting the filters in the bar above.</p>
+            </div>
           ) : (
             <AgGridReact
               rowData={visibleRows}
@@ -226,7 +214,7 @@ export default function Explorer() {
               rowHeight={40}
               headerHeight={40}
               suppressCellFocus={true}
-              getRowClass={(params) => `group ${params.data.level === 'category' || (params.data.level === 'reseller' && pivot === 'reseller_model') ? 'bg-muted/30' : ''}`}
+              getRowClass={(params) => `group ${params.data?.level === "category" || (params.data?.level === "reseller" && pivot === "reseller_model") || (params.data?.level === "model" && pivot === "model_week") ? "bg-muted/30" : ""}`}
             />
           )}
         </div>
@@ -238,9 +226,7 @@ export default function Explorer() {
             <div className="flex items-start justify-between">
               <div>
                 <SheetTitle className="text-lg">{selectedRow?.label}</SheetTitle>
-                <SheetDescription className="mt-1">
-                  12-Week Trend Analysis
-                </SheetDescription>
+                <SheetDescription className="mt-1">12-Week Trend Analysis</SheetDescription>
               </div>
               <div className="flex gap-2">
                 {selectedRow?.level && <Badge variant="outline">{selectedRow.level}</Badge>}

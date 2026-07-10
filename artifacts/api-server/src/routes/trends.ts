@@ -1,38 +1,57 @@
 import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers } from "@workspace/db";
 import { sql, eq, and, inArray, desc } from "drizzle-orm";
-import { GetTrendsQueryParams } from "@workspace/api-zod";
+import { parseFilterParams, resolveRange, buildConditions } from "../lib/filter-params";
 
 const router: IRouter = Router();
 
 router.get("/trends", async (req, res) => {
   try {
-    const q = GetTrendsQueryParams.safeParse(req.query);
-    const weeks = q.success && q.data.weeks ? q.data.weeks : 12;
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const partIds = filters.partIds;
+    const resellerIds = filters.resellerIds;
 
-    const partIdStrs = q.success && q.data.part_ids ? q.data.part_ids.split(",").filter(Boolean) : [];
-    const resellerIdStrs = q.success && q.data.reseller_ids ? q.data.reseller_ids.split(",").filter(Boolean) : [];
-    const partIds = partIdStrs.map(Number).filter((n) => !isNaN(n));
-    const resellerIds = resellerIdStrs.map(Number).filter((n) => !isNaN(n));
+    const weeksParam = req.query.weeks ? parseInt(String(req.query.weeks), 10) : 12;
+    const safeWeeks = isNaN(weeksParam) ? 12 : Math.min(Math.max(weeksParam, 1), 52);
 
-    // Get last N weeks
-    const weekRows = await db
-      .selectDistinct({ week: inventorySnapshots.weekIso })
-      .from(inventorySnapshots)
-      .orderBy(desc(inventorySnapshots.weekIso))
-      .limit(weeks);
+    // Determine week list
+    let weekList: string[];
 
-    const weekList = weekRows.map((w) => w.week).filter(Boolean) as string[];
+    if (filters.weekFrom && filters.weekTo) {
+      // Period mode: use the specified range
+      const rangeRows = await db
+        .selectDistinct({ week: inventorySnapshots.weekIso })
+        .from(inventorySnapshots)
+        .where(
+          sql`${inventorySnapshots.weekIso} >= ${filters.weekFrom} AND ${inventorySnapshots.weekIso} <= ${filters.weekTo}`,
+        )
+        .orderBy(desc(inventorySnapshots.weekIso));
+      weekList = rangeRows.map(r => r.week!);
+    } else {
+      // Single-week or default: last N weeks ending at weekIso (or latest)
+      const endWeek = filters.weekIso;
+      const cond = endWeek
+        ? sql`${inventorySnapshots.weekIso} <= ${endWeek}`
+        : sql`1=1`;
+      const weekRows = await db
+        .selectDistinct({ week: inventorySnapshots.weekIso })
+        .from(inventorySnapshots)
+        .where(cond)
+        .orderBy(desc(inventorySnapshots.weekIso))
+        .limit(safeWeeks);
+      weekList = weekRows.map(r => r.week!).filter(Boolean);
+    }
+
     if (weekList.length === 0) return res.json([]);
 
-    // Build conditions
-    const conditions = [inArray(inventorySnapshots.weekIso, weekList)];
+    const conditions: any[] = [inArray(inventorySnapshots.weekIso, weekList)];
     if (partIds.length > 0) conditions.push(inArray(inventorySnapshots.partId, partIds));
     if (resellerIds.length > 0) conditions.push(inArray(inventorySnapshots.resellerId, resellerIds));
 
-    const groupKeys: string[] = [];
+    const chronological = [...weekList].sort(); // oldest-first for chart
+
     if (partIds.length > 0 && resellerIds.length > 0) {
-      // One series per part+reseller combination
+      // One series per part×reseller
       const rawRows = await db
         .select({
           week_iso: inventorySnapshots.weekIso,
@@ -51,8 +70,10 @@ router.get("/trends", async (req, res) => {
         .where(and(...conditions))
         .orderBy(inventorySnapshots.weekIso);
 
-      // Group into series
-      const seriesMap = new Map<string, { key: string; label: string; part_no: string; reseller_code: string; points: Map<string, { soh: number; st: number; sold_mtd: number; on_order: number }> }>();
+      const seriesMap = new Map<string, {
+        key: string; label: string; part_no: string; reseller_code: string;
+        points: Map<string, { soh: number; st: number; sold_mtd: number; on_order: number }>;
+      }>();
 
       for (const r of rawRows) {
         const key = `${r.part_id}:${r.reseller_id}`;
@@ -64,91 +85,79 @@ router.get("/trends", async (req, res) => {
           });
         }
         const s = seriesMap.get(key)!;
-        const existing = s.points.get(r.week_iso!) ?? { soh: 0, st: 0, sold_mtd: 0, on_order: 0 };
+        const ex = s.points.get(r.week_iso!) ?? { soh: 0, st: 0, sold_mtd: 0, on_order: 0 };
         s.points.set(r.week_iso!, {
-          soh: existing.soh + (r.soh ?? 0),
-          st: existing.st + (r.st ?? 0),
-          sold_mtd: existing.sold_mtd + (r.sold_mtd ?? 0),
-          on_order: existing.on_order + (r.on_order ?? 0),
+          soh: ex.soh + (r.soh ?? 0), st: ex.st + (r.st ?? 0),
+          sold_mtd: ex.sold_mtd + (r.sold_mtd ?? 0), on_order: ex.on_order + (r.on_order ?? 0),
         });
       }
 
-      const series = [...seriesMap.values()].map((s) => ({
+      return res.json([...seriesMap.values()].map(s => ({
         key: s.key, label: s.label, part_no: s.part_no, reseller_code: s.reseller_code,
-        points: weekList.slice().reverse().map((w) => {
+        points: chronological.map(w => {
           const p = s.points.get(w) ?? { soh: 0, st: 0, sold_mtd: 0, on_order: 0 };
           return { week_iso: w, soh: p.soh, st: p.st, woi: p.st > 0 ? p.soh / p.st : null, sold_mtd: p.sold_mtd, on_order: p.on_order };
         }),
-      }));
-
-      return res.json(series);
+      })));
     }
 
-    // Simple: one series per part or per reseller
     if (partIds.length > 0) {
-      const partsData = await db.select().from(parts).where(inArray(parts.id, partIds));
-      const series = await Promise.all(
-        partsData.map(async (p) => {
-          const rows = await db
-            .select({
-              week_iso: inventorySnapshots.weekIso,
-              soh: sql<number>`coalesce(sum(${inventorySnapshots.soh}), 0)::int`,
-              st: sql<number>`coalesce(sum(${inventorySnapshots.sellThrough7d}), 0)::int`,
-              sold_mtd: sql<number>`coalesce(sum(${inventorySnapshots.soldMtd}), 0)::int`,
-              on_order: sql<number>`coalesce(sum(${inventorySnapshots.onOrder}), 0)::int`,
-            })
-            .from(inventorySnapshots)
-            .where(and(inArray(inventorySnapshots.weekIso, weekList), eq(inventorySnapshots.partId, p.id)))
-            .groupBy(inventorySnapshots.weekIso)
-            .orderBy(inventorySnapshots.weekIso);
-
-          const pointMap = new Map(rows.map((r) => [r.week_iso, r]));
-          return {
-            key: `part:${p.id}`, label: p.displayName || p.partNo,
-            part_no: p.partNo, reseller_code: null,
-            points: weekList.slice().reverse().map((w) => {
-              const r = pointMap.get(w);
-              const soh = Number(r?.soh ?? 0), st = Number(r?.st ?? 0);
-              return { week_iso: w, soh, st, woi: st > 0 ? soh / st : null, sold_mtd: Number(r?.sold_mtd ?? 0), on_order: Number(r?.on_order ?? 0) };
-            }),
-          };
-        }),
-      );
+      // One series per part (aggregated across all resellers)
+      const allParts = await db.select().from(parts).where(inArray(parts.id, partIds));
+      const series = await Promise.all(allParts.map(async pt => {
+        const rows = await db
+          .select({
+            week_iso: inventorySnapshots.weekIso,
+            soh: sql<number>`coalesce(sum(${inventorySnapshots.soh}), 0)::int`,
+            st: sql<number>`coalesce(sum(${inventorySnapshots.sellThrough7d}), 0)::int`,
+            sold_mtd: sql<number>`coalesce(sum(${inventorySnapshots.soldMtd}), 0)::int`,
+            on_order: sql<number>`coalesce(sum(${inventorySnapshots.onOrder}), 0)::int`,
+          })
+          .from(inventorySnapshots)
+          .where(and(inArray(inventorySnapshots.weekIso, weekList), eq(inventorySnapshots.partId, pt.id)))
+          .groupBy(inventorySnapshots.weekIso);
+        const pm = new Map(rows.map(r => [r.week_iso, r]));
+        return {
+          key: `part:${pt.id}`, label: pt.displayName ?? pt.partNo, part_no: pt.partNo, reseller_code: null,
+          points: chronological.map(w => {
+            const r = pm.get(w);
+            const soh = Number(r?.soh ?? 0), st = Number(r?.st ?? 0);
+            return { week_iso: w, soh, st, woi: st > 0 ? soh / st : null, sold_mtd: Number(r?.sold_mtd ?? 0), on_order: Number(r?.on_order ?? 0) };
+          }),
+        };
+      }));
       return res.json(series);
     }
 
     if (resellerIds.length > 0) {
-      const resellersData = await db.select().from(resellers).where(inArray(resellers.id, resellerIds));
-      const series = await Promise.all(
-        resellersData.map(async (re) => {
-          const rows = await db
-            .select({
-              week_iso: inventorySnapshots.weekIso,
-              soh: sql<number>`coalesce(sum(${inventorySnapshots.soh}), 0)::int`,
-              st: sql<number>`coalesce(sum(${inventorySnapshots.sellThrough7d}), 0)::int`,
-              sold_mtd: sql<number>`coalesce(sum(${inventorySnapshots.soldMtd}), 0)::int`,
-              on_order: sql<number>`coalesce(sum(${inventorySnapshots.onOrder}), 0)::int`,
-            })
-            .from(inventorySnapshots)
-            .where(and(inArray(inventorySnapshots.weekIso, weekList), eq(inventorySnapshots.resellerId, re.id)))
-            .groupBy(inventorySnapshots.weekIso)
-            .orderBy(inventorySnapshots.weekIso);
-
-          const pointMap = new Map(rows.map((r) => [r.week_iso, r]));
-          return {
-            key: `reseller:${re.id}`, label: re.name, part_no: null, reseller_code: re.code,
-            points: weekList.slice().reverse().map((w) => {
-              const r = pointMap.get(w);
-              const soh = Number(r?.soh ?? 0), st = Number(r?.st ?? 0);
-              return { week_iso: w, soh, st, woi: st > 0 ? soh / st : null, sold_mtd: Number(r?.sold_mtd ?? 0), on_order: Number(r?.on_order ?? 0) };
-            }),
-          };
-        }),
-      );
+      // One series per reseller
+      const allResellers = await db.select().from(resellers).where(inArray(resellers.id, resellerIds));
+      const series = await Promise.all(allResellers.map(async re => {
+        const rows = await db
+          .select({
+            week_iso: inventorySnapshots.weekIso,
+            soh: sql<number>`coalesce(sum(${inventorySnapshots.soh}), 0)::int`,
+            st: sql<number>`coalesce(sum(${inventorySnapshots.sellThrough7d}), 0)::int`,
+            sold_mtd: sql<number>`coalesce(sum(${inventorySnapshots.soldMtd}), 0)::int`,
+            on_order: sql<number>`coalesce(sum(${inventorySnapshots.onOrder}), 0)::int`,
+          })
+          .from(inventorySnapshots)
+          .where(and(inArray(inventorySnapshots.weekIso, weekList), eq(inventorySnapshots.resellerId, re.id)))
+          .groupBy(inventorySnapshots.weekIso);
+        const pm = new Map(rows.map(r => [r.week_iso, r]));
+        return {
+          key: `reseller:${re.id}`, label: re.name, part_no: null, reseller_code: re.code,
+          points: chronological.map(w => {
+            const r = pm.get(w);
+            const soh = Number(r?.soh ?? 0), st = Number(r?.st ?? 0);
+            return { week_iso: w, soh, st, woi: st > 0 ? soh / st : null, sold_mtd: Number(r?.sold_mtd ?? 0), on_order: Number(r?.on_order ?? 0) };
+          }),
+        };
+      }));
       return res.json(series);
     }
 
-    // No filter: aggregate across everything
+    // No filter: single aggregate series
     const rows = await db
       .select({
         week_iso: inventorySnapshots.weekIso,
@@ -159,14 +168,13 @@ router.get("/trends", async (req, res) => {
       })
       .from(inventorySnapshots)
       .where(inArray(inventorySnapshots.weekIso, weekList))
-      .groupBy(inventorySnapshots.weekIso)
-      .orderBy(inventorySnapshots.weekIso);
+      .groupBy(inventorySnapshots.weekIso);
 
-    const pointMap = new Map(rows.map((r) => [r.week_iso, r]));
+    const pm = new Map(rows.map(r => [r.week_iso, r]));
     res.json([{
       key: "all", label: "Total Channel", part_no: null, reseller_code: null,
-      points: weekList.slice().reverse().map((w) => {
-        const r = pointMap.get(w);
+      points: chronological.map(w => {
+        const r = pm.get(w);
         const soh = Number(r?.soh ?? 0), st = Number(r?.st ?? 0);
         return { week_iso: w, soh, st, woi: st > 0 ? soh / st : null, sold_mtd: Number(r?.sold_mtd ?? 0), on_order: Number(r?.on_order ?? 0) };
       }),

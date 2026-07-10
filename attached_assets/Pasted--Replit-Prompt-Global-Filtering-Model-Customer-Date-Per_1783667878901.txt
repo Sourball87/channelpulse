@@ -1,0 +1,45 @@
+# Replit Prompt: Global Filtering — Model, Customer, Date Period
+
+Add a persistent global filter bar to ChannelPulse so every view can be sliced by model, customer (reseller), and date or date period. Do not refactor unrelated code.
+
+## Global filter bar
+
+Add a filter bar that sits below the top nav and persists across Dashboard, Explorer, Trends, Alerts, and Insights. Three controls:
+
+1. **Model filter**: multi-select searchable dropdown of part numbers (search matches part_no and display_name), grouped by category with a "select all in category" option. Supports selecting one model, several, or all (default).
+2. **Customer filter**: multi-select of resellers. Default all.
+3. **Date period**: a selector with two modes:
+   - **Single week**: pick any week that exists in the data (current behavior).
+   - **Period**: presets (Last 4 weeks, Last 8 weeks, Last 12 weeks, Month to date, Quarter to date, Year to date, Custom range with from/to week pickers). Periods aggregate across the selected weeks.
+
+Filter state lives in the URL query string (e.g. `?parts=12,15&resellers=3&period=last4`) so any filtered view is shareable and deep links from insight cards keep working. Persist the last-used filters in memory per session so switching pages keeps the slice. A "Clear filters" chip shows whenever anything is non-default.
+
+## Backend changes
+
+Extend the existing endpoints (dashboard KPIs, heatmap, explorer, trends, alerts, all insights) to accept:
+- `part_ids` (comma-separated, optional)
+- `reseller_ids` (comma-separated, optional)
+- `week_from` / `week_to` (ISO weeks, optional; when only `week_iso` is passed keep current single-week behavior for backwards compatibility)
+
+Aggregation semantics for a period:
+- **ST, Sold MTD**: sum across the weeks in range.
+- **SOH, On Order**: use the latest week in range per reseller×part (stock is a point-in-time balance, never summed across weeks).
+- **WOI over a period**: latest SOH ÷ average weekly ST across the range (using the shared WOI utility, still excluding bulk-deal-annotated weeks).
+- **WoW deltas**: when a period is selected, deltas compare against the equivalent preceding period of the same length (e.g. Last 4 weeks vs the 4 weeks before that), labeled accordingly ("vs prior 4 wks").
+- Reporting compliance over a period = resellers with at least one committed upload in every week of the range, shown as "reported x of y weeks" per reseller.
+
+## View-specific behavior
+
+- **Dashboard heatmap**: with a period selected, cells show period WOI (latest SOH ÷ avg weekly ST in range). With a model filter, only filtered rows render. With a customer filter, only those columns render.
+- **Explorer**: filtered slice feeds the same pivot; add a third pivot option "Model → Week" when a period is active so you can see a model's weekly progression per reseller in the grid.
+- **Trends**: filter bar replaces the page's own model/reseller pickers (remove the duplicates); the period sets the x-axis range.
+- **Insights**: every section respects the filters. Section headlines restate the slice in plain language, e.g. "MZ-V9P2T0BW at Scorptec + PLE, last 8 weeks". Run-rate math uses trailing weeks within (or immediately before) the selected range.
+- **Exports**: CSV/XLSX export of any filtered view includes a header row stating the active filters and period.
+
+## Guardrails
+
+- If a selected period includes weeks with no data, show a small "n of m weeks have data" note rather than silently averaging over missing weeks; averages divide by weeks-with-data only.
+- Keep queries indexed: add a composite index on (week_iso, reseller_id, part_id) on inventory_snapshots if not present.
+- Empty filter results show a clear empty state with the active filters listed and a one-click clear, never a blank grid.
+
+After building, typecheck and verify: pick one model + two resellers + Last 8 weeks and confirm Dashboard, Explorer, Trends, and Insights all show the identical slice and the URL round-trips it.

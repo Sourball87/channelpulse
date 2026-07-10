@@ -12,4 +12,5 @@ export type GetExplorerDataPivot = typeof GetExplorerDataPivot[keyof typeof GetE
 export const GetExplorerDataPivot = {
   category_model_reseller: 'category_model_reseller',
   reseller_model: 'reseller_model',
+  model_week: 'model_week',
 } as const;
