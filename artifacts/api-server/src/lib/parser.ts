@@ -140,8 +140,8 @@ export function detectWeekFromFilename(filename: string): {
   weekIso: string | null;
   reportDate: string | null;
 } {
-  // 2026_WK_27 or 2026_WK27
-  const wkMatch = filename.match(/(\d{4})[_\-]?WK[_\-]?(\d{1,2})/i);
+  // 2026_WK_27, 2026_WK27, "2026 WK 28", "2026-WK-27", etc.
+  const wkMatch = filename.match(/(\d{4})[\s_\-]?WK[\s_\-]?(\d{1,2})/i);
   if (wkMatch) {
     const year = wkMatch[1];
     const week = wkMatch[2].padStart(2, "0");
