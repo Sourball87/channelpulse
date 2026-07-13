@@ -25,6 +25,22 @@ export interface MappingField {
   sample_values: string[];
 }
 
+export interface ResellerProfile {
+  id: number;
+  name: string;
+  code: string;
+  filenamePatterns: string[];
+  aliases: string[];
+}
+
+/** Resolution source for header-based detection */
+export type HeaderResolutionSource =
+  | "format_unique"   // format maps to exactly one reseller
+  | "sheet_name"      // sheet name disambiguated a shared format
+  | "filename_token"  // filename token result broke the tie
+  | "learned"         // learned fingerprint association broke the tie
+  | null;             // unresolved / no format matched
+
 export interface ParseResult {
   rows: ParsedRow[];
   rawRows: Record<string, unknown>[];
@@ -32,22 +48,24 @@ export interface ParseResult {
   mappings: MappingField[];
   overallConfidence: number;
   parserUsed: string;
+  // Reseller detection
   detectedResellerId: number | null;
   detectedResellerName: string | null;
+  /** All candidate resellers when detection is ambiguous (empty = fully resolved or no match) */
+  detectedCandidates: ResellerProfile[];
+  // Format detection
+  detectedFormatId: string | null;
+  headerResolutionSource: HeaderResolutionSource;
+  /** True when filename detection gave a unique (non-ambiguous) reseller match */
+  filenameResolved: boolean;
+  detectionReasoning: string | null;
+  // Week detection
   detectedWeekIso: string | null;
   detectedReportDate: string | null;
   fileHash: string;
   rowsParsed: number;
   rowsFlagged: number;
   sheetName: string | null;
-}
-
-export interface ResellerProfile {
-  id: number;
-  name: string;
-  code: string;
-  filenamePatterns: string[];
-  aliases: string[];
 }
 
 // ─── Synonym dictionary ───────────────────────────────────────────────────────
@@ -134,6 +152,42 @@ export function hashBuffer(buf: Buffer): string {
   return crypto.createHash("sha256").update(buf).digest("hex");
 }
 
+// ─── Filename tokenisation helpers ────────────────────────────────────────────
+
+/**
+ * Splits a filename (extension removed) into lowercase alpha-numeric tokens.
+ * All runs of non-alphanumeric characters are treated as delimiters.
+ * "2026 WK 28 Samsung SSD SOH reports - KS.xlsx" → ["2026","wk","28","samsung","ssd","soh","reports","ks"]
+ */
+export function tokenizeFilename(filename: string): string[] {
+  const withoutExt = filename.replace(/\.[^.]+$/, "");
+  return withoutExt.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+/**
+ * Returns a lowercase string with every non-alphanumeric character removed.
+ * Used for collapsed matching against hints and DB patterns.
+ */
+export function collapseStr(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Returns a stable collapsed filename for learning — strip pure-number tokens
+ * and ISO week tokens (wk, w, year digits) so the resulting pattern is
+ * file-type specific rather than date-specific.
+ * e.g. "2026 WK 28 Samsung SSD SOH reports - KS.xlsx" → "samsungssdsohreportsks"
+ */
+export function stableCollapsedFilename(filename: string): string {
+  const tokens = tokenizeFilename(filename);
+  const filtered = tokens.filter(t => {
+    if (/^\d+$/.test(t)) return false; // pure number (year, week number, timestamp)
+    if (t === "wk" || t === "w") return false;
+    return true;
+  });
+  return filtered.join("");
+}
+
 // ─── Date detection ───────────────────────────────────────────────────────────
 
 export function detectWeekFromFilename(filename: string): {
@@ -196,7 +250,6 @@ export function currentWeekIso(): string {
 export function previousCompletedWeekIso(): string {
   const now = new Date();
   const dow = now.getUTCDay() || 7; // 1=Mon..7=Sun
-  // Go back to last Sunday (end of the previous full week), then use Thursday of that week
   const lastSunday = new Date(now.getTime() - dow * 86400000);
   return dateStringToWeekIso(lastSunday.toISOString().split("T")[0]);
 }
@@ -206,7 +259,6 @@ export function previousWeekIso(weekIso: string): string {
   const [yearStr, weekStr] = weekIso.split("-W");
   const year = parseInt(yearStr);
   const week = parseInt(weekStr);
-  // Find Monday of the given week via ISO week arithmetic, then subtract 7 days
   const jan4 = new Date(Date.UTC(year, 0, 4));
   const dow = jan4.getUTCDay() || 7;
   const weekMonday = new Date(jan4.getTime() - (dow - 1) * 86400000 + (week - 1) * 7 * 86400000);
@@ -214,125 +266,292 @@ export function previousWeekIso(weekIso: string): string {
   return dateStringToWeekIso(prevMonday.toISOString().split("T")[0]);
 }
 
-// ─── Reseller detection ───────────────────────────────────────────────────────
+// ─── Report format definitions ────────────────────────────────────────────────
+
+interface ReportFormat {
+  formatId: string;
+  /** Normalized column names (lowercase, alphanumeric) that define this format */
+  headers: string[];
+  /** Reseller codes (lowercase) that produce this format */
+  resellerCodes: string[];
+}
+
+const REPORT_FORMATS: ReportFormat[] = [
+  {
+    formatId: "ca_ks_weekly",
+    headers: ["model", "stockonhand", "stockonorder", "soldlast7days", "soldmtd", "averagecostexgst"],
+    resellerCodes: ["ca", "ks"],
+  },
+  {
+    formatId: "v_report",
+    headers: ["partnumber", "soh", "soldlast7days", "soldmtd", "avgcost"],
+    resellerCodes: ["pccg", "digi"],
+  },
+  {
+    formatId: "scorptec_csv",
+    headers: ["category", "model", "onhand", "soldlast7days", "itemaveragecostexgst", "itemaveragecostincgst", "qtyonorder"],
+    resellerCodes: ["scorptec"],
+  },
+  {
+    formatId: "ple_weekly",
+    headers: ["inventoryitemid", "manufacturermodel", "quantityonhand", "quantityonorder", "invoicedquantity", "averagecostextax"],
+    resellerCodes: ["ple"],
+  },
+  {
+    formatId: "umart_weekly",
+    headers: ["sapcode", "sku", "totalonhand", "otheronhand", "daystosale", "onorderqty", "soldqty"],
+    resellerCodes: ["umart"],
+  },
+  {
+    formatId: "jw_weekly",
+    headers: ["modelcode", "soh", "soldlast7days", "soldmtd", "qtyonpo", "avgcost"],
+    resellerCodes: ["jw"],
+  },
+  {
+    formatId: "centrecom_legacy",
+    headers: ["productname", "productmodel", "30d", "14d", "7d", "stock", "avgstockvalue"],
+    resellerCodes: ["centrecom"],
+  },
+];
+
+// ─── Reseller detection — built-in filename hints ─────────────────────────────
+
+/**
+ * Per-reseller filename matching hints.
+ * - shortCodes:          exact-token match (≤3 chars treated as token-only to avoid substring collisions)
+ * - collapsedHints:      collapsed substring match against the collapsed filename
+ * - collapsedNeedToken:  if set, collapsed hints only fire when this token is present in the
+ *                        filename tokens OR no other reseller was already token-matched
+ */
+const BUILTIN_HINTS: Record<string, {
+  shortCodes?: string[];
+  collapsedHints?: string[];
+  collapsedNeedToken?: string;
+}> = {
+  ca:         { shortCodes: ["ca"],  collapsedHints: ["computeralliance"] },
+  ks:         {
+    shortCodes: ["ks"],
+    // These collapsed hints imply KS only when the 'ks' token is present
+    // (or when no other reseller was token-matched), preventing collisions with generic
+    // "Samsung SOH" filenames that could equally be CA.
+    collapsedHints: ["samsungssdsohreports", "samsungmonitorsohreports", "samsungmobilitysohreports"],
+    collapsedNeedToken: "ks",
+  },
+  scorptec:   { collapsedHints: ["scorptec", "scorp"] },
+  umart:      { collapsedHints: ["umart", "sellthruandsoh", "samsungssdsellthru"] },
+  ple:        { shortCodes: ["ple"], collapsedHints: ["reportingprocurementcustom"] },
+  centrecom:  { collapsedHints: ["centrecom"] },
+  pccg:       { collapsedHints: ["pccg"] },
+  jw:         { shortCodes: ["jw"] },
+  digi:       { collapsedHints: ["digi", "digidirect"] },
+};
+
+// ─── Reseller detection — filename ────────────────────────────────────────────
 
 export function detectResellerFromFilename(
   filename: string,
   resellers: ResellerProfile[],
-): { resellerId: number | null; resellerName: string | null; confidence: number } {
-  const lower = filename.toLowerCase();
+): { resellerId: number | null; resellerName: string | null; confidence: number; candidates: ResellerProfile[] } {
+  const tokens = new Set(tokenizeFilename(filename));
+  const collapsed = collapseStr(filename.replace(/\.[^.]+$/, ""));
 
-  // Built-in filename hints (in addition to DB patterns)
-  const builtinHints: Record<string, string[]> = {
-    scorptec: ["scorptec", "scorp"],
-    ks: ["_ks_", "_ks.", "ks_report", "samsung_ssd_soh_reports_ks", "samsung_monitor_soh_reports_ks", "samsung_mobility_soh_reports_ks"],
-    computeralliance: ["computeralliance", "computer_alliance", "samsung_soh_report"],
-    umart: ["umart", "sell_thru_and_soh", "samsung_ssd_sell_thru"],
-    ple: ["reportingprocurementcustom", "ple"],
-    centrecom: ["centrecom"],
-    pccg: ["pccg"],
-    jw: ["jw_", "_jw_", "jw."],
-    digi: ["digi", "digidirect"],
-  };
+  function tokenOrCollapsedMatch(hint: string): boolean {
+    const ch = collapseStr(hint);
+    // Short codes (≤3 chars): exact-token match only — never substring-match
+    // This prevents "ks" matching "weeks", "ca" matching "cable", etc.
+    if (ch.length <= 3) return tokens.has(ch);
+    return collapsed.includes(ch);
+  }
+
+  // ── Pass 1: collect all resellers that match via short codes, collapsed hints
+  //    (without collapsedNeedToken), aliases, or DB filename patterns ──────────
+  const pass1Matched = new Set<string>(); // lower reseller codes
 
   for (const reseller of resellers) {
-    // Check DB filename patterns
+    const code = reseller.code.toLowerCase();
+    const hints = BUILTIN_HINTS[code];
+    let matched = false;
+
+    // DB filename patterns (collapsed for long, token for short)
     for (const pattern of reseller.filenamePatterns) {
-      if (lower.includes(pattern.toLowerCase())) {
-        return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.95 };
+      if (tokenOrCollapsedMatch(pattern)) { matched = true; break; }
+    }
+
+    // Built-in short codes
+    if (!matched && hints?.shortCodes) {
+      for (const sc of hints.shortCodes) {
+        if (tokens.has(sc)) { matched = true; break; }
       }
     }
 
-    // Check built-in hints by code
-    const hints = builtinHints[reseller.code.toLowerCase()] ?? [];
-    for (const hint of hints) {
-      if (lower.includes(hint.toLowerCase())) {
-        return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.9 };
+    // Built-in collapsed hints (only if they don't need a specific token)
+    if (!matched && hints?.collapsedHints && !hints.collapsedNeedToken) {
+      for (const ch of hints.collapsedHints) {
+        if (tokenOrCollapsedMatch(ch)) { matched = true; break; }
       }
     }
 
-    // Check aliases
-    for (const alias of reseller.aliases) {
-      if (lower.includes(alias.toLowerCase())) {
-        return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.85 };
+    // Aliases
+    if (!matched) {
+      for (const alias of reseller.aliases) {
+        if (tokenOrCollapsedMatch(alias)) { matched = true; break; }
       }
+    }
+
+    if (matched) pass1Matched.add(code);
+  }
+
+  // ── Pass 2: apply conditional collapsed hints (collapsedNeedToken) ────────
+  for (const reseller of resellers) {
+    const code = reseller.code.toLowerCase();
+    if (pass1Matched.has(code)) continue; // already matched
+
+    const hints = BUILTIN_HINTS[code];
+    if (!hints?.collapsedHints || !hints.collapsedNeedToken) continue;
+
+    const needToken = hints.collapsedNeedToken;
+    // Fire if: the required token is present in the filename, OR no other reseller was matched yet
+    if (!tokens.has(needToken) && pass1Matched.size > 0) continue;
+
+    for (const ch of hints.collapsedHints) {
+      if (tokenOrCollapsedMatch(ch)) { pass1Matched.add(code); break; }
     }
   }
 
-  return { resellerId: null, resellerName: null, confidence: 0 };
+  const matchedResellers = resellers.filter(r => pass1Matched.has(r.code.toLowerCase()));
+
+  if (matchedResellers.length === 0) {
+    return { resellerId: null, resellerName: null, confidence: 0, candidates: [] };
+  }
+  if (matchedResellers.length === 1) {
+    return {
+      resellerId: matchedResellers[0].id,
+      resellerName: matchedResellers[0].name,
+      confidence: 0.9,
+      candidates: matchedResellers,
+    };
+  }
+  // Multiple matches → ambiguous, surface all candidates
+  return { resellerId: null, resellerName: null, confidence: 0, candidates: matchedResellers };
 }
+
+// ─── Reseller detection — headers ─────────────────────────────────────────────
 
 export function detectResellerFromHeaders(
   headers: string[],
   sheetName: string | null,
   resellers: ResellerProfile[],
-): { resellerId: number | null; resellerName: string | null; confidence: number } {
+  filenameResult?: { resellerId: number | null; candidates: ResellerProfile[]; confidence: number },
+  learnedFingerprints?: Map<string, number>, // fingerprint -> resellerId
+): {
+  resellerId: number | null;
+  resellerName: string | null;
+  confidence: number;
+  formatId: string | null;
+  candidates: ResellerProfile[];
+  resolutionSource: HeaderResolutionSource;
+} {
   const normalizedHeaders = new Set(headers.map((h) => normalize(h)));
 
-  // Known header fingerprints per reseller code
-  const fingerprints: Record<string, string[][]> = {
-    // CA / KS style
-    computeralliance: [["model", "stockonhand", "stockonorder", "soldlast7days", "soldmtd", "averagecostexgst"]],
-    ks: [["model", "stockonhand", "stockonorder", "soldlast7days", "soldmtd", "averagecostexgst"]],
-    // Scorptec CSV
-    scorptec: [["category", "model", "onhand", "soldlast7days", "itemaveragecostexgst", "itemaveragecostincgst", "qtyonorder"]],
-    // PLE
-    ple: [["inventoryitemid", "manufacturermodel", "quantityonhand", "quantityonorder", "invoicedquantity", "averagecostextax"]],
-    // Umart
-    umart: [["sapcode", "sku", "totalonhand", "otheronhand", "daystosale", "onorderqty", "soldqty"]],
-    // JW
-    jw: [["modelcode", "soh", "soldlast7days", "soldmtd", "qtyonpo", "avgcost"]],
-    // V Report
-    vreport: [["partnumber", "soh", "soldlast7days", "soldmtd", "avgcost"]],
-    // Centrecom legacy .xls
-    centrecom: [["productname", "productmodel", "30d", "14d", "7d", "stock", "avgstockvalue"]],
-  };
+  // Find best matching format
+  let bestFormat: ReportFormat | null = null;
+  let bestSim = 0;
 
-  // Sheet name detection
+  for (const format of REPORT_FORMATS) {
+    const knownSet = new Set(format.headers.map(normalize));
+    const sim = jaccardSimilarity(normalizedHeaders, knownSet);
+    if (sim >= 0.7 && sim > bestSim) {
+      bestSim = sim;
+      bestFormat = format;
+    }
+  }
+
+  if (!bestFormat) {
+    return { resellerId: null, resellerName: null, confidence: 0, formatId: null, candidates: [], resolutionSource: null };
+  }
+
+  // Expand format candidates to full ResellerProfile objects from DB
+  const formatCandidates = resellers.filter(r =>
+    bestFormat!.resellerCodes.includes(r.code.toLowerCase())
+  );
+
+  // Single-reseller format → fully resolved
+  if (formatCandidates.length === 1) {
+    return {
+      resellerId: formatCandidates[0].id,
+      resellerName: formatCandidates[0].name,
+      confidence: bestSim,
+      formatId: bestFormat.formatId,
+      candidates: formatCandidates,
+      resolutionSource: "format_unique",
+    };
+  }
+
+  // Multi-reseller format → try tie-breakers in order
+
+  // (a) Sheet name rules
   if (sheetName) {
     const sl = sheetName.toLowerCase();
-    for (const reseller of resellers) {
-      if (sl.includes("computeralliance")) {
-        if (reseller.code.toLowerCase() === "ca") return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.9 };
+    for (const reseller of formatCandidates) {
+      const code = reseller.code.toLowerCase();
+      if (sl.includes("computeralliance") && code === "ca") {
+        return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
-      if (sl.includes("samsung soh report") || sl.includes("samsungsohreport")) {
-        if (reseller.code.toLowerCase() === "ks") return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.9 };
+      if ((sl.includes("samsung soh report") || sl.includes("samsungsohreport")) && code === "ks") {
+        return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
-      if (sl.includes("itemforcastreport") || sl.includes("itemforecastreport")) {
-        if (reseller.code.toLowerCase() === "umart") return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.9 };
+      if ((sl.includes("itemforcastreport") || sl.includes("itemforecastreport")) && code === "umart") {
+        return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
-      if (sl === "forecast") {
-        if (reseller.code.toLowerCase() === "centrecom") return { resellerId: reseller.id, resellerName: reseller.name, confidence: 0.85 };
-      }
-    }
-  }
-
-  let bestMatch = { resellerId: null as number | null, resellerName: null as string | null, confidence: 0 };
-
-  for (const reseller of resellers) {
-    const fp = fingerprints[reseller.code.toLowerCase()];
-    if (!fp) continue;
-
-    for (const knownHeaders of fp) {
-      const knownSet = new Set(knownHeaders.map(normalize));
-      const sim = jaccardSimilarity(normalizedHeaders, knownSet);
-      if (sim >= 0.7 && sim > bestMatch.confidence) {
-        bestMatch = { resellerId: reseller.id, resellerName: reseller.name, confidence: sim };
+      if (sl === "forecast" && code === "centrecom") {
+        return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
     }
   }
 
-  // If nothing matched yet, try a looser match against the V report (single-reseller files)
-  // Could be any reseller sending the V_ report style
-  if (bestMatch.confidence === 0) {
-    const vReportHeaders = new Set(["partnumber", "soh", "soldlast7days", "soldmtd", "avgcost"].map(normalize));
-    const sim = jaccardSimilarity(normalizedHeaders, vReportHeaders);
-    if (sim >= 0.7) {
-      bestMatch = { resellerId: null, resellerName: "Unknown (V-Report style)", confidence: sim * 0.6 };
+  // (b) Filename token result matches one of the format's candidates
+  if (filenameResult?.resellerId) {
+    const match = formatCandidates.find(r => r.id === filenameResult.resellerId);
+    if (match) {
+      return {
+        resellerId: match.id,
+        resellerName: match.name,
+        confidence: bestSim,
+        formatId: bestFormat.formatId,
+        candidates: formatCandidates,
+        resolutionSource: "filename_token",
+      };
     }
   }
 
-  return bestMatch;
+  // (c) Learned fingerprint associations
+  if (learnedFingerprints) {
+    const fingerprint = computeHeaderFingerprint(headers);
+    const learnedId = learnedFingerprints.get(fingerprint);
+    if (learnedId) {
+      const match = formatCandidates.find(r => r.id === learnedId);
+      if (match) {
+        return {
+          resellerId: match.id,
+          resellerName: match.name,
+          confidence: 0.85,
+          formatId: bestFormat.formatId,
+          candidates: formatCandidates,
+          resolutionSource: "learned",
+        };
+      }
+    }
+  }
+
+  // No tie-breaker resolved it — ambiguous
+  return {
+    resellerId: null,
+    resellerName: null,
+    confidence: 0,
+    formatId: bestFormat.formatId,
+    candidates: formatCandidates,
+    resolutionSource: null,
+  };
 }
 
 // ─── Column mapping ───────────────────────────────────────────────────────────
@@ -500,6 +719,8 @@ export async function parseFile(
   filename: string,
   resellers: ResellerProfile[],
   savedMappings?: Map<string, MappingField[]>,
+  /** Map of header fingerprint → resellerId from learned associations */
+  learnedFingerprints?: Map<string, number>,
 ): Promise<ParseResult> {
   const fileHash = hashBuffer(buf);
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
@@ -520,25 +741,80 @@ export async function parseFile(
     sheetName = r.sheetName;
   }
 
-  // Reseller detection: filename first, then headers
-  let resellerResult = detectResellerFromFilename(filename, resellers);
-  if (resellerResult.confidence < 0.7) {
-    const headerResult = detectResellerFromHeaders(headers, sheetName, resellers);
-    if (headerResult.confidence > resellerResult.confidence) {
-      resellerResult = headerResult;
-    }
+  // ── Reseller detection ──────────────────────────────────────────────────────
+
+  // Step 1: filename-based detection
+  const filenameResult = detectResellerFromFilename(filename, resellers);
+  const filenameResolved = filenameResult.resellerId !== null;
+
+  // Step 2: header/format-based detection, with filename result as a tie-break hint
+  const headerResult = detectResellerFromHeaders(
+    headers,
+    sheetName,
+    resellers,
+    filenameResult,
+    learnedFingerprints,
+  );
+
+  // Step 3: combine results
+  let finalResellerId: number | null = null;
+  let finalResellerName: string | null = null;
+  let finalCandidates: ResellerProfile[] = [];
+  let finalConfidence = 0;
+  let headerResolutionSource: HeaderResolutionSource = headerResult.resolutionSource;
+
+  if (headerResult.resellerId !== null) {
+    // Header detection resolved → use it (it already incorporated filename as tie-break)
+    finalResellerId = headerResult.resellerId;
+    finalResellerName = headerResult.resellerName;
+    finalCandidates = headerResult.candidates;
+    finalConfidence = headerResult.confidence;
+  } else if (filenameResult.resellerId !== null) {
+    // Header detection didn't resolve but filename did — use filename result
+    finalResellerId = filenameResult.resellerId;
+    finalResellerName = filenameResult.resellerName;
+    finalCandidates = filenameResult.candidates;
+    finalConfidence = filenameResult.confidence;
+  } else {
+    // Neither resolved — surface combined candidates for review
+    const allCandidates = [
+      ...(filenameResult.candidates.length > 0 ? filenameResult.candidates : []),
+      ...(headerResult.candidates.length > 0 ? headerResult.candidates : []),
+    ];
+    // Deduplicate by id
+    const seen = new Set<number>();
+    finalCandidates = allCandidates.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
   }
 
-  // Date detection from filename
+  // ── Detection reasoning string ──────────────────────────────────────────────
+
+  const reasonParts: string[] = [];
+  if (filenameResolved) {
+    const token = tokenizeFilename(filename).find(t => BUILTIN_HINTS[filenameResult.candidates[0]?.code?.toLowerCase()]?.shortCodes?.includes(t));
+    reasonParts.push(`filename token '${token ?? filenameResult.candidates[0]?.code ?? "?"}'`);
+  } else if (filenameResult.candidates.length > 1) {
+    reasonParts.push(`filename ambiguous (${filenameResult.candidates.map(r => r.code).join(", ")})`);
+  }
+  if (headerResult.formatId) {
+    reasonParts.push(`format '${headerResult.formatId}'`);
+    if (headerResult.resolutionSource === "sheet_name") reasonParts.push(`sheet '${sheetName}'`);
+    if (headerResult.resolutionSource === "learned") reasonParts.push("learned association");
+    if (headerResult.resolutionSource === "filename_token") reasonParts.push("filename tie-break");
+  }
+
+  const detectionReasoning = reasonParts.length > 0
+    ? `Detected ${finalResellerName ?? "unknown"} via: ${reasonParts.join(" + ")}`
+    : null;
+
+  // ── Date detection from filename ────────────────────────────────────────────
   const { weekIso, reportDate } = detectWeekFromFilename(filename);
 
-  // Column mapping
+  // ── Column mapping ──────────────────────────────────────────────────────────
   let mappings: MappingField[];
 
-  // Check for saved mappings for this reseller
-  if (savedMappings && resellerResult.resellerId) {
+  if (savedMappings && finalResellerId) {
     const fingerprint = computeHeaderFingerprint(headers);
-    const saved = savedMappings.get(`${resellerResult.resellerId}:${fingerprint}`);
+    const saved = savedMappings.get(`${finalResellerId}:${fingerprint}`);
     if (saved) {
       mappings = saved;
     } else {
@@ -548,13 +824,13 @@ export async function parseFile(
     mappings = mapHeaders(headers, rawRows);
   }
 
-  // Apply mappings to rows
+  // ── Apply mappings to rows ──────────────────────────────────────────────────
   const parsedRows = applyMappingsToRows(rawRows, mappings);
   const rowsParsed = parsedRows.length;
   const rowsFlagged = parsedRows.filter((r) => r.flagged).length;
 
-  // Overall confidence
-  const resellerConf = resellerResult.confidence;
+  // ── Overall confidence ──────────────────────────────────────────────────────
+  const resellerConf = finalResellerId !== null ? finalConfidence : 0;
   const mappingConf = computeMappingConfidence(mappings);
   const overallConfidence = resellerConf * 0.5 + mappingConf * 0.5;
 
@@ -565,8 +841,13 @@ export async function parseFile(
     mappings,
     overallConfidence,
     parserUsed: ext === "csv" ? "papaparse" : "sheetjs",
-    detectedResellerId: resellerResult.resellerId,
-    detectedResellerName: resellerResult.resellerName,
+    detectedResellerId: finalResellerId,
+    detectedResellerName: finalResellerName,
+    detectedCandidates: finalCandidates,
+    detectedFormatId: headerResult.formatId,
+    headerResolutionSource,
+    filenameResolved,
+    detectionReasoning,
     detectedWeekIso: weekIso,
     detectedReportDate: reportDate,
     fileHash,

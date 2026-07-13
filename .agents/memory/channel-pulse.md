@@ -39,6 +39,16 @@ description: Key architecture choices, gotchas, and conventions for the ChannelP
 - `useGetExplorerTrend` and `useGetTrends` accept `{ query?: UseQueryOptions<...> }` but `UseQueryOptions` requires `queryKey`. Workaround: cast `{ enabled: bool } as any`.
 - AG Grid `columnDefs` field must be `NestedFieldPaths<RowType>` in v32+. Workaround: type the `colDefs` array as `any[]`.
 
+## Parser reseller detection (rewritten)
+- **Token-based filename matching:** `tokenizeFilename()` splits on any non-alphanumeric run; short codes (≤3 chars: `ks`, `ca`, `jw`, `ple`) match ONLY as exact tokens — never as substrings — preventing "weeks"→KS, "cable"→CA collisions.
+- **Format-based header fingerprinting:** `REPORT_FORMATS` defines named formats with a `resellerCodes` list. `detectResellerFromHeaders` uses Jaccard similarity (≥0.7) to match, then resolves multi-reseller formats via tie-breakers: (a) sheet name, (b) filename token result, (c) learned fingerprint association.
+- **`ca_ks_weekly` format:** CA and KS share identical headers. Sheet "ComputerAlliance"→CA; sheet "Samsung SOH report"→KS; neither→ambiguous with candidates surfaced.
+- **V-Report format:** `partnumber/soh/soldlast7days/soldmtd/avgcost` used by PCCG + DigiDirect. Returns `confidence:0` + candidates; old `sim*0.6` hack removed.
+- **Auto-commit gate (hardened §3):** requires `format_unique` OR `filename_token` OR (`filenameResolved` + `sheet_name`). `learned` tie-breaks always go to review. Week must come from filename.
+- **Learn from corrections (§4):** on manual commit, `stableCollapsedFilename()` (strips number/wk tokens) is saved to `resellers.filename_patterns`; header fingerprint saved to new `reseller_format_associations` table.
+- **New DB table:** `reseller_format_associations(id, reseller_id, fingerprint, created_at)` with unique constraint on `(reseller_id, fingerprint)`.
+- **Tests:** 33 unit tests in `artifacts/api-server/src/lib/parser.test.ts`, run with `pnpm --filter @workspace/api-server test`.
+
 ## Insights routes
 - All 6 insights routes (`health`, `stockout`, `overstock`, `rebalancing`, `whitespace`, `reseller-perf`) updated to use `parseFilterParams` + `buildConditions`.
 - `catFilter`/`catJoin` pattern replaced with `buildConditions([week condition, category condition?], filters)`.

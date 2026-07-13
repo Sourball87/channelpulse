@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { db, uploads, inventorySnapshots, resellers, parts, columnMappings } from "@workspace/db";
+import { db, uploads, inventorySnapshots, resellers, parts, columnMappings, resellerFormatAssociations } from "@workspace/db";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import {
   parseFile,
@@ -8,6 +8,7 @@ import {
   hashBuffer,
   computeHeaderFingerprint,
   previousCompletedWeekIso,
+  stableCollapsedFilename,
   type MappingField,
 } from "../lib/parser";
 import { deriveCategory } from "./parts";
@@ -27,6 +28,16 @@ async function getAllResellers() {
     filenamePatterns: r.filenamePatterns ?? [],
     aliases: r.aliases ?? [],
   }));
+}
+
+/** Load all learned fingerprint → resellerId associations */
+async function getLearnedFingerprints(): Promise<Map<string, number>> {
+  const rows = await db.select().from(resellerFormatAssociations);
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    map.set(row.fingerprint, row.resellerId);
+  }
+  return map;
 }
 
 router.get("/uploads", async (req, res) => {
@@ -87,7 +98,10 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
       return res.status(400).json({ error: "No files provided" });
     }
 
-    const allResellers = await getAllResellers();
+    const [allResellers, learnedFingerprints] = await Promise.all([
+      getAllResellers(),
+      getLearnedFingerprints(),
+    ]);
     const reviewCards: unknown[] = [];
     // Track hashes seen within this batch to catch same-batch duplicates
     const batchHashes = new Set<string>();
@@ -117,6 +131,9 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           overwrites_existing: false,
           existing_snapshot_count: null,
           week_not_detected: false,
+          candidates: [],
+          detected_format_id: null,
+          detection_reasoning: null,
         });
         continue;
       }
@@ -146,12 +163,15 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           overwrites_existing: false,
           existing_snapshot_count: null,
           week_not_detected: false,
+          candidates: [],
+          detected_format_id: null,
+          detection_reasoning: null,
         });
         continue;
       }
 
       try {
-        const parseResult = await parseFile(buf, filename, allResellers);
+        const parseResult = await parseFile(buf, filename, allResellers, undefined, learnedFingerprints);
 
         // Build saved mappings lookup if reseller detected
         let finalMappings = parseResult.mappings;
@@ -178,7 +198,6 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
         let overwritesExisting = false;
         let existingSnapshotCount: number | null = null;
         if (parseResult.detectedResellerId && !weekNotDetected) {
-          // Determine incoming part numbers to scope the check
           const parsedRows = applyMappingsToRows(parseResult.rawRows, finalMappings);
           const incomingPartNos = [...new Set(parsedRows.map(r => r.part_no).filter(Boolean))] as string[];
 
@@ -206,7 +225,30 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           }
         }
 
-        const status = "review";
+        // ── §3 Auto-commit gate (hardened) ────────────────────────────────────
+        // All conditions must hold:
+        //  1. Reseller uniquely resolved (not null, no ambiguous candidates)
+        //  2. Detection agreement:
+        //       - format_unique: header format maps to exactly this one reseller (no filename needed)
+        //       - filename_token: filename token + format both pointed to same reseller
+        //       - sheet_name + filenameResolved: sheet name AND filename both agree
+        //     (learned-association tie-breaks always go to review for safety)
+        //  3. Overall confidence ≥ 0.9
+        //  4. Week detected from filename (not inferred)
+        //  5. No overwrite conflict
+        const detectionAgreement =
+          parseResult.headerResolutionSource === "format_unique" ||
+          parseResult.headerResolutionSource === "filename_token" ||
+          (parseResult.filenameResolved && parseResult.headerResolutionSource === "sheet_name");
+
+        const canAutoCommit =
+          parseResult.overallConfidence >= 0.9 &&
+          !overwritesExisting &&
+          parseResult.detectedResellerId !== null &&
+          !weekNotDetected &&
+          detectionAgreement &&
+          // Learned-association tie-break → always queue for review
+          parseResult.headerResolutionSource !== "learned";
 
         const [uploadRow] = await db
           .insert(uploads)
@@ -216,7 +258,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
             fileHash,
             reportDate: parseResult.detectedReportDate,
             weekIso: detectedWeek,
-            status,
+            status: "review",
             parserUsed: parseResult.parserUsed,
             confidence: String(parseResult.overallConfidence),
             rowsParsed: parseResult.rowsParsed,
@@ -227,15 +269,9 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           })
           .returning();
 
-        // Auto-commit only when: high confidence + reseller known + week detected + no overwrite
         let finalStatus = "needs_review";
-        if (
-          parseResult.overallConfidence >= 0.9 &&
-          !overwritesExisting &&
-          parseResult.detectedResellerId &&
-          !weekNotDetected
-        ) {
-          await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId, detectedWeek, finalMappings, parseResult.rawRows, false);
+        if (canAutoCommit) {
+          await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId!, detectedWeek, finalMappings, parseResult.rawRows, false);
           finalStatus = "auto_committed";
         }
 
@@ -261,6 +297,10 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           overwrites_existing: overwritesExisting,
           existing_snapshot_count: existingSnapshotCount,
           week_not_detected: weekNotDetected,
+          // New fields for review card enrichment
+          candidates: parseResult.detectedCandidates.map(r => ({ id: r.id, name: r.name, code: r.code })),
+          detected_format_id: parseResult.detectedFormatId,
+          detection_reasoning: parseResult.detectionReasoning,
         });
       } catch (parseErr) {
         req.log.error({ err: parseErr, filename }, "Failed to parse file");
@@ -295,6 +335,9 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           overwrites_existing: false,
           existing_snapshot_count: null,
           week_not_detected: false,
+          candidates: [],
+          detected_format_id: null,
+          detection_reasoning: null,
         });
       }
     }
@@ -372,7 +415,7 @@ async function commitUploadInternal(
     });
   }
 
-  // Delete existing snapshots scoped ONLY to the incoming part IDs (not the whole reseller+week)
+  // Delete existing snapshots scoped ONLY to the incoming part IDs
   if (confirmOverwrite && incomingPartIds.length > 0) {
     await db
       .delete(inventorySnapshots)
@@ -393,7 +436,7 @@ async function commitUploadInternal(
     return true;
   });
 
-  // Upsert snapshots — a corrected re-upload replaces the old data
+  // Upsert snapshots
   if (deduplicatedValues.length > 0) {
     const batchSize = 100;
     for (let i = 0; i < deduplicatedValues.length; i += batchSize) {
@@ -417,7 +460,7 @@ async function commitUploadInternal(
     }
   }
 
-  // Update upload record — persist the committed reseller and week
+  // Update upload record
   await db
     .update(uploads)
     .set({ status: "committed", resellerId, weekIso })
@@ -445,7 +488,6 @@ router.post("/uploads/:id/commit", async (req, res) => {
     const rawRows = (uploadRow[0].rawRows as Record<string, unknown>[]) ?? [];
 
     if (!confirm_overwrite) {
-      // Scope the conflict check to only the incoming part IDs
       const parsedRows = applyMappingsToRows(rawRows, mappings as MappingField[]);
       const incomingPartNos = [...new Set(parsedRows.map(r => r.part_no).filter(Boolean))] as string[];
 
@@ -487,6 +529,54 @@ router.post("/uploads/:id/commit", async (req, res) => {
       confirm_overwrite ?? false,
     );
 
+    // ── §4 Learn from manual corrections ─────────────────────────────────────
+    // Save the stable collapsed filename pattern to the reseller's filename_patterns (deduped)
+    // Save the header fingerprint to reseller_format_associations
+    try {
+      const rawHeaders = (uploadRow[0].rawHeaders as string[] | null) ?? [];
+      const headers: string[] = Array.isArray(rawHeaders) ? rawHeaders : [];
+      const filename = uploadRow[0].filename;
+
+      await Promise.all([
+        // Save stable collapsed filename → reseller's filename_patterns
+        (async () => {
+          const collapsed = stableCollapsedFilename(filename);
+          if (!collapsed) return;
+
+          const resellerRow = await db
+            .select({ filenamePatterns: resellers.filenamePatterns })
+            .from(resellers)
+            .where(eq(resellers.id, reseller_id))
+            .limit(1);
+
+          if (!resellerRow[0]) return;
+          const existing = resellerRow[0].filenamePatterns ?? [];
+          if (!existing.includes(collapsed)) {
+            await db
+              .update(resellers)
+              .set({ filenamePatterns: [...existing, collapsed] })
+              .where(eq(resellers.id, reseller_id));
+          }
+        })(),
+
+        // Save header fingerprint → reseller_format_associations
+        (async () => {
+          if (headers.length === 0) return;
+          const fingerprint = computeHeaderFingerprint(headers);
+          await db
+            .insert(resellerFormatAssociations)
+            .values({ resellerId: reseller_id, fingerprint })
+            .onConflictDoUpdate({
+              target: [resellerFormatAssociations.resellerId, resellerFormatAssociations.fingerprint],
+              set: { resellerId: reseller_id }, // no-op update, just prevent duplicate error
+            });
+        })(),
+      ]);
+    } catch (learnErr) {
+      // Non-fatal: learning failures must not block the commit response
+      req.log.warn({ err: learnErr }, "Failed to save learned associations after commit");
+    }
+
     const updated = await db
       .select()
       .from(uploads)
@@ -508,6 +598,8 @@ router.post("/uploads/:id/commit", async (req, res) => {
       rows_parsed: u.rowsParsed,
       rows_flagged: u.rowsFlagged,
       raw_headers: u.rawHeaders,
+      // Signal to the frontend to show the "learned" toast
+      learned: true,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to commit upload");
@@ -520,7 +612,6 @@ router.delete("/uploads/:id", async (req, res) => {
   if (!params.success) return res.status(400).json({ error: "Invalid id" });
 
   try {
-    // Cascades to inventory_snapshots due to ON DELETE CASCADE
     await db.delete(uploads).where(eq(uploads.id, params.data.id));
     res.json({ success: true, message: "Upload and associated snapshots deleted" });
   } catch (err) {

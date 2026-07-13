@@ -87,6 +87,24 @@ export const columnMappings = pgTable(
   }),
 );
 
+export const resellerFormatAssociations = pgTable(
+  "reseller_format_associations",
+  {
+    id: serial("id").primaryKey(),
+    resellerId: integer("reseller_id")
+      .references(() => resellers.id)
+      .notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniq: unique("reseller_format_associations_reseller_fingerprint").on(
+      table.resellerId,
+      table.fingerprint,
+    ),
+  }),
+);
+
 export const insightSettings = pgTable("insight_settings", {
   id: serial("id").primaryKey(),
   woiGreenMax: integer("woi_green_max").default(8).notNull(),
@@ -124,5 +142,6 @@ export type Part = typeof parts.$inferSelect;
 export type Upload = typeof uploads.$inferSelect;
 export type InventorySnapshot = typeof inventorySnapshots.$inferSelect;
 export type ColumnMapping = typeof columnMappings.$inferSelect;
+export type ResellerFormatAssociation = typeof resellerFormatAssociations.$inferSelect;
 export type InsightSettings = typeof insightSettings.$inferSelect;
 export type InsightAnnotation = typeof insightAnnotations.$inferSelect;
