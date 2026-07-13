@@ -4,7 +4,7 @@ import { useGetUploads, useDeleteUpload, useGetResellers, getGetUploadsQueryKey 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, XCircle, Clock, TriangleAlert } from "lucide-react";
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, XCircle, Clock, TriangleAlert, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -68,6 +68,7 @@ export default function UploadCenter() {
   const [pendingReviews, setPendingReviews] = useState<any[]>([]);
   const [conflictInfo, setConflictInfo] = useState<ConflictState | null>(null);
   const [isConfirmingOverwrite, setIsConfirmingOverwrite] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; filename: string; status: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -115,15 +116,20 @@ export default function UploadCenter() {
     processFiles(e.dataTransfer.files);
   };
 
-  const handleDelete = (id: number) => {
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
     deleteUpload.mutate(
-      { id },
+      { id: deleteTarget.id },
       {
         onSuccess: () => {
-          toast({ title: "Upload rolled back successfully" });
+          toast({ title: "Upload deleted", description: `"${deleteTarget.filename}" has been removed.` });
           queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
+          setDeleteTarget(null);
         },
-        onError: () => toast({ title: "Failed to roll back upload", variant: "destructive" }),
+        onError: () => {
+          toast({ title: "Failed to delete upload", variant: "destructive" });
+          setDeleteTarget(null);
+        },
       }
     );
   };
@@ -313,17 +319,16 @@ export default function UploadCenter() {
                       </TableCell>
                       <TableCell>{upload.rows_parsed?.toLocaleString() || "—"}</TableCell>
                       <TableCell className="text-right">
-                        {(upload.status === "committed" || upload.status === "review") && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                            onClick={() => handleDelete(upload.id)}
-                            disabled={deleteUpload.isPending}
-                          >
-                            Rollback
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-rose-600 hover:bg-rose-50"
+                          onClick={() => setDeleteTarget({ id: upload.id, filename: upload.filename, status: upload.status })}
+                          disabled={deleteUpload.isPending}
+                          title="Delete upload"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -333,6 +338,30 @@ export default function UploadCenter() {
           </Card>
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-rose-500" />
+              Delete Upload?
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently remove <strong className="text-foreground">{deleteTarget?.filename}</strong> from the database.
+              {deleteTarget?.status === "committed" && (
+                <span className="block mt-1 text-rose-600 font-medium">All inventory snapshots from this file will also be deleted.</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleteUpload.isPending}>
+              {deleteUpload.isPending ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Conflict overwrite dialog */}
       <Dialog open={!!conflictInfo} onOpenChange={(open) => { if (!open) setConflictInfo(null); }}>
