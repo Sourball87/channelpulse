@@ -124,6 +124,7 @@ export default function UploadCenter() {
         onSuccess: () => {
           toast({ title: "Upload deleted", description: `"${deleteTarget.filename}" has been removed.` });
           queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
+          setPendingReviews(prev => prev.filter(p => p.upload_id !== deleteTarget.id));
           setDeleteTarget(null);
         },
         onError: () => {
@@ -255,8 +256,7 @@ export default function UploadCenter() {
                   review={review}
                   onCommit={(commitData) => handleCommitReview(review, commitData)}
                   onDiscard={() => {
-                    if (review.upload_id) handleDelete(review.upload_id);
-                    setPendingReviews(prev => prev.filter(p => p.upload_id !== review.upload_id));
+                    if (review.upload_id) setDeleteTarget({ id: review.upload_id, filename: review.filename, status: "review" });
                   }}
                 />
               ))}
