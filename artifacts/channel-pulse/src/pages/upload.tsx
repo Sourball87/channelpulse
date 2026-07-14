@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetUploads, useDeleteUpload, useGetResellers, getGetUploadsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
@@ -75,6 +75,31 @@ export default function UploadCenter() {
 
   const { data: uploads, isLoading: isLoadingUploads } = useGetUploads({ limit: 50 });
   const deleteUpload = useDeleteUpload();
+
+  // Rehydrate review cards from DB on load (survives page refresh)
+  useEffect(() => {
+    if (!uploads) return;
+    const reviewUploads = uploads.filter((u: any) => u.status === "review" && u.detected_mappings);
+    if (reviewUploads.length === 0) return;
+    setPendingReviews(prev => {
+      const existingIds = new Set(prev.map((p: any) => p.upload_id));
+      const toAdd = reviewUploads
+        .filter((u: any) => !existingIds.has(u.id))
+        .map((u: any) => ({
+          upload_id: u.id,
+          filename: u.filename,
+          status: "needs_review",
+          detected_reseller_id: u.reseller_id ?? null,
+          detected_week_iso: u.week_iso ?? "",
+          week_not_detected: !u.week_iso,
+          mappings: u.detected_mappings,
+          candidates: [],
+          detected_format_id: null,
+          detection_reasoning: null,
+        }));
+      return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
+    });
+  }, [uploads]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();

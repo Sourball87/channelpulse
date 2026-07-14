@@ -61,6 +61,7 @@ router.get("/uploads", async (req, res) => {
         rows_parsed: uploads.rowsParsed,
         rows_flagged: uploads.rowsFlagged,
         raw_headers: uploads.rawHeaders,
+        detected_mappings: uploads.detectedMappings,
       })
       .from(uploads)
       .leftJoin(resellers, eq(uploads.resellerId, resellers.id))
@@ -83,6 +84,7 @@ router.get("/uploads", async (req, res) => {
         rows_parsed: r.rows_parsed,
         rows_flagged: r.rows_flagged,
         raw_headers: r.raw_headers,
+        detected_mappings: r.status === "review" ? (r.detected_mappings as any[] | null) : undefined,
       })),
     );
   } catch (err) {
