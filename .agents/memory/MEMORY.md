@@ -1,1 +1,2 @@
 - [ChannelPulse build decisions](channel-pulse.md) — key architecture choices and gotchas for this project
+- [Focus drill-down](focus-drill-down.md) — user wants a PHO-style sidebar with account/SKU selections that automatically filter analytics.

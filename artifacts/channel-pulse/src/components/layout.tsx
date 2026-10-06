@@ -7,7 +7,9 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarProvider,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { FocusSidebar } from "@/components/focus-sidebar";
 import {
   LayoutDashboard,
   TableProperties,
@@ -40,16 +42,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const showFilterBar = FILTER_PATHS.includes(location);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider style={{
+      "--sidebar": "0 0% 98%",
+      "--sidebar-foreground": "220 13% 24%",
+      "--sidebar-border": "220 10% 84%",
+      "--sidebar-accent": "190 52% 92%",
+      "--sidebar-accent-foreground": "193 65% 25%",
+    } as React.CSSProperties}>
       <div className="flex min-h-screen w-full bg-background">
         <Sidebar className="border-r">
           <SidebarHeader className="h-14 flex items-center px-4 border-b border-sidebar-border">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-500/20 ring-1 ring-blue-400/30">
-                <Activity className="h-4 w-4 text-blue-300" />
+                <Activity className="h-4 w-4 text-cyan-700" />
               </div>
-              <span className="text-[15px] font-semibold tracking-tight text-white/90">
-                Channel<span className="text-blue-300 font-bold">Pulse</span>
+              <span className="text-[15px] font-semibold tracking-tight text-slate-700">
+                Channel<span className="text-cyan-600 font-bold">Pulse</span>
               </span>
             </div>
           </SidebarHeader>
@@ -81,9 +89,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 })}
               </SidebarMenu>
             </div>
+            {showFilterBar && <FocusSidebar />}
           </SidebarContent>
         </Sidebar>
         <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          <div className="flex-none flex items-center gap-2 border-b px-2 py-1 md:hidden">
+            <SidebarTrigger aria-label="Open navigation and focus panel" />
+            <span className="text-sm font-medium">ChannelPulse</span>
+          </div>
           {showFilterBar && <GlobalFilterBar />}
           {children}
         </main>
