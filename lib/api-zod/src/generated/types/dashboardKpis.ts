@@ -9,6 +9,9 @@ import type { KpiCard } from './kpiCard';
 import type { ResellerStatus } from './resellerStatus';
 
 export interface DashboardKpis {
+  is_period?: boolean;
+  period_label?: string;
+  delta_label?: string;
   week_iso: string;
   kpis: KpiCard[];
   reseller_statuses: ResellerStatus[];

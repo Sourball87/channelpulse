@@ -7,7 +7,11 @@ import {
   applyMappingsToRows,
   hashBuffer,
   computeHeaderFingerprint,
-  previousCompletedWeekIso,
+  isAutoCommitEligible,
+  isValidWeekIso,
+  detectWeekFromFilename,
+  detectResellerFromHeaders,
+  detectResellerFromFilename,
   stableCollapsedFilename,
   type MappingField,
 } from "../lib/parser";
@@ -34,9 +38,14 @@ async function getAllResellers() {
 async function getLearnedFingerprints(): Promise<Map<string, number>> {
   const rows = await db.select().from(resellerFormatAssociations);
   const map = new Map<string, number>();
+  const ambiguous = new Set<string>();
   for (const row of rows) {
+    if (map.has(row.fingerprint) && map.get(row.fingerprint) !== row.resellerId) {
+      ambiguous.add(row.fingerprint);
+    }
     map.set(row.fingerprint, row.resellerId);
   }
+  for (const fingerprint of ambiguous) map.delete(fingerprint);
   return map;
 }
 
@@ -45,6 +54,7 @@ router.get("/uploads", async (req, res) => {
     const q = GetUploadsQueryParams.safeParse(req.query);
     const limit = q.success ? (q.data.limit ?? 50) : 50;
     const offset = q.success ? (q.data.offset ?? 0) : 0;
+    const profiles = await getAllResellers();
 
     const rows = await db
       .select({
@@ -70,7 +80,12 @@ router.get("/uploads", async (req, res) => {
       .offset(offset);
 
     res.json(
-      rows.map((r) => ({
+      rows.map((r) => {
+        const format = detectResellerFromHeaders(
+          Array.isArray(r.raw_headers) ? r.raw_headers as string[] : [],
+          null, profiles, detectResellerFromFilename(r.filename, profiles),
+        );
+        return ({
         id: r.id,
         reseller_id: r.reseller_id,
         reseller_name: r.reseller_name,
@@ -85,7 +100,14 @@ router.get("/uploads", async (req, res) => {
         rows_flagged: r.rows_flagged,
         raw_headers: r.raw_headers,
         detected_mappings: r.status === "review" ? (r.detected_mappings as any[] | null) : undefined,
-      })),
+        week_not_detected: r.status === "review" && !detectWeekFromFilename(r.filename).weekIso,
+        candidates: format.candidates.map(c => ({ id: c.id, name: c.name, code: c.code })),
+        detected_format_id: format.formatId,
+        detection_reasoning: r.status === "review"
+          ? (r.reseller_id ? `Recognised report for ${r.reseller_name}. Confirm the columns and reporting week.`
+            : "Reseller is unresolved. Select the correct reseller before committing.")
+          : null,
+      }); }),
     );
   } catch (err) {
     req.log.error({ err }, "Failed to get uploads");
@@ -194,12 +216,12 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
 
         // Week detection result
         const weekNotDetected = !parseResult.detectedWeekIso;
-        const detectedWeek = parseResult.detectedWeekIso ?? previousCompletedWeekIso();
+        const detectedWeek = parseResult.detectedWeekIso;
 
         // Check if this would overwrite existing data — scoped to incoming parts
         let overwritesExisting = false;
         let existingSnapshotCount: number | null = null;
-        if (parseResult.detectedResellerId && !weekNotDetected) {
+        if (parseResult.detectedResellerId && detectedWeek) {
           const parsedRows = applyMappingsToRows(parseResult.rawRows, finalMappings);
           const incomingPartNos = [...new Set(parsedRows.map(r => r.part_no).filter(Boolean))] as string[];
 
@@ -238,19 +260,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
         //  3. Overall confidence ≥ 0.9
         //  4. Week detected from filename (not inferred)
         //  5. No overwrite conflict
-        const detectionAgreement =
-          parseResult.headerResolutionSource === "format_unique" ||
-          parseResult.headerResolutionSource === "filename_token" ||
-          (parseResult.filenameResolved && parseResult.headerResolutionSource === "sheet_name");
-
-        const canAutoCommit =
-          parseResult.overallConfidence >= 0.9 &&
-          !overwritesExisting &&
-          parseResult.detectedResellerId !== null &&
-          !weekNotDetected &&
-          detectionAgreement &&
-          // Learned-association tie-break → always queue for review
-          parseResult.headerResolutionSource !== "learned";
+        const canAutoCommit = isAutoCommitEligible(parseResult, finalMappings, overwritesExisting);
 
         const [uploadRow] = await db
           .insert(uploads)
@@ -273,7 +283,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
 
         let finalStatus = "needs_review";
         if (canAutoCommit) {
-          await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId!, detectedWeek, finalMappings, parseResult.rawRows, false);
+          await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId!, detectedWeek!, finalMappings, parseResult.rawRows, false);
           finalStatus = "auto_committed";
         }
 
@@ -360,10 +370,13 @@ async function commitUploadInternal(
   confirmOverwrite: boolean,
 ) {
   const parsedRows = applyMappingsToRows(rawRows, mappings);
+  return db.transaction(async tx => {
+  const [source] = await tx.select({ reportDate: uploads.reportDate })
+    .from(uploads).where(eq(uploads.id, uploadId));
 
   // Get or create parts
   const partMap = new Map<string, number>();
-  const existingParts = await db.select().from(parts);
+  const existingParts = await tx.select().from(parts);
   for (const p of existingParts) {
     partMap.set(p.partNo, p.id);
   }
@@ -377,7 +390,7 @@ async function commitUploadInternal(
     let partId = partMap.get(row.part_no);
     if (!partId) {
       const category = deriveCategory(row.part_no);
-      const [newPart] = await db
+      const [newPart] = await tx
         .insert(parts)
         .values({ partNo: row.part_no, category })
         .onConflictDoNothing()
@@ -387,7 +400,7 @@ async function commitUploadInternal(
         partId = newPart.id;
         partMap.set(row.part_no, partId);
       } else {
-        const existing = await db
+        const existing = await tx
           .select()
           .from(parts)
           .where(eq(parts.partNo, row.part_no))
@@ -407,6 +420,7 @@ async function commitUploadInternal(
       resellerId,
       partId,
       weekIso,
+      reportDate: source?.reportDate ?? null,
       soh: row.soh,
       sellThrough7d: row.sell_through_7d,
       soldMtd: row.sold_mtd ?? 0,
@@ -419,7 +433,7 @@ async function commitUploadInternal(
 
   // Delete existing snapshots scoped ONLY to the incoming part IDs
   if (confirmOverwrite && incomingPartIds.length > 0) {
-    await db
+    await tx
       .delete(inventorySnapshots)
       .where(
         and(
@@ -430,26 +444,25 @@ async function commitUploadInternal(
       );
   }
 
-  // Deduplicate by partId — some reseller exports have duplicate SKU rows
-  const seenPartIds = new Set<number>();
-  const deduplicatedValues = snapshotValues.filter(row => {
-    if (seenPartIds.has(row.partId)) return false;
-    seenPartIds.add(row.partId);
-    return true;
-  });
+  // Repeated SKU rows need explicit aggregation rules, never "first row wins".
+  if (new Set(snapshotValues.map(row => row.partId)).size !== snapshotValues.length) {
+    throw new Error("Repeated SKU rows require aggregation before committing");
+  }
+  const deduplicatedValues = snapshotValues;
 
   // Upsert snapshots
   if (deduplicatedValues.length > 0) {
     const batchSize = 100;
     for (let i = 0; i < deduplicatedValues.length; i += batchSize) {
       const batch = deduplicatedValues.slice(i, i + batchSize);
-      await db
+      await tx
         .insert(inventorySnapshots)
         .values(batch)
         .onConflictDoUpdate({
           target: [inventorySnapshots.resellerId, inventorySnapshots.partId, inventorySnapshots.weekIso],
           set: {
             uploadId: sql`excluded.upload_id`,
+            reportDate: sql`excluded.report_date`,
             soh: sql`excluded.soh`,
             sellThrough7d: sql`excluded.sell_through_7d`,
             soldMtd: sql`excluded.sold_mtd`,
@@ -463,10 +476,11 @@ async function commitUploadInternal(
   }
 
   // Update upload record
-  await db
+  await tx
     .update(uploads)
     .set({ status: "committed", resellerId, weekIso })
     .where(eq(uploads.id, uploadId));
+  });
 }
 
 router.post("/uploads/:id/commit", async (req, res) => {
@@ -477,6 +491,14 @@ router.post("/uploads/:id/commit", async (req, res) => {
   if (!body.success) return res.status(400).json({ error: "Invalid input", details: body.error.issues });
 
   const { reseller_id, week_iso, mappings, confirm_overwrite } = body.data;
+  if (!isValidWeekIso(week_iso)) {
+    return res.status(400).json({ error: "Enter a valid ISO reporting week, for example 2026-W27." });
+  }
+  const fields = mappings.map(m => m.canonical_field).filter(Boolean);
+  if (!fields.includes("part_no") || !fields.includes("soh") || !fields.includes("sell_through_7d") ||
+      fields.length !== new Set(fields).size) {
+    return res.status(400).json({ error: "Map Part Number, SOH and 7-day Sales exactly once. Each standard field can only be mapped to one source column." });
+  }
 
   try {
     const uploadRow = await db
@@ -488,6 +510,20 @@ router.post("/uploads/:id/commit", async (req, res) => {
     if (!uploadRow[0]) return res.status(404).json({ error: "Upload not found" });
 
     const rawRows = (uploadRow[0].rawRows as Record<string, unknown>[]) ?? [];
+    const headers = uploadRow[0].rawHeaders as string[] | null;
+    const allowedFields = new Set(["part_no", "soh", "sell_through_7d", "sold_mtd", "on_order", "avg_cost", "sold_14d", "sold_30d"]);
+    if (mappings.some(m => m.canonical_field &&
+      (!allowedFields.has(m.canonical_field) || !headers?.includes(m.source_col)))) {
+      return res.status(400).json({ error: "Mappings must reference the uploaded file's columns and supported standard fields." });
+    }
+    const parsed = applyMappingsToRows(rawRows, mappings as MappingField[]);
+    if (parsed.length === 0) return res.status(400).json({ error: "No product rows were found with these mappings." });
+    if (new Set(parsed.map(r => r.part_no)).size !== parsed.length) {
+      return res.status(400).json({ error: "Repeated SKU rows require aggregation before committing. No data was changed." });
+    }
+    if (parsed.some(r => r.flag_reason === "Invalid numeric value")) {
+      return res.status(400).json({ error: "The file contains invalid numeric values. Correct the source file or column mappings before committing." });
+    }
 
     if (!confirm_overwrite) {
       const parsedRows = applyMappingsToRows(rawRows, mappings as MappingField[]);

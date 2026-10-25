@@ -99,7 +99,7 @@ const SYNONYMS: Record<string, string[]> = {
 };
 
 // Samsung part number prefixes for validation
-const SAMSUNG_PREFIXES = ["MZ-", "MU-", "MUF-", "LS", "LU", "SM-", "MB-", "MJ-", "HAJ"];
+const SAMSUNG_PREFIXES = ["MZ-", "MU-", "MUF-", "LS", "LU", "LC", "LF", "LH", "SM-", "MB-", "MJ-", "HAJ", "GP-", "EF-"];
 
 // ─── Utility functions ────────────────────────────────────────────────────────
 
@@ -130,17 +130,17 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 }
 
 function coerceInt(val: unknown): number {
-  if (val === null || val === undefined || val === "") return 0;
-  const n = parseFloat(String(val).replace(/,/g, ""));
-  if (isNaN(n)) return 0;
-  return Math.round(n);
+  return Math.round(coerceFloat(val) ?? 0);
 }
 
 function coerceFloat(val: unknown): number | null {
   if (val === null || val === undefined || val === "") return null;
-  const n = parseFloat(String(val).replace(/,/g, ""));
-  if (isNaN(n)) return null;
-  return n;
+  let text = String(val).trim().replace(/^AUD\s*/i, "").replace(/^A\$/i, "$");
+  if (/^\(.*\)$/.test(text)) text = `-${text.slice(1, -1)}`;
+  text = text.replace(/[$,\s]/g, "");
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
 }
 
 function isSamsungPart(partNo: string): boolean {
@@ -194,43 +194,62 @@ export function detectWeekFromFilename(filename: string): {
   weekIso: string | null;
   reportDate: string | null;
 } {
+  // Workspace attachments append a Unix-millisecond suffix, not a report date.
+  filename = filename.replace(/_\d{13}(?=\.[^.]+$)/, "");
+  const fromDate = (date: string) => {
+    const parsed = new Date(`${date}T00:00:00Z`);
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+      return { weekIso: null, reportDate: null };
+    }
+    return { weekIso: dateStringToWeekIso(date), reportDate: date };
+  };
   // 2026_WK_27, 2026_WK27, "2026 WK 28", "2026-WK-27", etc.
   const wkMatch = filename.match(/(\d{4})[\s_\-]?WK[\s_\-]?(\d{1,2})/i);
   if (wkMatch) {
     const year = wkMatch[1];
     const week = wkMatch[2].padStart(2, "0");
-    return { weekIso: `${year}-W${week}`, reportDate: null };
+    const weekIso = `${year}-W${week}`;
+    return { weekIso: isValidWeekIso(weekIso) ? weekIso : null, reportDate: null };
   }
 
   // 2026-06-29_2026-07-05 (range: use end date)
   const rangeMatch = filename.match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/);
   if (rangeMatch) {
     const endDate = rangeMatch[2];
-    const weekIso = dateStringToWeekIso(endDate);
-    return { weekIso, reportDate: endDate };
+    return fromDate(endDate);
   }
 
   // 29.06.2026 or 29_06_2026
-  const dmy = filename.match(/(\d{2})[._](\d{2})[._](\d{4})/);
+  const dmy = [...filename.matchAll(/(\d{2})[._-](\d{2})[._-](\d{4})(?!\d)/g)].at(-1);
   if (dmy) {
     const dateStr = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
-    return { weekIso: dateStringToWeekIso(dateStr), reportDate: dateStr };
+    return fromDate(dateStr);
   }
 
   // 20260705060455 (yyyymmddHHMMSS)
-  const compact = filename.match(/(\d{4})(\d{2})(\d{2})\d{6}/);
+  const compact = filename.match(/(?:^|\D)((?:19|20)\d{2})(\d{2})(\d{2})\d{6}(?!\d)/);
   if (compact) {
     const dateStr = `${compact[1]}-${compact[2]}-${compact[3]}`;
-    return { weekIso: dateStringToWeekIso(dateStr), reportDate: dateStr };
+    return fromDate(dateStr);
   }
 
   // YYYY-MM-DD
   const iso = filename.match(/(\d{4}-\d{2}-\d{2})/);
   if (iso) {
-    return { weekIso: dateStringToWeekIso(iso[1]), reportDate: iso[1] };
+    return fromDate(iso[1]);
   }
 
   return { weekIso: null, reportDate: null };
+}
+
+export function isValidWeekIso(value: string): boolean {
+  const match = /^(\d{4})-W(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]), week = Number(match[2]);
+  if (year < 1900 || year > 2100 || week < 1 || week > 53) return false;
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const monday = new Date(jan4.getTime() + ((week - 1) * 7 - ((jan4.getUTCDay() || 7) - 1)) * 86400000);
+  return dateStringToWeekIso(monday.toISOString().slice(0, 10)) === value;
 }
 
 export function dateStringToWeekIso(dateStr: string): string {
@@ -272,6 +291,8 @@ interface ReportFormat {
   formatId: string;
   /** Normalized column names (lowercase, alphanumeric) that define this format */
   headers: string[];
+  /** Known extra export columns that must not dilute the identifying signature. */
+  optionalHeaders?: string[];
   /** Reseller codes (lowercase) that produce this format */
   resellerCodes: string[];
 }
@@ -300,6 +321,7 @@ const REPORT_FORMATS: ReportFormat[] = [
   {
     formatId: "umart_weekly",
     headers: ["sapcode", "sku", "totalonhand", "otheronhand", "daystosale", "onorderqty", "soldqty"],
+    optionalHeaders: ["sapprice", "cost", "totalonhandallwhrevenue", "revenue", "ageing90", "ageing90cost", "ageing120", "ageing120cost"],
     resellerCodes: ["umart"],
   },
   {
@@ -451,7 +473,7 @@ export function detectResellerFromHeaders(
   candidates: ResellerProfile[];
   resolutionSource: HeaderResolutionSource;
 } {
-  const normalizedHeaders = new Set(headers.map((h) => normalize(h)));
+  const normalizedHeaders = new Set(headers.map((h) => normalize(h)).filter(Boolean));
 
   // Find best matching format
   let bestFormat: ReportFormat | null = null;
@@ -459,7 +481,9 @@ export function detectResellerFromHeaders(
 
   for (const format of REPORT_FORMATS) {
     const knownSet = new Set(format.headers.map(normalize));
-    const sim = jaccardSimilarity(normalizedHeaders, knownSet);
+    const optional = new Set(format.optionalHeaders ?? []);
+    const relevantHeaders = new Set([...normalizedHeaders].filter(h => !optional.has(h)));
+    const sim = jaccardSimilarity(relevantHeaders, knownSet);
     if (sim >= 0.7 && sim > bestSim) {
       bestSim = sim;
       bestFormat = format;
@@ -638,12 +662,16 @@ export function applyMappingsToRows(
       canonical[canonField] = raw[srcCol];
     }
 
-    const partNo = String(canonical.part_no ?? "").trim();
-    if (!partNo) continue;
+    const partNo = String(canonical.part_no ?? "").trim().toUpperCase();
+    if (!partNo || /^(grand\s*)?totals?[:\s]*$/i.test(partNo)) continue;
 
     const flagged = !isSamsungPart(partNo);
     const soh = coerceInt(canonical.soh);
     const negativeSoh = soh < 0;
+    const invalidNumber = Object.entries(canonical).some(([field, value]) =>
+      field !== "part_no" && value !== null && value !== undefined && value !== "" &&
+      coerceFloat(value) === null,
+    );
 
     results.push({
       part_no: partNo || null,
@@ -655,8 +683,10 @@ export function applyMappingsToRows(
       sold_14d: canonical.sold_14d !== undefined ? coerceInt(canonical.sold_14d) : null,
       sold_30d: canonical.sold_30d !== undefined ? coerceInt(canonical.sold_30d) : null,
       raw,
-      flagged: flagged || negativeSoh,
-      flag_reason: flagged
+      flagged: flagged || negativeSoh || invalidNumber,
+      flag_reason: invalidNumber
+        ? "Invalid numeric value"
+        : flagged
         ? "Not a Samsung part number"
         : negativeSoh
         ? "Negative SOH value"
@@ -692,12 +722,16 @@ function readXlsx(
   }
 
   const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null, raw: false });
+  // Use the stored numeric cells, not display formatting such as "$1,234.00".
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null, raw: true });
 
   if (rows.length === 0) return { headers: [], rawRows: [], sheetName };
 
-  const headers = Object.keys(rows[0]);
-  return { headers, rawRows: rows as Record<string, unknown>[], sheetName };
+  const headers = Object.keys(rows[0]).filter(
+    h => !/^__EMPTY(?:_\d+)?$/.test(h) || rows.some(r => r[h] != null && r[h] !== ""),
+  );
+  const rawRows = rows.map(row => Object.fromEntries(headers.map(h => [h, row[h]])));
+  return { headers, rawRows, sheetName };
 }
 
 function readCsv(buf: Buffer): { headers: string[]; rawRows: Record<string, unknown>[]; sheetName: string } {
@@ -763,7 +797,19 @@ export async function parseFile(
   let finalConfidence = 0;
   let headerResolutionSource: HeaderResolutionSource = headerResult.resolutionSource;
 
-  if (headerResult.resellerId !== null) {
+  const conflict = filenameResult.resellerId !== null &&
+    ((headerResult.resellerId !== null && headerResult.resellerId !== filenameResult.resellerId) ||
+      (headerResult.resellerId === null && headerResult.candidates.length > 0 &&
+        !headerResult.candidates.some(r => r.id === filenameResult.resellerId))) ||
+    (filenameResult.candidates.length > 1 && headerResult.resellerId !== null &&
+      filenameResult.candidates.some(r => r.id !== headerResult.resellerId));
+
+  if (conflict) {
+    finalCandidates = [...new Map(
+      [...headerResult.candidates, ...filenameResult.candidates].map(r => [r.id, r]),
+    ).values()];
+    headerResolutionSource = null;
+  } else if (headerResult.resellerId !== null) {
     // Header detection resolved → use it (it already incorporated filename as tie-break)
     finalResellerId = headerResult.resellerId;
     finalResellerName = headerResult.resellerName;
@@ -802,7 +848,9 @@ export async function parseFile(
     if (headerResult.resolutionSource === "filename_token") reasonParts.push("filename tie-break");
   }
 
-  const detectionReasoning = reasonParts.length > 0
+  const detectionReasoning = conflict
+    ? "Filename and report format/sheet identify different resellers. Select the correct reseller before committing."
+    : reasonParts.length > 0
     ? `Detected ${finalResellerName ?? "unknown"} via: ${reasonParts.join(" + ")}`
     : null;
 
@@ -855,6 +903,27 @@ export async function parseFile(
     rowsFlagged,
     sheetName,
   };
+}
+
+/** A filename or a confidence number alone is never sufficient to commit data. */
+export function isAutoCommitEligible(
+  result: ParseResult,
+  mappings: MappingField[] = result.mappings,
+  overwritesExisting = false,
+): boolean {
+  const agreement = result.headerResolutionSource === "format_unique" ||
+    result.headerResolutionSource === "filename_token" ||
+    (result.filenameResolved && result.headerResolutionSource === "sheet_name");
+  const rows = applyMappingsToRows(result.rawRows, mappings);
+  const fields = mappings.map(m => m.canonical_field).filter(Boolean);
+  const uniqueFields = new Set(fields);
+  return result.detectedResellerId !== null && agreement &&
+    result.detectedFormatId !== "v_report" &&
+    result.overallConfidence >= 0.9 && computeMappingConfidence(mappings) >= 0.9 &&
+    !!result.detectedWeekIso && isValidWeekIso(result.detectedWeekIso) &&
+    !overwritesExisting && rows.length > 0 && !rows.some(r => r.flagged) &&
+    fields.length === uniqueFields.size &&
+    new Set(rows.map(r => r.part_no)).size === rows.length;
 }
 
 export function computeHeaderFingerprint(headers: string[]): string {

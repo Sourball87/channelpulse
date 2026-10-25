@@ -6,7 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * @nullable
- */
-export type UploadRawHeaders = { [key: string]: unknown } | null;
+export interface ResellerCandidate {
+  id: number;
+  name: string;
+  code: string;
+}

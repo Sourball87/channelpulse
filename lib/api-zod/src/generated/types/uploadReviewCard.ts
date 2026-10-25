@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MappingField } from './mappingField';
+import type { ResellerCandidate } from './resellerCandidate';
 import type { UploadReviewCardPreviewRowsItem } from './uploadReviewCardPreviewRowsItem';
 import type { UploadReviewCardStatus } from './uploadReviewCardStatus';
 
@@ -33,4 +34,10 @@ export interface UploadReviewCard {
   overwrites_existing?: boolean;
   /** @nullable */
   existing_snapshot_count?: number | null;
+  week_not_detected?: boolean;
+  candidates?: ResellerCandidate[];
+  /** @nullable */
+  detected_format_id?: string | null;
+  /** @nullable */
+  detection_reasoning?: string | null;
 }

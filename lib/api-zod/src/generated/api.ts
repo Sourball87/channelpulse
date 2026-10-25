@@ -25,6 +25,9 @@ export const GetDashboardKpisQueryParams = zod.object({
 })
 
 export const GetDashboardKpisResponse = zod.object({
+  "is_period": zod.boolean().optional(),
+  "period_label": zod.string().optional(),
+  "delta_label": zod.string().optional(),
   "week_iso": zod.string(),
   "kpis": zod.array(zod.object({
   "label": zod.string(),
@@ -214,7 +217,21 @@ export const GetUploadsResponseItem = zod.object({
   "confidence": zod.number().nullish(),
   "rows_parsed": zod.number().nullish(),
   "rows_flagged": zod.number().nullish(),
-  "raw_headers": zod.record(zod.string(), zod.unknown()).nullish()
+  "raw_headers": zod.array(zod.string()).nullish(),
+  "detected_mappings": zod.array(zod.object({
+  "source_col": zod.string(),
+  "canonical_field": zod.string().nullable(),
+  "confidence": zod.number(),
+  "sample_values": zod.array(zod.string()).optional()
+})).nullish(),
+  "week_not_detected": zod.boolean().optional(),
+  "candidates": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "code": zod.string()
+})).optional(),
+  "detected_format_id": zod.string().nullish(),
+  "detection_reasoning": zod.string().nullish()
 })
 export const GetUploadsResponse = zod.array(GetUploadsResponseItem)
 
@@ -246,7 +263,15 @@ export const CreateUploadResponseItem = zod.object({
   "preview_rows": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
   "error_message": zod.string().nullish(),
   "overwrites_existing": zod.boolean().optional(),
-  "existing_snapshot_count": zod.number().nullish()
+  "existing_snapshot_count": zod.number().nullish(),
+  "week_not_detected": zod.boolean().optional(),
+  "candidates": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "code": zod.string()
+})).optional(),
+  "detected_format_id": zod.string().nullish(),
+  "detection_reasoning": zod.string().nullish()
 })
 export const CreateUploadResponse = zod.array(CreateUploadResponseItem)
 
@@ -299,7 +324,21 @@ export const CommitUploadResponse = zod.object({
   "confidence": zod.number().nullish(),
   "rows_parsed": zod.number().nullish(),
   "rows_flagged": zod.number().nullish(),
-  "raw_headers": zod.record(zod.string(), zod.unknown()).nullish()
+  "raw_headers": zod.array(zod.string()).nullish(),
+  "detected_mappings": zod.array(zod.object({
+  "source_col": zod.string(),
+  "canonical_field": zod.string().nullable(),
+  "confidence": zod.number(),
+  "sample_values": zod.array(zod.string()).optional()
+})).nullish(),
+  "week_not_detected": zod.boolean().optional(),
+  "candidates": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "code": zod.string()
+})).optional(),
+  "detected_format_id": zod.string().nullish(),
+  "detection_reasoning": zod.string().nullish()
 })
 
 

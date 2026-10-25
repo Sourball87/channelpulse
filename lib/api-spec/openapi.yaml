@@ -111,7 +111,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [category_model_reseller, reseller_model]
+            enum: [category_model_reseller, reseller_model, model_week]
           description: Pivot mode
       responses:
         "200":
@@ -573,6 +573,12 @@ components:
       type: object
       required: [week_iso, kpis, reseller_statuses]
       properties:
+        is_period:
+          type: boolean
+        period_label:
+          type: string
+        delta_label:
+          type: string
         week_iso:
           type: string
         kpis:
@@ -764,8 +770,34 @@ components:
         rows_flagged:
           type: ["integer", "null"]
         raw_headers:
-          type: ["object", "null"]
-          additionalProperties: true
+          type: ["array", "null"]
+          items:
+            type: string
+        detected_mappings:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/MappingField"
+        week_not_detected:
+          type: boolean
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResellerCandidate"
+        detected_format_id:
+          type: ["string", "null"]
+        detection_reasoning:
+          type: ["string", "null"]
+
+    ResellerCandidate:
+      type: object
+      required: [id, name, code]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
 
     MappingField:
       type: object
@@ -822,6 +854,16 @@ components:
           type: boolean
         existing_snapshot_count:
           type: ["integer", "null"]
+        week_not_detected:
+          type: boolean
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResellerCandidate"
+        detected_format_id:
+          type: ["string", "null"]
+        detection_reasoning:
+          type: ["string", "null"]
 
     UploadFilesInput:
       type: object

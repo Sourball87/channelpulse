@@ -43,6 +43,8 @@ const CANONICAL_FIELDS = [
   { value: "soh", label: "Stock on Hand (SOH)" },
   { value: "sell_through_7d", label: "Sell Through (ST)" },
   { value: "sold_mtd", label: "Sold MTD" },
+  { value: "sold_14d", label: "Sold Last 14 Days" },
+  { value: "sold_30d", label: "Sold Last 30 Days" },
   { value: "on_order", label: "On Order" },
   { value: "avg_cost", label: "Average Cost" }
 ];
@@ -91,12 +93,14 @@ export default function UploadCenter() {
           filename: u.filename,
           status: "needs_review",
           detected_reseller_id: u.reseller_id ?? null,
-          detected_week_iso: u.week_iso ?? "",
-          week_not_detected: !u.week_iso,
+          detected_week_iso: u.week_not_detected ? "" : u.week_iso ?? "",
+          week_not_detected: u.week_not_detected ?? !u.week_iso,
           mappings: u.detected_mappings,
-          candidates: [],
-          detected_format_id: null,
-          detection_reasoning: null,
+          candidates: u.candidates ?? [],
+          detected_format_id: u.detected_format_id ?? null,
+          detection_reasoning: u.detection_reasoning ?? null,
+          rows_parsed: u.rows_parsed,
+          rows_flagged: u.rows_flagged,
         }));
       return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
     });
@@ -195,7 +199,8 @@ export default function UploadCenter() {
     }
     if (!response.ok) {
       trackEvent("upload_commit_failed", { overwrite: confirmOverwrite, reason: "server", status_code: response.status });
-      toast({ title: "Failed to commit upload", variant: "destructive" });
+      const details = await response.json().catch(() => null);
+      toast({ title: "Failed to commit upload", description: details?.error ?? "Please check the mappings and try again.", variant: "destructive" });
       return false;
     }
     trackEvent("upload_committed", { overwrite: confirmOverwrite, mapping_count: mappings.length });
@@ -367,6 +372,12 @@ export default function UploadCenter() {
                       </TableCell>
                       <TableCell>{upload.rows_parsed?.toLocaleString() || "—"}</TableCell>
                       <TableCell className="text-right">
+                        {upload.status === "review" && (
+                          <Button variant="outline" size="sm" className="mr-2"
+                            onClick={() => document.getElementById(`review-${upload.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                            Review
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -469,10 +480,13 @@ function ReviewCard({
     !!weekIso &&
     /^\d{4}-W\d{2}$/.test(weekIso) &&
     mappings.some(m => m.canonical_field === "part_no") &&
-    mappings.some(m => m.canonical_field === "soh" || m.canonical_field === "sell_through_7d");
+    mappings.some(m => m.canonical_field === "soh") &&
+    mappings.some(m => m.canonical_field === "sell_through_7d") &&
+    new Set(mappings.map(m => m.canonical_field).filter(Boolean)).size ===
+      mappings.filter(m => m.canonical_field).length;
 
   return (
-    <Card className="border-amber-200 dark:border-amber-900 shadow-sm overflow-hidden">
+    <Card id={`review-${review.upload_id}`} className="border-amber-200 dark:border-amber-900 shadow-sm overflow-hidden scroll-mt-4">
       <CardHeader className="bg-amber-50 dark:bg-amber-950/20 pb-4">
         <div className="flex justify-between items-start gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
@@ -484,8 +498,20 @@ function ReviewCard({
               </CardTitle>
             </div>
             <CardDescription className="text-amber-700 dark:text-amber-400">
-              Column structure needs manual confirmation. Verify reseller and week below before committing.
+              Pending only—not included in analytics until committed. Verify reseller, reporting week and column mappings.
             </CardDescription>
+            {review.detection_reasoning && <p className="mt-2 text-xs text-muted-foreground">{review.detection_reasoning}</p>}
+            {!review.detected_reseller_id && review.candidates?.length > 0 && (
+              <p className="mt-2 text-sm text-amber-800">
+                Possible resellers: {review.candidates.map((c: any) => c.name).join(", ")}. Select the correct one.
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              {review.rows_parsed ?? 0} product rows · {review.rows_flagged ?? 0} flagged for checking
+            </p>
+            {review.rows_flagged > 0 && (
+              <p className="mt-1 text-sm text-amber-800">Check the source for unusual SKUs or negative stock. Committing preserves these values.</p>
+            )}
           </div>
 
           {/* Editable metadata */}
@@ -601,7 +627,7 @@ function ReviewCard({
           <div className="flex items-center gap-3">
             {!readyToCommit && (
               <span className="text-sm text-amber-600">
-                {!resellerId ? "Select a reseller" : !weekIso ? "Enter a week (e.g. 2026-W27)" : "Map Part No and SOH/ST"}
+                {!resellerId ? "Select a reseller" : !weekIso ? "Enter a week (e.g. 2026-W27)" : "Map Part No, SOH and 7-day Sales once each"}
               </span>
             )}
             <Button

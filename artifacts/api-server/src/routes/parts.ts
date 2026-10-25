@@ -12,8 +12,8 @@ function deriveCategory(partNo: string): string {
   const p = partNo.toUpperCase().trim();
   if (p.startsWith("MZ-")) return "SSD";
   if (p.startsWith("MU-") && !p.startsWith("MUF-")) return "SSD";
-  if (p.startsWith("MUF-") || p.startsWith("MB-MC")) return "Flash Memory";
-  if (p.startsWith("LS") || p.startsWith("LU")) return "Monitor";
+  if (p.startsWith("MUF-") || p.startsWith("MB-")) return "Flash Memory";
+  if (["LS", "LU", "LC", "LF", "LH"].some(prefix => p.startsWith(prefix))) return "Monitor";
   if (p.startsWith("SM-")) return "Mobility";
   if (p.startsWith("HAJ") || p.startsWith("MJ-")) return "HDD & Memory";
   return "Uncategorized";

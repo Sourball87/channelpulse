@@ -5,7 +5,8 @@
  * ChannelPulse - Reseller SOH & Sell-Through Monitoring API
  * OpenAPI spec version: 0.1.0
  */
-import type { UploadRawHeaders } from './uploadRawHeaders';
+import type { MappingField } from './mappingField';
+import type { ResellerCandidate } from './resellerCandidate';
 import type { UploadStatus } from './uploadStatus';
 
 export interface Upload {
@@ -30,5 +31,13 @@ export interface Upload {
   /** @nullable */
   rows_flagged?: number | null;
   /** @nullable */
-  raw_headers?: UploadRawHeaders;
+  raw_headers?: string[] | null;
+  /** @nullable */
+  detected_mappings?: MappingField[] | null;
+  week_not_detected?: boolean;
+  candidates?: ResellerCandidate[];
+  /** @nullable */
+  detected_format_id?: string | null;
+  /** @nullable */
+  detection_reasoning?: string | null;
 }

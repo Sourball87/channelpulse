@@ -56,12 +56,12 @@ export interface ResellerStatus {
 }
 
 export interface DashboardKpis {
-  week_iso: string;
-  kpis: KpiCard[];
-  reseller_statuses: ResellerStatus[];
   is_period?: boolean;
   period_label?: string;
   delta_label?: string;
+  week_iso: string;
+  kpis: KpiCard[];
+  reseller_statuses: ResellerStatus[];
 }
 
 export type HeatmapCellColor = typeof HeatmapCellColor[keyof typeof HeatmapCellColor];
@@ -216,10 +216,19 @@ export const UploadStatus = {
   duplicate: 'duplicate',
 } as const;
 
-/**
- * @nullable
- */
-export type UploadRawHeaders = { [key: string]: unknown } | null;
+export interface MappingField {
+  source_col: string;
+  /** @nullable */
+  canonical_field: string | null;
+  confidence: number;
+  sample_values?: string[];
+}
+
+export interface ResellerCandidate {
+  id: number;
+  name: string;
+  code: string;
+}
 
 export interface Upload {
   id: number;
@@ -243,15 +252,15 @@ export interface Upload {
   /** @nullable */
   rows_flagged?: number | null;
   /** @nullable */
-  raw_headers?: UploadRawHeaders;
-}
-
-export interface MappingField {
-  source_col: string;
+  raw_headers?: string[] | null;
   /** @nullable */
-  canonical_field: string | null;
-  confidence: number;
-  sample_values?: string[];
+  detected_mappings?: MappingField[] | null;
+  week_not_detected?: boolean;
+  candidates?: ResellerCandidate[];
+  /** @nullable */
+  detected_format_id?: string | null;
+  /** @nullable */
+  detection_reasoning?: string | null;
 }
 
 export type UploadReviewCardStatus = typeof UploadReviewCardStatus[keyof typeof UploadReviewCardStatus];
@@ -290,6 +299,12 @@ export interface UploadReviewCard {
   overwrites_existing?: boolean;
   /** @nullable */
   existing_snapshot_count?: number | null;
+  week_not_detected?: boolean;
+  candidates?: ResellerCandidate[];
+  /** @nullable */
+  detected_format_id?: string | null;
+  /** @nullable */
+  detection_reasoning?: string | null;
 }
 
 export interface UploadFilesInput {
