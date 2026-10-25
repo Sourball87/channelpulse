@@ -8,6 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import type { GetDashboardHeatmapParams } from "@workspace/api-client-react";
 import { X } from "lucide-react";
+import { trackEvent } from "@/lib/analytics";
 
 type DimKey = "code" | "name" | "sku" | "desc" | "group";
 
@@ -166,6 +167,7 @@ export function FocusSidebar() {
           data-testid={`button-dim-${d.key}`}
           className={dimBtn}
           onClick={() => {
+            if (!expanded) trackEvent("focus_dimension_opened", { dimension: d.key });
             setDim(expanded ? null : d.key);
             setQ("");
           }}
@@ -234,7 +236,10 @@ export function FocusSidebar() {
           aria-pressed={open}
           aria-label={open ? "Focus, drill controls open. Press to collapse" : "Focus, drill controls collapsed. Press to open"}
           data-testid="button-focus"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            trackEvent("focus_toggled", { expanded: !open });
+            setOpen(!open);
+          }}
           className={`h-9 rounded-[2px] text-[13px] text-white ${open ? "bg-[#37b6d6]" : "bg-[#8fd3e6]"}`}
         >
           Focus

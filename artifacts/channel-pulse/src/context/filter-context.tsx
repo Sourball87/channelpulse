@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useGetAvailableWeeks } from "@workspace/api-client-react";
+import { trackEvent } from "@/lib/analytics";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -218,10 +219,25 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
     }
 
     const qs = p.toString();
+    if (qs !== new URLSearchParams(search).toString()) {
+      trackEvent("filters_changed", {
+        page: location,
+        accounts_changed: "resellerIds" in updates,
+        stock_changed: "partIds" in updates,
+        date_changed: "weekIso" in updates || "preset" in updates ||
+          "weekFrom" in updates || "weekTo" in updates || !!updates.clearDate,
+        account_count: p.get("resellers")?.split(",").filter(Boolean).length ?? 0,
+        sku_count: p.get("parts")?.split(",").filter(Boolean).length ?? 0,
+        mode: p.has("period") || p.has("from") ? "period" : "week",
+      });
+    }
     navigate(`${location}${qs ? "?" + qs : ""}`);
   }, [search, location, navigate]);
 
-  const clearFilters = useCallback(() => navigate(location), [location, navigate]);
+  const clearFilters = useCallback(() => {
+    if (search) trackEvent("filters_reset", { page: location });
+    navigate(location);
+  }, [location, navigate, search]);
 
   const value: FilterContextValue = {
     partIds, resellerIds, preset, weekFrom, weekTo, weekIso,

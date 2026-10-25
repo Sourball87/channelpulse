@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { trackEvent } from "@/lib/analytics";
 import {
   Dialog,
   DialogContent,
@@ -110,6 +111,7 @@ export default function UploadCenter() {
 
   const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
+    trackEvent("upload_started", { file_count: files.length });
     setIsUploading(true);
     const formData = new FormData();
     Array.from(files).forEach((file) => formData.append("files", file));
@@ -119,6 +121,13 @@ export default function UploadCenter() {
       if (!response.ok) throw new Error("Upload failed");
       const result = await response.json();
       const needsReview = result.filter((r: any) => r.status === "needs_review");
+      trackEvent("upload_processed", {
+        file_count: result.length,
+        review_count: needsReview.length,
+        committed_count: result.filter((r: any) => r.status === "auto_committed").length,
+        failed_count: result.filter((r: any) => r.status === "failed").length,
+        duplicate_count: result.filter((r: any) => r.status === "duplicate").length,
+      });
       if (needsReview.length > 0) {
         setPendingReviews(prev => [...prev, ...needsReview]);
       }
@@ -128,6 +137,7 @@ export default function UploadCenter() {
       });
       queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
     } catch {
+      trackEvent("upload_failed", { file_count: files.length });
       toast({ title: "Upload failed", description: "Server error processing files.", variant: "destructive" });
     } finally {
       setIsUploading(false);
@@ -147,12 +157,14 @@ export default function UploadCenter() {
       { id: deleteTarget.id },
       {
         onSuccess: () => {
+          trackEvent("upload_deleted", { was_committed: deleteTarget.status === "committed" });
           toast({ title: "Upload deleted", description: `"${deleteTarget.filename}" has been removed.` });
           queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
           setPendingReviews(prev => prev.filter(p => p.upload_id !== deleteTarget.id));
           setDeleteTarget(null);
         },
         onError: () => {
+          trackEvent("upload_delete_failed", { was_committed: deleteTarget.status === "committed" });
           toast({ title: "Failed to delete upload", variant: "destructive" });
           setDeleteTarget(null);
         },
@@ -161,21 +173,32 @@ export default function UploadCenter() {
   };
 
   const doCommit = async (uploadId: number, resellerId: number, weekIso: string, mappings: any[], confirmOverwrite: boolean) => {
-    const response = await fetch(`/api/uploads/${uploadId}/commit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reseller_id: resellerId, week_iso: weekIso, mappings, confirm_overwrite: confirmOverwrite }),
-    });
+    trackEvent("upload_commit_started", { overwrite: confirmOverwrite, mapping_count: mappings.length });
+    let response: Response;
+    try {
+      response = await fetch(`/api/uploads/${uploadId}/commit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reseller_id: resellerId, week_iso: weekIso, mappings, confirm_overwrite: confirmOverwrite }),
+      });
+    } catch {
+      trackEvent("upload_commit_failed", { overwrite: confirmOverwrite, reason: "network" });
+      toast({ title: "Failed to commit upload", variant: "destructive" });
+      return false;
+    }
 
     if (response.status === 409) {
+      trackEvent("upload_commit_conflict", { overwrite: confirmOverwrite });
       const data = await response.json();
       setConflictInfo({ uploadId, resellerId, weekIso, mappings, existingCount: data.existing_count, message: data.message });
       return false;
     }
     if (!response.ok) {
+      trackEvent("upload_commit_failed", { overwrite: confirmOverwrite, reason: "server", status_code: response.status });
       toast({ title: "Failed to commit upload", variant: "destructive" });
       return false;
     }
+    trackEvent("upload_committed", { overwrite: confirmOverwrite, mapping_count: mappings.length });
     return true;
   };
 
