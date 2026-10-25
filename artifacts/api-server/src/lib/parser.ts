@@ -321,7 +321,7 @@ const REPORT_FORMATS: ReportFormat[] = [
   {
     formatId: "umart_weekly",
     headers: ["sapcode", "sku", "totalonhand", "otheronhand", "daystosale", "onorderqty", "soldqty"],
-    optionalHeaders: ["sapprice", "cost", "totalonhandallwhrevenue", "revenue", "ageing90", "ageing90cost", "ageing120", "ageing120cost"],
+    optionalHeaders: ["sapprice", "cost", "totalonhandallwhrevenue", "revenue", "purchaseqty", "purchasevalue", "ageing90", "ageing90cost", "ageing120", "ageing120cost"],
     resellerCodes: ["umart"],
   },
   {

@@ -52,6 +52,19 @@ const fixtures = [
 ];
 
 describe("supported real-report structures", () => {
+  it("recognises the W26 Umart purchase-column variant without treating purchases as sales", async () => {
+    const headers = [...umart, "PurchaseQty", "PurchaseValue"];
+    const result = await parseFile(
+      workbook(headers, [1234, "MZ-77E1T0BW", 12, 1, 30, 4, 3, 150, 100, 1200, 300, 2, 200, 1, 100, -4, -400]),
+      "Samsung_ssd_sell_thru_and_soh_Report_2026-06-22_2026-06-28.xlsx",
+      profiles,
+    );
+    expect(result.detectedFormatId).toBe("umart_weekly");
+    expect(result.detectedWeekIso).toBe("2026-W26");
+    expect(result.rows[0]).toMatchObject({ soh: 12, sell_through_7d: 3, avg_cost: 100, flagged: false });
+    expect(result.mappings.filter(m => m.source_col.startsWith("Purchase")).every(m => m.canonical_field === null)).toBe(true);
+    expect(isAutoCommitEligible(result)).toBe(true);
+  });
   for (const fixture of fixtures) {
     it(`recognises and maps ${fixture.filename}`, async () => {
       const buf = fixture.filename.endsWith(".csv")
