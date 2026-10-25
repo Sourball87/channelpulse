@@ -10,6 +10,10 @@ interface Suggestion {
   week_evidence_id?: string;
 }
 export type AiTransport = (payload: unknown) => Promise<unknown>;
+/** Multipart booleans arrive as strings. Missing opts in; explicit false opts out. */
+export function aiAssistEnabled(value: unknown): boolean {
+  return value === undefined || value === true || value === "true";
+}
 const FIELDS = new Set(["part_no", "soh", "sell_through_7d", "sold_mtd", "on_order", "avg_cost", "sold_14d", "sold_30d"]);
 const WEEK_COLUMNS = /^(reportingweek|reportweek|week|weekending|reportdate|reportingdate|reportingperiod|reportperiod)$/;
 const RESELLER_COLUMNS = /^(reseller|retailer|resellername|retailername|companyname|accountname)$/;

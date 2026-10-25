@@ -942,7 +942,7 @@ components:
           type: string
         ai_assist:
           type: boolean
-          default: false
+          default: true
 
     UploadFilesInput:
       type: object
@@ -956,7 +956,7 @@ components:
           description: Explicit user-selected ISO week, used only for otherwise undated files
         ai_assist:
           type: boolean
-          default: false
+          default: true
 
     CommitUploadInput:
       type: object

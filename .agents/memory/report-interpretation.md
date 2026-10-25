@@ -26,3 +26,9 @@ Keep unresolved AI mapping requests separate from authoritative mappings; do not
 **Why:** The small-model smoke check initially returned no suggestions when given a complete list of null mappings alongside instructions to preserve existing mappings. Separating confident assignments from unresolved headers produced useful suggestions.
 
 **How to apply:** Keep the deterministic parser authoritative, validate model evidence and structure, and require manual confirmation of AI suggestions. Do not let model-generated values replace source inventory numbers.
+
+Enable AI upload assistance by default, retaining an explicit opt-out and the no-AI fast path for fully recognised reports.
+
+**Why:** After reviewing the estimated per-upload cost, the user said "jsut default to it then".
+
+**How to apply:** Default the UI and omitted upload/recheck API options to enabled. Explicit false disables AI. Keep billing/data disclosure and all evidence, confirmation and overwrite safeguards.

@@ -254,7 +254,7 @@ export const GetUploadsResponse = zod.array(GetUploadsResponseItem)
 /**
  * @summary Upload one or more reseller files (multipart/form-data)
  */
-export const createUploadBodyAiAssistDefault = false;
+export const createUploadBodyAiAssistDefault = true;
 
 export const CreateUploadBody = zod.object({
   "files": zod.string().describe('Multipart file field (handled as FormData in client)'),
@@ -317,7 +317,7 @@ export const RecheckUploadParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const recheckUploadBodyAiAssistDefault = false;
+export const recheckUploadBodyAiAssistDefault = true;
 
 export const RecheckUploadBody = zod.object({
   "batch_week": zod.string().optional(),

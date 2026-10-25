@@ -14,7 +14,7 @@ import {
   type ParseResult,
 } from "../lib/parser";
 import { diagnoseUpload, readRecognition, reanalyzeStoredUpload, selectReportingWeek, withMappings, type Recognition } from "../lib/upload-review";
-import { suggestRecognition } from "../lib/upload-ai";
+import { aiAssistEnabled, suggestRecognition } from "../lib/upload-ai";
 import { deriveCategory } from "./parts";
 import { CommitUploadBody, CommitUploadParams, SaveUploadMappingBody, SaveUploadMappingParams, DeleteUploadParams, GetUploadsQueryParams, RecheckUploadBody, RecheckUploadParams } from "@workspace/api-zod";
 
@@ -142,7 +142,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
     }
     const batchWeek = typeof req.body.batch_week === "string" ? req.body.batch_week.trim() : undefined;
     if (batchWeek && !isValidWeekIso(batchWeek)) return res.status(400).json({ error: "Enter a valid batch week, for example 2026-W27." });
-    const aiAssist = req.body.ai_assist === "true";
+    const aiAssist = aiAssistEnabled(req.body.ai_assist);
 
     const [allResellers, learnedFingerprints] = await Promise.all([
       getAllResellers(),

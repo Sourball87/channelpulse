@@ -82,7 +82,7 @@ export default function UploadCenter() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [batchWeek, setBatchWeek] = useState("");
-  const [aiAssist, setAiAssist] = useState(false);
+  const [aiAssist, setAiAssist] = useState(true);
   const [recheckingId, setRecheckingId] = useState<number | null>(null);
   const [pendingReviews, setPendingReviews] = useState<any[]>([]);
   const [conflictInfo, setConflictInfo] = useState<ConflictState | null>(null);
@@ -340,7 +340,7 @@ export default function UploadCenter() {
               <div className="space-y-1">
                 <Label htmlFor="ai-assist" className="cursor-pointer">Use AI for unresolved recognition</Label>
                 <p className="text-xs text-muted-foreground max-w-2xl">
-                  Optional and off by default. Enabling sends filename, sheet/column labels and a few short text samples
+                  Enabled by default for unresolved reports; uncheck to turn it off. When needed, sends filename, sheet/column labels and a few short text samples
                   (which may include reseller names, reporting dates and product identifiers) to OpenAI through Replit AI Integrations.
                   Stock, sales and cost columns and full files are not sent. Usage is billed to your Replit credits.
                   AI suggestions require your confirmation and cannot approve overwrites or invent missing information.
