@@ -9,4 +9,7 @@
 export interface UploadFilesInput {
   /** Multipart file field (handled as FormData in client) */
   files: string;
+  /** Explicit user-selected ISO week, used only for otherwise undated files */
+  batch_week?: string;
+  ai_assist?: boolean;
 }

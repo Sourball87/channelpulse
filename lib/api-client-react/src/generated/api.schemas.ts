@@ -216,6 +216,27 @@ export const UploadStatus = {
   duplicate: 'duplicate',
 } as const;
 
+export interface ReviewReason {
+  code: string;
+  message: string;
+}
+
+export interface UploadAiNote {
+  status: string;
+  message: string;
+  evidence?: string[];
+}
+
+export interface UploadDiagnostics {
+  review_reasons: ReviewReason[];
+  ready_to_commit: boolean;
+  auto_eligible: boolean;
+  /** @nullable */
+  week_source: string | null;
+  metadata_missing: boolean;
+  ai?: UploadAiNote;
+}
+
 export interface MappingField {
   source_col: string;
   /** @nullable */
@@ -231,6 +252,7 @@ export interface ResellerCandidate {
 }
 
 export interface Upload {
+  diagnostics?: UploadDiagnostics;
   id: number;
   /** @nullable */
   reseller_id?: number | null;
@@ -276,6 +298,7 @@ export const UploadReviewCardStatus = {
 export type UploadReviewCardPreviewRowsItem = { [key: string]: unknown };
 
 export interface UploadReviewCard {
+  diagnostics?: UploadDiagnostics;
   upload_id: number;
   filename: string;
   status: UploadReviewCardStatus;
@@ -307,9 +330,17 @@ export interface UploadReviewCard {
   detection_reasoning?: string | null;
 }
 
+export interface UploadRecheckInput {
+  batch_week?: string;
+  ai_assist?: boolean;
+}
+
 export interface UploadFilesInput {
   /** Multipart file field (handled as FormData in client) */
   files: string;
+  /** Explicit user-selected ISO week, used only for otherwise undated files */
+  batch_week?: string;
+  ai_assist?: boolean;
 }
 
 export interface CommitUploadInput {

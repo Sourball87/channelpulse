@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { trackEvent } from "@/lib/analytics";
+import { UploadDiagnostics } from "@/components/upload-diagnostics";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +50,18 @@ const CANONICAL_FIELDS = [
   { value: "avg_cost", label: "Average Cost" }
 ];
 
+function validWeek(value: string): boolean {
+  const match = /^(\d{4})-W(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]), week = Number(match[2]);
+  if (year < 1900 || year > 2100 || week < 1 || week > 53) return false;
+  // December 28 is always in the final ISO week of its year.
+  const d = new Date(Date.UTC(year, 11, 28));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const weeks = Math.ceil(((d.getTime() - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+  return week <= weeks;
+}
+
 interface CommitData {
   mappings: any[];
   resellerId: number | null;
@@ -68,6 +81,9 @@ interface ConflictState {
 export default function UploadCenter() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [batchWeek, setBatchWeek] = useState("");
+  const [aiAssist, setAiAssist] = useState(false);
+  const [recheckingId, setRecheckingId] = useState<number | null>(null);
   const [pendingReviews, setPendingReviews] = useState<any[]>([]);
   const [conflictInfo, setConflictInfo] = useState<ConflictState | null>(null);
   const [isConfirmingOverwrite, setIsConfirmingOverwrite] = useState(false);
@@ -79,32 +95,50 @@ export default function UploadCenter() {
   const { data: uploads, isLoading: isLoadingUploads } = useGetUploads({ limit: 50 });
   const deleteUpload = useDeleteUpload();
 
+  const reviewFromUpload = (u: any) => ({
+    ...u, upload_id: u.id, status: "needs_review",
+    detected_reseller_id: u.reseller_id ?? null,
+    detected_week_iso: u.week_not_detected ? "" : u.week_iso ?? "",
+    week_not_detected: u.week_not_detected ?? !u.week_iso,
+    mappings: u.detected_mappings ?? [], diagnostics: u.diagnostics,
+    candidates: u.candidates ?? [],
+  });
+
   // Rehydrate review cards from DB on load (survives page refresh)
   useEffect(() => {
     if (!uploads) return;
     const reviewUploads = uploads.filter((u: any) => u.status === "review" && u.detected_mappings);
-    if (reviewUploads.length === 0) return;
     setPendingReviews(prev => {
-      const existingIds = new Set(prev.map((p: any) => p.upload_id));
-      const toAdd = reviewUploads
-        .filter((u: any) => !existingIds.has(u.id))
-        .map((u: any) => ({
-          upload_id: u.id,
-          filename: u.filename,
-          status: "needs_review",
-          detected_reseller_id: u.reseller_id ?? null,
-          detected_week_iso: u.week_not_detected ? "" : u.week_iso ?? "",
-          week_not_detected: u.week_not_detected ?? !u.week_iso,
-          mappings: u.detected_mappings,
-          candidates: u.candidates ?? [],
-          detected_format_id: u.detected_format_id ?? null,
-          detection_reasoning: u.detection_reasoning ?? null,
-          rows_parsed: u.rows_parsed,
-          rows_flagged: u.rows_flagged,
-        }));
-      return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
+      return reviewUploads.map((u: any) => {
+        const existing = prev.find(p => p.upload_id === u.id);
+        return { ...existing, ...reviewFromUpload(u), review_revision: existing?.review_revision };
+      });
     });
   }, [uploads]);
+
+  const handleRecheck = async (id: number) => {
+    if (batchWeek && !validWeek(batchWeek)) {
+      toast({ title: "Invalid batch week", description: "Enter a valid ISO week or leave it blank.", variant: "destructive" });
+      return;
+    }
+    setRecheckingId(id);
+    trackEvent("upload_recheck_started", { ai_enabled: aiAssist, batch_week_selected: !!batchWeek });
+    try {
+      const response = await fetch(`/api/uploads/${id}/recheck`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_week: batchWeek || undefined, ai_assist: aiAssist }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Recheck failed");
+      setPendingReviews(prev => prev.map(p => p.upload_id === id
+        ? { ...reviewFromUpload(data), review_revision: Date.now() } : p));
+      queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
+      toast({ title: "Recognition refreshed", description: "No analytics data was changed. Review the updated checks before committing." });
+      trackEvent("upload_rechecked", { ai_enabled: aiAssist, ready: !!data.diagnostics?.ready_to_commit });
+    } catch (err) {
+      toast({ title: "Could not recheck", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
+    } finally { setRecheckingId(null); }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -115,14 +149,23 @@ export default function UploadCenter() {
 
   const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
+    if (files.length > 15 || (batchWeek && !validWeek(batchWeek))) {
+      toast({ title: "Check upload options", description: "Choose up to 15 files and a valid batch week, or leave the week blank.", variant: "destructive" });
+      return;
+    }
     trackEvent("upload_started", { file_count: files.length });
     setIsUploading(true);
     const formData = new FormData();
     Array.from(files).forEach((file) => formData.append("files", file));
+    if (batchWeek) formData.append("batch_week", batchWeek);
+    formData.append("ai_assist", String(aiAssist));
 
     try {
       const response = await fetch("/api/uploads", { method: "POST", body: formData });
-      if (!response.ok) throw new Error("Upload failed");
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error ?? "Upload failed");
+      }
       const result = await response.json();
       const needsReview = result.filter((r: any) => r.status === "needs_review");
       trackEvent("upload_processed", {
@@ -137,12 +180,14 @@ export default function UploadCenter() {
       }
       toast({
         title: "Upload processed",
-        description: `${result.length} file(s) processed. ${needsReview.length} require review.`,
+        description: `${result.filter((r: any) => r.status === "auto_committed").length} imported · ${needsReview.length} need confirmation · ${result.filter((r: any) => r.status === "duplicate").length} duplicates skipped · ${result.filter((r: any) => r.status === "failed").length} failed.`,
       });
-      queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
-    } catch {
+      const failures = result.filter((r: any) => r.status === "failed");
+      if (failures.length) toast({ title: "Some files could not be processed", description: failures.map((r: any) => `${r.filename}: ${r.error_message}`).join("; "), variant: "destructive" });
+      queryClient.invalidateQueries();
+    } catch (err) {
       trackEvent("upload_failed", { file_count: files.length });
-      toast({ title: "Upload failed", description: "Server error processing files.", variant: "destructive" });
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Server error processing files.", variant: "destructive" });
     } finally {
       setIsUploading(false);
       setIsDragging(false);
@@ -194,7 +239,12 @@ export default function UploadCenter() {
     if (response.status === 409) {
       trackEvent("upload_commit_conflict", { overwrite: confirmOverwrite });
       const data = await response.json();
-      setConflictInfo({ uploadId, resellerId, weekIso, mappings, existingCount: data.existing_count, message: data.message });
+      if (data.error === "conflict" && Number.isInteger(data.existing_count)) {
+        setConflictInfo({ uploadId, resellerId, weekIso, mappings, existingCount: data.existing_count, message: data.message });
+      } else {
+        toast({ title: "Upload changed", description: data.error ?? "Refresh and check this upload before continuing.", variant: "destructive" });
+        queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
+      }
       return false;
     }
     if (!response.ok) {
@@ -242,7 +292,7 @@ export default function UploadCenter() {
 
     toast({ title: "Upload committed successfully" });
     setPendingReviews(prev => prev.filter(p => p.upload_id !== review.upload_id));
-    queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
+    queryClient.invalidateQueries();
   };
 
   const handleConfirmOverwrite = async () => {
@@ -255,7 +305,7 @@ export default function UploadCenter() {
     if (ok) {
       toast({ title: "Upload committed — existing data replaced" });
       setPendingReviews(prev => prev.filter(p => p.upload_id !== uploadId));
-      queryClient.invalidateQueries({ queryKey: getGetUploadsQueryKey() });
+      queryClient.invalidateQueries();
     }
   };
 
@@ -267,6 +317,38 @@ export default function UploadCenter() {
       </header>
 
       <div className="flex-1 overflow-auto p-6 space-y-8">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Upload options</CardTitle>
+            <CardDescription>Known reports are recognised without AI. These options also apply when you recheck a pending file.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="max-w-md space-y-2">
+              <Label htmlFor="batch-week">Reporting week for undated files (optional)</Label>
+              <Input id="batch-week" placeholder="2026-W27" value={batchWeek}
+                className="max-w-[180px] font-mono" aria-invalid={!!batchWeek && !validWeek(batchWeek)}
+                onChange={e => setBatchWeek(e.target.value.trim())} disabled={isUploading || recheckingId !== null} />
+              <p className="text-xs text-muted-foreground">
+                Applies only when the report has no detected week. Dated reports keep their own week;
+                split different weeks into separate batches. Copy numbers such as (1) are not dates.
+              </p>
+              {!!batchWeek && !validWeek(batchWeek) && <p className="text-sm text-destructive">Enter a valid ISO week, for example 2026-W27.</p>}
+            </div>
+            <div className="flex gap-3 items-start">
+              <Checkbox id="ai-assist" checked={aiAssist} onCheckedChange={v => setAiAssist(v === true)}
+                disabled={isUploading || recheckingId !== null} />
+              <div className="space-y-1">
+                <Label htmlFor="ai-assist" className="cursor-pointer">Use AI for unresolved recognition</Label>
+                <p className="text-xs text-muted-foreground max-w-2xl">
+                  Optional and off by default. Enabling sends filename, sheet/column labels and a few short text samples
+                  (which may include reseller names, reporting dates and product identifiers) to OpenAI through Replit AI Integrations.
+                  Stock, sales and cost columns and full files are not sent. Usage is billed to your Replit credits.
+                  AI suggestions require your confirmation and cannot approve overwrites or invent missing information.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         {/* Upload Zone */}
         <div
           className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
@@ -280,6 +362,7 @@ export default function UploadCenter() {
             type="file"
             ref={fileInputRef}
             className="hidden"
+            accept=".xlsx,.xls,.csv"
             multiple
             onChange={(e) => e.target.files && processFiles(e.target.files)}
           />
@@ -300,13 +383,15 @@ export default function UploadCenter() {
           <div className="space-y-4">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-amber-500" />
-              Requires Review ({pendingReviews.length})
+              Pending confirmation ({pendingReviews.length})
             </h2>
             <div className="grid gap-6">
               {pendingReviews.map(review => (
                 <ReviewCard
-                  key={review.upload_id}
+                  key={`${review.upload_id}-${review.review_revision ?? "initial"}`}
                   review={review}
+                  onRecheck={() => handleRecheck(review.upload_id)}
+                  rechecking={recheckingId !== null}
                   onCommit={(commitData) => handleCommitReview(review, commitData)}
                   onDiscard={() => {
                     if (review.upload_id) setDeleteTarget({ id: review.upload_id, filename: review.filename, status: "review" });
@@ -365,13 +450,21 @@ export default function UploadCenter() {
                       <TableCell>{upload.week_iso || "—"}</TableCell>
                       <TableCell>
                         {upload.status === "committed" && <Badge className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-500/20">Committed</Badge>}
-                        {upload.status === "review" && <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 border-amber-500/20">Review</Badge>}
+                        {upload.status === "review" && <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 border-amber-500/20">{upload.diagnostics?.ready_to_commit ? "Ready" : "Review"}</Badge>}
                         {upload.status === "failed" && <Badge variant="destructive" className="bg-rose-500/10 text-rose-700 border-rose-500/20">Failed</Badge>}
                         {upload.status === "duplicate" && <Badge variant="outline">Duplicate</Badge>}
                         {upload.status === "pending" && <Badge variant="secondary">Pending</Badge>}
+                        {upload.status === "review" && <UploadDiagnostics diagnostics={upload.diagnostics} compact />}
                       </TableCell>
                       <TableCell>{upload.rows_parsed?.toLocaleString() || "—"}</TableCell>
                       <TableCell className="text-right">
+                        {upload.status === "review" && (
+                          <Button variant="outline" size="sm" className="mr-2"
+                            disabled={recheckingId !== null || isUploading}
+                            onClick={() => handleRecheck(upload.id)}>
+                            {recheckingId === upload.id ? "Rechecking…" : "Recheck"}
+                          </Button>
+                        )}
                         {upload.status === "review" && (
                           <Button variant="outline" size="sm" className="mr-2"
                             onClick={() => document.getElementById(`review-${upload.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
@@ -454,15 +547,20 @@ function ReviewCard({
   review,
   onCommit,
   onDiscard,
+  onRecheck,
+  rechecking,
 }: {
   review: any;
-  onCommit: (data: CommitData) => void;
+  onCommit: (data: CommitData) => Promise<void>;
   onDiscard: () => void;
+  onRecheck: () => Promise<void>;
+  rechecking: boolean;
 }) {
   const [mappings, setMappings] = useState<any[]>(review.mappings || []);
   const [resellerId, setResellerId] = useState<number | null>(review.detected_reseller_id ?? null);
   const [weekIso, setWeekIso] = useState<string>(review.detected_week_iso ?? "");
   const [rememberPattern, setRememberPattern] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
 
   const { data: allResellers } = useGetResellers();
 
@@ -478,7 +576,7 @@ function ReviewCard({
   const readyToCommit =
     !!resellerId &&
     !!weekIso &&
-    /^\d{4}-W\d{2}$/.test(weekIso) &&
+    validWeek(weekIso) &&
     mappings.some(m => m.canonical_field === "part_no") &&
     mappings.some(m => m.canonical_field === "soh") &&
     mappings.some(m => m.canonical_field === "sell_through_7d") &&
@@ -491,7 +589,7 @@ function ReviewCard({
         <div className="flex justify-between items-start gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <Badge className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0">Needs Review</Badge>
+              <Badge className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0">{review.diagnostics?.ready_to_commit ? "Ready to commit" : "Needs Review"}</Badge>
               <CardTitle className="text-lg flex items-center gap-2 truncate">
                 <FileText className="h-5 w-5 text-amber-600 flex-shrink-0" />
                 <span className="truncate">{review.filename}</span>
@@ -501,6 +599,12 @@ function ReviewCard({
               Pending only—not included in analytics until committed. Verify reseller, reporting week and column mappings.
             </CardDescription>
             {review.detection_reasoning && <p className="mt-2 text-xs text-muted-foreground">{review.detection_reasoning}</p>}
+            <UploadDiagnostics diagnostics={review.diagnostics} />
+            <Button type="button" variant="outline" size="sm" className="mt-3"
+              disabled={rechecking || isCommitting} onClick={onRecheck}>
+              {rechecking ? "Rechecking…" : "Recheck recognition"}
+            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">Recheck refreshes saved recognition only. It resets unsaved edits in this card and never imports data.</p>
             {!review.detected_reseller_id && review.candidates?.length > 0 && (
               <p className="mt-2 text-sm text-amber-800">
                 Possible resellers: {review.candidates.map((c: any) => c.name).join(", ")}. Select the correct one.
@@ -510,7 +614,7 @@ function ReviewCard({
               {review.rows_parsed ?? 0} product rows · {review.rows_flagged ?? 0} flagged for checking
             </p>
             {review.rows_flagged > 0 && (
-              <p className="mt-1 text-sm text-amber-800">Check the source for unusual SKUs or negative stock. Committing preserves these values.</p>
+              <p className="mt-1 text-sm text-amber-800">Check the source for unusual SKUs, invalid numbers or negative stock. Valid negative stock is preserved; invalid numbers must be corrected.</p>
             )}
           </div>
 
@@ -545,6 +649,12 @@ function ReviewCard({
                 value={weekIso}
                 onChange={(e) => setWeekIso(e.target.value.trim())}
               />
+              {weekIso && !validWeek(weekIso) && <p className="text-xs text-destructive mt-1">Enter a valid ISO week.</p>}
+              {review.detected_week_iso && weekIso !== review.detected_week_iso && (
+                <p className="text-xs text-amber-700 mt-1 max-w-[200px]">
+                  You are overriding {review.detected_week_iso}. Check the reporting period before committing.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -631,11 +741,15 @@ function ReviewCard({
               </span>
             )}
             <Button
-              disabled={!readyToCommit}
-              onClick={() => onCommit({ mappings, resellerId, weekIso, rememberPattern })}
+              disabled={!readyToCommit || isCommitting || rechecking}
+              onClick={async () => {
+                setIsCommitting(true);
+                try { await onCommit({ mappings, resellerId, weekIso, rememberPattern }); }
+                finally { setIsCommitting(false); }
+              }}
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >
-              Save Mapping & Commit
+              {isCommitting ? "Committing…" : "Confirm & Commit"}
             </Button>
           </div>
         </div>

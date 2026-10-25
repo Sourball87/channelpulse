@@ -7,10 +7,12 @@
  */
 import type { MappingField } from './mappingField';
 import type { ResellerCandidate } from './resellerCandidate';
+import type { UploadDiagnostics } from './uploadDiagnostics';
 import type { UploadReviewCardPreviewRowsItem } from './uploadReviewCardPreviewRowsItem';
 import type { UploadReviewCardStatus } from './uploadReviewCardStatus';
 
 export interface UploadReviewCard {
+  diagnostics?: UploadDiagnostics;
   upload_id: number;
   filename: string;
   status: UploadReviewCardStatus;

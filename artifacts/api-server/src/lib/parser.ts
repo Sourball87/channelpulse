@@ -622,7 +622,7 @@ export function mapHeaders(headers: string[], rawRows: Record<string, unknown>[]
   });
 }
 
-function computeMappingConfidence(mappings: MappingField[]): number {
+export function computeMappingConfidence(mappings: MappingField[]): number {
   const hasPartNo = mappings.some((m) => m.canonical_field === "part_no" && m.confidence >= 0.8);
   const hasSoh = mappings.some((m) => m.canonical_field === "soh" && m.confidence >= 0.8);
   const hasSt = mappings.some((m) => m.canonical_field === "sell_through_7d" && m.confidence >= 0.8);
@@ -775,6 +775,19 @@ export async function parseFile(
     sheetName = r.sheetName;
   }
 
+  return analyzeReportData({ filename, headers, rawRows, sheetName, fileHash,
+    parserUsed: ext === "csv" ? "papaparse" : "sheetjs" }, resellers, savedMappings, learnedFingerprints);
+}
+
+/** Re-run recognition on persisted source cells; absent workbook metadata stays absent. */
+export function analyzeReportData(
+  source: { filename: string; headers: string[]; rawRows: Record<string, unknown>[];
+    sheetName: string | null; fileHash: string; parserUsed: string },
+  resellers: ResellerProfile[],
+  savedMappings?: Map<string, MappingField[]>,
+  learnedFingerprints?: Map<string, number>,
+): ParseResult {
+  const { filename, headers, rawRows, sheetName, fileHash, parserUsed } = source;
   // ── Reseller detection ──────────────────────────────────────────────────────
 
   // Step 1: filename-based detection
@@ -888,7 +901,7 @@ export async function parseFile(
     headers,
     mappings,
     overallConfidence,
-    parserUsed: ext === "csv" ? "papaparse" : "sheetjs",
+    parserUsed,
     detectedResellerId: finalResellerId,
     detectedResellerName: finalResellerName,
     detectedCandidates: finalCandidates,

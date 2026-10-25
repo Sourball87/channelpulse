@@ -36,6 +36,7 @@ export const uploads = pgTable("uploads", {
   rawHeaders: jsonb("raw_headers"),
   rawRows: jsonb("raw_rows"),
   detectedMappings: jsonb("detected_mappings"),
+  recognition: jsonb("recognition"),
 });
 
 export const inventorySnapshots = pgTable(

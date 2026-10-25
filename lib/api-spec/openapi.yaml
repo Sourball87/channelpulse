@@ -261,6 +261,31 @@ paths:
                 items:
                   $ref: "#/components/schemas/UploadReviewCard"
 
+  /uploads/{id}/recheck:
+    post:
+      operationId: recheckUpload
+      tags: [uploads]
+      summary: Recheck a pending upload without changing analytics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadRecheckInput"
+      responses:
+        "200":
+          description: Updated upload review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Upload"
+
   /uploads/{id}:
     delete:
       operationId: deleteUpload
@@ -744,6 +769,8 @@ components:
       type: object
       required: [id, filename, status, uploaded_at]
       properties:
+        diagnostics:
+          $ref: "#/components/schemas/UploadDiagnostics"
         id:
           type: integer
         reseller_id:
@@ -818,6 +845,8 @@ components:
       type: object
       required: [upload_id, filename, status, confidence]
       properties:
+        diagnostics:
+          $ref: "#/components/schemas/UploadDiagnostics"
         upload_id:
           type: integer
         filename:
@@ -865,6 +894,56 @@ components:
         detection_reasoning:
           type: ["string", "null"]
 
+    ReviewReason:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    UploadAiNote:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+
+    UploadDiagnostics:
+      type: object
+      required: [review_reasons, ready_to_commit, auto_eligible, week_source, metadata_missing]
+      properties:
+        review_reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewReason"
+        ready_to_commit:
+          type: boolean
+        auto_eligible:
+          type: boolean
+        week_source:
+          type: ["string", "null"]
+        metadata_missing:
+          type: boolean
+        ai:
+          $ref: "#/components/schemas/UploadAiNote"
+
+    UploadRecheckInput:
+      type: object
+      properties:
+        batch_week:
+          type: string
+        ai_assist:
+          type: boolean
+          default: false
+
     UploadFilesInput:
       type: object
       required: [files]
@@ -872,6 +951,12 @@ components:
         files:
           type: string
           description: Multipart file field (handled as FormData in client)
+        batch_week:
+          type: string
+          description: Explicit user-selected ISO week, used only for otherwise undated files
+        ai_assist:
+          type: boolean
+          default: false
 
     CommitUploadInput:
       type: object

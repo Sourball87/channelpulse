@@ -7,21 +7,21 @@ import {
   applyMappingsToRows,
   hashBuffer,
   computeHeaderFingerprint,
-  isAutoCommitEligible,
   isValidWeekIso,
   detectWeekFromFilename,
-  detectResellerFromHeaders,
-  detectResellerFromFilename,
   stableCollapsedFilename,
   type MappingField,
+  type ParseResult,
 } from "../lib/parser";
+import { diagnoseUpload, readRecognition, reanalyzeStoredUpload, selectReportingWeek, withMappings, type Recognition } from "../lib/upload-review";
+import { suggestRecognition } from "../lib/upload-ai";
 import { deriveCategory } from "./parts";
-import { CommitUploadBody, CommitUploadParams, SaveUploadMappingBody, SaveUploadMappingParams, DeleteUploadParams, GetUploadsQueryParams } from "@workspace/api-zod";
+import { CommitUploadBody, CommitUploadParams, SaveUploadMappingBody, SaveUploadMappingParams, DeleteUploadParams, GetUploadsQueryParams, RecheckUploadBody, RecheckUploadParams } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
 // Store files in memory
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 15 } });
 
 async function getAllResellers() {
   const rows = await db.select().from(resellers);
@@ -49,6 +49,72 @@ async function getLearnedFingerprints(): Promise<Map<string, number>> {
   return map;
 }
 
+async function countExistingSnapshots(result: ParseResult): Promise<number> {
+  if (!result.detectedResellerId || !result.detectedWeekIso || !result.rows.length) return 0;
+  const incoming = result.rows.map(r => r.part_no).filter((p): p is string => !!p);
+  const known = await db.select({ id: parts.id }).from(parts).where(inArray(parts.partNo, incoming));
+  if (!known.length) return 0;
+  const [count] = await db.select({ count: sql<number>`count(*)::int` }).from(inventorySnapshots).where(and(
+    eq(inventorySnapshots.resellerId, result.detectedResellerId),
+    eq(inventorySnapshots.weekIso, result.detectedWeekIso),
+    inArray(inventorySnapshots.partId, known.map(p => p.id)),
+  ));
+  return count?.count ?? 0;
+}
+
+async function savedMappingsFor(result: ParseResult) {
+  if (!result.detectedResellerId) return result;
+  const [saved] = await db.select().from(columnMappings).where(and(
+    eq(columnMappings.resellerId, result.detectedResellerId),
+    eq(columnMappings.fingerprint, computeHeaderFingerprint(result.headers)),
+  ));
+  return saved && Array.isArray(saved.mapping) ? withMappings(result, saved.mapping as MappingField[]) : result;
+}
+
+function diagnostics(result: ParseResult, count: number, recognition: Recognition | null, metadataMissing = false) {
+  const assessment = diagnoseUpload(result, count > 0, recognition);
+  return {
+    review_reasons: assessment.reasons, ready_to_commit: assessment.ready,
+    auto_eligible: assessment.autoEligible, week_source: recognition?.weekSource ?? (result.detectedWeekIso ? "filename" : null),
+    metadata_missing: metadataMissing, ai: recognition?.ai,
+  };
+}
+
+async function uploadView(row: typeof uploads.$inferSelect, profiles: Awaited<ReturnType<typeof getAllResellers>>) {
+  const { result: base, recognition, metadataMissing } = reanalyzeStoredUpload(row, profiles);
+  const originalRecognition = readRecognition(row.recognition);
+  let result = originalRecognition && Array.isArray(row.detectedMappings)
+    ? withMappings(base, row.detectedMappings as MappingField[]) : base;
+  // Keep evidenced AI metadata visible after reload, but never treat it as confirmed.
+  if (originalRecognition?.weekSource === "ai_suggested" && row.weekIso) {
+    result = { ...result, detectedWeekIso: row.weekIso };
+    recognition.weekSource = "ai_suggested";
+  }
+  if (originalRecognition?.ai?.status === "suggested" && !result.detectedResellerId && row.resellerId) {
+    result = { ...result, detectedResellerId: row.resellerId,
+      detectedResellerName: profiles.find(p => p.id === row.resellerId)?.name ?? null };
+  }
+  const committed = row.status === "committed";
+  const count = committed ? 0 : await countExistingSnapshots(result);
+  return {
+    id: row.id, filename: row.filename, status: row.status,
+    reseller_id: committed ? row.resellerId : result.detectedResellerId,
+    reseller_name: profiles.find(r => r.id === (committed ? row.resellerId : result.detectedResellerId))?.name ?? null,
+    report_date: row.reportDate,
+    week_iso: committed ? row.weekIso : result.detectedWeekIso,
+    uploaded_at: row.uploadedAt.toISOString(), parser_used: row.parserUsed,
+    confidence: committed ? Number(row.confidence ?? 0) : result.overallConfidence,
+    rows_parsed: committed ? row.rowsParsed : result.rowsParsed,
+    rows_flagged: committed ? row.rowsFlagged : result.rowsFlagged,
+    raw_headers: Array.isArray(row.rawHeaders) ? row.rawHeaders : [],
+    detected_mappings: row.status === "review" ? result.mappings : undefined,
+    week_not_detected: row.status === "review" && !result.detectedWeekIso,
+    candidates: result.detectedCandidates.map(c => ({ id: c.id, name: c.name, code: c.code })),
+    detected_format_id: result.detectedFormatId, detection_reasoning: result.detectionReasoning,
+    diagnostics: committed ? undefined : diagnostics(result, count, originalRecognition ? recognition : null, metadataMissing),
+  };
+}
+
 router.get("/uploads", async (req, res) => {
   try {
     const q = GetUploadsQueryParams.safeParse(req.query);
@@ -56,59 +122,12 @@ router.get("/uploads", async (req, res) => {
     const offset = q.success ? (q.data.offset ?? 0) : 0;
     const profiles = await getAllResellers();
 
-    const rows = await db
-      .select({
-        id: uploads.id,
-        reseller_id: uploads.resellerId,
-        reseller_name: resellers.name,
-        filename: uploads.filename,
-        report_date: uploads.reportDate,
-        week_iso: uploads.weekIso,
-        uploaded_at: uploads.uploadedAt,
-        status: uploads.status,
-        parser_used: uploads.parserUsed,
-        confidence: uploads.confidence,
-        rows_parsed: uploads.rowsParsed,
-        rows_flagged: uploads.rowsFlagged,
-        raw_headers: uploads.rawHeaders,
-        detected_mappings: uploads.detectedMappings,
-      })
-      .from(uploads)
-      .leftJoin(resellers, eq(uploads.resellerId, resellers.id))
+    const rows = await db.select().from(uploads)
       .orderBy(desc(uploads.uploadedAt))
       .limit(limit)
       .offset(offset);
 
-    res.json(
-      rows.map((r) => {
-        const format = detectResellerFromHeaders(
-          Array.isArray(r.raw_headers) ? r.raw_headers as string[] : [],
-          null, profiles, detectResellerFromFilename(r.filename, profiles),
-        );
-        return ({
-        id: r.id,
-        reseller_id: r.reseller_id,
-        reseller_name: r.reseller_name,
-        filename: r.filename,
-        report_date: r.report_date,
-        week_iso: r.week_iso,
-        uploaded_at: r.uploaded_at?.toISOString(),
-        status: r.status,
-        parser_used: r.parser_used,
-        confidence: r.confidence !== null ? Number(r.confidence) : null,
-        rows_parsed: r.rows_parsed,
-        rows_flagged: r.rows_flagged,
-        raw_headers: r.raw_headers,
-        detected_mappings: r.status === "review" ? (r.detected_mappings as any[] | null) : undefined,
-        week_not_detected: r.status === "review" && !detectWeekFromFilename(r.filename).weekIso,
-        candidates: format.candidates.map(c => ({ id: c.id, name: c.name, code: c.code })),
-        detected_format_id: format.formatId,
-        detection_reasoning: r.status === "review"
-          ? (r.reseller_id ? `Recognised report for ${r.reseller_name}. Confirm the columns and reporting week.`
-            : "Reseller is unresolved. Select the correct reseller before committing.")
-          : null,
-      }); }),
-    );
+    res.json(await Promise.all(rows.map(row => uploadView(row, profiles))));
   } catch (err) {
     req.log.error({ err }, "Failed to get uploads");
     return res.status(500).json({ error: "Internal server error" });
@@ -121,6 +140,9 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
     if (!files || files.length === 0) {
       return res.status(400).json({ error: "No files provided" });
     }
+    const batchWeek = typeof req.body.batch_week === "string" ? req.body.batch_week.trim() : undefined;
+    if (batchWeek && !isValidWeekIso(batchWeek)) return res.status(400).json({ error: "Enter a valid batch week, for example 2026-W27." });
+    const aiAssist = req.body.ai_assist === "true";
 
     const [allResellers, learnedFingerprints] = await Promise.all([
       getAllResellers(),
@@ -166,7 +188,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
       const existing = await db
         .select()
         .from(uploads)
-        .where(eq(uploads.fileHash, fileHash))
+        .where(and(eq(uploads.fileHash, fileHash), eq(uploads.status, "committed")))
         .limit(1);
 
       if (existing.length > 0 && existing[0].status === "committed") {
@@ -195,24 +217,20 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
       }
 
       try {
-        const parseResult = await parseFile(buf, filename, allResellers, undefined, learnedFingerprints);
+        let parseResult = await parseFile(buf, filename, allResellers, undefined, learnedFingerprints);
+        const recognition: Recognition = { version: 1, sheetName: parseResult.sheetName, weekSource: null };
 
         // Build saved mappings lookup if reseller detected
-        let finalMappings = parseResult.mappings;
-        if (parseResult.detectedResellerId) {
-          const savedMappingRows = await db
-            .select()
-            .from(columnMappings)
-            .where(eq(columnMappings.resellerId, parseResult.detectedResellerId));
-
-          if (savedMappingRows.length > 0) {
-            const fingerprint = computeHeaderFingerprint(parseResult.headers);
-            const match = savedMappingRows.find((m) => m.fingerprint === fingerprint);
-            if (match && Array.isArray(match.mapping)) {
-              finalMappings = match.mapping as MappingField[];
-            }
-          }
+        parseResult = await savedMappingsFor(parseResult);
+        parseResult = selectReportingWeek(parseResult, recognition, batchWeek);
+        if (aiAssist) {
+          const priorWeek = parseResult.detectedWeekIso;
+          const suggestion = await suggestRecognition(parseResult, filename, allResellers);
+          parseResult = suggestion.result;
+          recognition.ai = suggestion.note;
+          if (!priorWeek && parseResult.detectedWeekIso) recognition.weekSource = "ai_suggested";
         }
+        const finalMappings = parseResult.mappings;
 
         // Week detection result
         const weekNotDetected = !parseResult.detectedWeekIso;
@@ -260,7 +278,8 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
         //  3. Overall confidence ≥ 0.9
         //  4. Week detected from filename (not inferred)
         //  5. No overwrite conflict
-        const canAutoCommit = isAutoCommitEligible(parseResult, finalMappings, overwritesExisting);
+        let reviewDiagnostics = diagnostics(parseResult, existingSnapshotCount ?? 0, recognition);
+        const canAutoCommit = reviewDiagnostics.auto_eligible;
 
         const [uploadRow] = await db
           .insert(uploads)
@@ -278,13 +297,27 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
             rawHeaders: parseResult.headers as unknown as Record<string, unknown>,
             rawRows: parseResult.rawRows as unknown as Record<string, unknown>,
             detectedMappings: finalMappings as unknown as Record<string, unknown>,
+            recognition,
           })
           .returning();
 
         let finalStatus = "needs_review";
         if (canAutoCommit) {
-          await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId!, detectedWeek!, finalMappings, parseResult.rawRows, false);
-          finalStatus = "auto_committed";
+          try {
+            await commitUploadInternal(uploadRow.id, parseResult.detectedResellerId!, detectedWeek!, finalMappings, parseResult.rawRows, false, true);
+            finalStatus = "auto_committed";
+          } catch (err) {
+            // Parsing succeeded. Retain the one pending upload on a commit failure.
+            req.log.warn({ err, uploadId: uploadRow.id }, "Automatic commit deferred to review");
+            recognition.commitDeferred = true;
+            await db.update(uploads).set({ recognition }).where(eq(uploads.id, uploadRow.id));
+            const count = await countExistingSnapshots(parseResult);
+            reviewDiagnostics = diagnostics(parseResult, count, recognition);
+            reviewDiagnostics.auto_eligible = false;
+            reviewDiagnostics.ready_to_commit = false;
+            overwritesExisting = count > 0;
+            existingSnapshotCount = count;
+          }
         }
 
         reviewCards.push({
@@ -313,6 +346,7 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
           candidates: parseResult.detectedCandidates.map(r => ({ id: r.id, name: r.name, code: r.code })),
           detected_format_id: parseResult.detectedFormatId,
           detection_reasoning: parseResult.detectionReasoning,
+          diagnostics: reviewDiagnostics,
         });
       } catch (parseErr) {
         req.log.error({ err: parseErr, filename }, "Failed to parse file");
@@ -361,6 +395,54 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
   }
 });
 
+router.post("/uploads/:id/recheck", async (req, res) => {
+  const params = RecheckUploadParams.safeParse(req.params);
+  const body = RecheckUploadBody.safeParse(req.body);
+  if (!params.success || !body.success) return res.status(400).json({ error: "Invalid recheck input." });
+  const batchWeek = body.data.batch_week?.trim();
+  if (batchWeek && !isValidWeekIso(batchWeek)) return res.status(400).json({ error: "Enter a valid batch reporting week." });
+  try {
+    const [row] = await db.select().from(uploads).where(eq(uploads.id, params.data.id));
+    if (!row) return res.status(404).json({ error: "Upload not found." });
+    if (row.status !== "review") return res.status(409).json({ error: "Only pending review uploads can be rechecked. Committed data is unchanged." });
+    if (!Array.isArray(row.rawRows) || !row.rawRows.length || !Array.isArray(row.rawHeaders) || !row.rawHeaders.length) {
+      return res.status(422).json({ error: "The original source cells are unavailable. Re-upload the original report; no data was changed." });
+    }
+    const profiles = await getAllResellers();
+    const analyzed = reanalyzeStoredUpload(row, profiles);
+    const recognition = analyzed.recognition;
+    delete recognition.ai;
+    delete recognition.commitDeferred;
+    let result = await savedMappingsFor(analyzed.result);
+    result = selectReportingWeek(result, recognition, batchWeek);
+    if (body.data.ai_assist) {
+      const priorWeek = result.detectedWeekIso;
+      const suggestion = await suggestRecognition(result, row.filename, profiles);
+      result = suggestion.result;
+      recognition.ai = suggestion.note;
+      if (!priorWeek && result.detectedWeekIso) recognition.weekSource = "ai_suggested";
+    }
+    recognition.recheckedAt = new Date().toISOString();
+    const [updated] = await db.update(uploads).set({
+      resellerId: result.detectedResellerId, weekIso: result.detectedWeekIso,
+      reportDate: result.detectedReportDate, confidence: String(result.overallConfidence),
+      rowsParsed: result.rowsParsed, rowsFlagged: result.rowsFlagged,
+      detectedMappings: result.mappings, recognition,
+    }).where(and(eq(uploads.id, row.id), eq(uploads.status, "review"))).returning();
+    if (!updated) return res.status(409).json({ error: "The upload changed while being rechecked. Refresh and try again." });
+    // Explicit rechecks update recognition only; they never commit snapshots.
+    return res.json(await uploadView(updated, profiles));
+  } catch (err) {
+    req.log.error({ err }, "Failed to recheck upload");
+    return res.status(500).json({ error: "Unable to recheck this upload. Your saved data is unchanged." });
+  }
+});
+
+class UploadCommitConflict extends Error {
+  constructor(public count: number) { super("Existing snapshots require confirmation"); }
+}
+class UploadStateConflict extends Error {}
+
 async function commitUploadInternal(
   uploadId: number,
   resellerId: number,
@@ -368,11 +450,15 @@ async function commitUploadInternal(
   mappings: MappingField[],
   rawRows: Record<string, unknown>[],
   confirmOverwrite: boolean,
+  automatic = false,
 ) {
   const parsedRows = applyMappingsToRows(rawRows, mappings);
   return db.transaction(async tx => {
-  const [source] = await tx.select({ reportDate: uploads.reportDate })
-    .from(uploads).where(eq(uploads.id, uploadId));
+  const [source] = await tx.select().from(uploads).where(eq(uploads.id, uploadId)).for("update");
+  if (!source || source.status !== "review") throw new UploadStateConflict("This upload is no longer pending review. Refresh the page.");
+  // Serialise commits for a reseller/week so a concurrent import cannot race the
+  // overwrite check and silently replace values using the snapshot upsert.
+  await tx.execute(sql`select pg_advisory_xact_lock(${resellerId}, hashtext(${weekIso}))`);
 
   // Get or create parts
   const partMap = new Map<string, number>();
@@ -432,6 +518,13 @@ async function commitUploadInternal(
   }
 
   // Delete existing snapshots scoped ONLY to the incoming part IDs
+  if (!confirmOverwrite && incomingPartIds.length) {
+    const conflict = await tx.select({ id: inventorySnapshots.id }).from(inventorySnapshots).where(and(
+      eq(inventorySnapshots.resellerId, resellerId), eq(inventorySnapshots.weekIso, weekIso),
+      inArray(inventorySnapshots.partId, incomingPartIds),
+    ));
+    if (conflict.length) throw new UploadCommitConflict(conflict.length);
+  }
   if (confirmOverwrite && incomingPartIds.length > 0) {
     await tx
       .delete(inventorySnapshots)
@@ -476,9 +569,19 @@ async function commitUploadInternal(
   }
 
   // Update upload record
+  const recognition: Recognition = readRecognition(source.recognition) ??
+    { version: 1, sheetName: null, weekSource: null };
+  if (!automatic) {
+    if (recognition.confirmedWeek !== weekIso || !["batch", "manual"].includes(recognition.weekSource ?? "")) {
+      recognition.weekSource = "manual";
+    }
+    recognition.confirmedWeek = weekIso;
+    recognition.confirmedResellerId = resellerId;
+  }
   await tx
     .update(uploads)
-    .set({ status: "committed", resellerId, weekIso })
+    .set({ status: "committed", resellerId, weekIso, recognition, detectedMappings: mappings,
+      rowsParsed: parsedRows.length, rowsFlagged: parsedRows.filter(r => r.flagged).length })
     .where(eq(uploads.id, uploadId));
   });
 }
@@ -508,12 +611,16 @@ router.post("/uploads/:id/commit", async (req, res) => {
       .limit(1);
 
     if (!uploadRow[0]) return res.status(404).json({ error: "Upload not found" });
+    if (uploadRow[0].status !== "review") return res.status(409).json({ error: "This upload is no longer pending review. Refresh the page." });
+    const [owner] = await db.select({ id: resellers.id }).from(resellers).where(eq(resellers.id, reseller_id));
+    if (!owner) return res.status(400).json({ error: "Select an existing reseller." });
 
     const rawRows = (uploadRow[0].rawRows as Record<string, unknown>[]) ?? [];
     const headers = uploadRow[0].rawHeaders as string[] | null;
     const allowedFields = new Set(["part_no", "soh", "sell_through_7d", "sold_mtd", "on_order", "avg_cost", "sold_14d", "sold_30d"]);
-    if (mappings.some(m => m.canonical_field &&
-      (!allowedFields.has(m.canonical_field) || !headers?.includes(m.source_col)))) {
+    if (new Set(mappings.map(m => m.source_col)).size !== mappings.length ||
+      mappings.some(m => m.canonical_field &&
+      (!allowedFields.has(m.canonical_field) || !Array.isArray(headers) || !headers.includes(m.source_col)))) {
       return res.status(400).json({ error: "Mappings must reference the uploaded file's columns and supported standard fields." });
     }
     const parsed = applyMappingsToRows(rawRows, mappings as MappingField[]);
@@ -640,6 +747,11 @@ router.post("/uploads/:id/commit", async (req, res) => {
       learned: true,
     });
   } catch (err) {
+    if (err instanceof UploadCommitConflict) return res.status(409).json({
+      error: "conflict", message: `This would overwrite ${err.count} existing snapshots. Confirm to proceed.`,
+      existing_count: err.count,
+    });
+    if (err instanceof UploadStateConflict) return res.status(409).json({ error: err.message });
     req.log.error({ err }, "Failed to commit upload");
     return res.status(500).json({ error: "Internal server error" });
   }

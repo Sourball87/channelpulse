@@ -205,6 +205,21 @@ export const GetUploadsQueryParams = zod.object({
 })
 
 export const GetUploadsResponseItem = zod.object({
+  "diagnostics": zod.object({
+  "review_reasons": zod.array(zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+})),
+  "ready_to_commit": zod.boolean(),
+  "auto_eligible": zod.boolean(),
+  "week_source": zod.string().nullable(),
+  "metadata_missing": zod.boolean(),
+  "ai": zod.object({
+  "status": zod.string(),
+  "message": zod.string(),
+  "evidence": zod.array(zod.string()).optional()
+}).optional()
+}).optional(),
   "id": zod.number(),
   "reseller_id": zod.number().nullish(),
   "reseller_name": zod.string().nullish(),
@@ -239,11 +254,30 @@ export const GetUploadsResponse = zod.array(GetUploadsResponseItem)
 /**
  * @summary Upload one or more reseller files (multipart/form-data)
  */
+export const createUploadBodyAiAssistDefault = false;
+
 export const CreateUploadBody = zod.object({
-  "files": zod.string().describe('Multipart file field (handled as FormData in client)')
+  "files": zod.string().describe('Multipart file field (handled as FormData in client)'),
+  "batch_week": zod.string().optional().describe('Explicit user-selected ISO week, used only for otherwise undated files'),
+  "ai_assist": zod.boolean().default(createUploadBodyAiAssistDefault)
 })
 
 export const CreateUploadResponseItem = zod.object({
+  "diagnostics": zod.object({
+  "review_reasons": zod.array(zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+})),
+  "ready_to_commit": zod.boolean(),
+  "auto_eligible": zod.boolean(),
+  "week_source": zod.string().nullable(),
+  "metadata_missing": zod.boolean(),
+  "ai": zod.object({
+  "status": zod.string(),
+  "message": zod.string(),
+  "evidence": zod.array(zod.string()).optional()
+}).optional()
+}).optional(),
   "upload_id": zod.number(),
   "filename": zod.string(),
   "status": zod.enum(['auto_committed', 'needs_review', 'failed', 'duplicate']),
@@ -274,6 +308,66 @@ export const CreateUploadResponseItem = zod.object({
   "detection_reasoning": zod.string().nullish()
 })
 export const CreateUploadResponse = zod.array(CreateUploadResponseItem)
+
+
+/**
+ * @summary Recheck a pending upload without changing analytics
+ */
+export const RecheckUploadParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const recheckUploadBodyAiAssistDefault = false;
+
+export const RecheckUploadBody = zod.object({
+  "batch_week": zod.string().optional(),
+  "ai_assist": zod.boolean().default(recheckUploadBodyAiAssistDefault)
+})
+
+export const RecheckUploadResponse = zod.object({
+  "diagnostics": zod.object({
+  "review_reasons": zod.array(zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+})),
+  "ready_to_commit": zod.boolean(),
+  "auto_eligible": zod.boolean(),
+  "week_source": zod.string().nullable(),
+  "metadata_missing": zod.boolean(),
+  "ai": zod.object({
+  "status": zod.string(),
+  "message": zod.string(),
+  "evidence": zod.array(zod.string()).optional()
+}).optional()
+}).optional(),
+  "id": zod.number(),
+  "reseller_id": zod.number().nullish(),
+  "reseller_name": zod.string().nullish(),
+  "filename": zod.string(),
+  "report_date": zod.string().nullish(),
+  "week_iso": zod.string().nullish(),
+  "uploaded_at": zod.string(),
+  "status": zod.enum(['pending', 'review', 'committed', 'failed', 'duplicate']),
+  "parser_used": zod.string().nullish(),
+  "confidence": zod.number().nullish(),
+  "rows_parsed": zod.number().nullish(),
+  "rows_flagged": zod.number().nullish(),
+  "raw_headers": zod.array(zod.string()).nullish(),
+  "detected_mappings": zod.array(zod.object({
+  "source_col": zod.string(),
+  "canonical_field": zod.string().nullable(),
+  "confidence": zod.number(),
+  "sample_values": zod.array(zod.string()).optional()
+})).nullish(),
+  "week_not_detected": zod.boolean().optional(),
+  "candidates": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "code": zod.string()
+})).optional(),
+  "detected_format_id": zod.string().nullish(),
+  "detection_reasoning": zod.string().nullish()
+})
 
 
 /**
@@ -312,6 +406,21 @@ export const CommitUploadBody = zod.object({
 })
 
 export const CommitUploadResponse = zod.object({
+  "diagnostics": zod.object({
+  "review_reasons": zod.array(zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+})),
+  "ready_to_commit": zod.boolean(),
+  "auto_eligible": zod.boolean(),
+  "week_source": zod.string().nullable(),
+  "metadata_missing": zod.boolean(),
+  "ai": zod.object({
+  "status": zod.string(),
+  "message": zod.string(),
+  "evidence": zod.array(zod.string()).optional()
+}).optional()
+}).optional(),
   "id": zod.number(),
   "reseller_id": zod.number().nullish(),
   "reseller_name": zod.string().nullish(),

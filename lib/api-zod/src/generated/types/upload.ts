@@ -7,9 +7,11 @@
  */
 import type { MappingField } from './mappingField';
 import type { ResellerCandidate } from './resellerCandidate';
+import type { UploadDiagnostics } from './uploadDiagnostics';
 import type { UploadStatus } from './uploadStatus';
 
 export interface Upload {
+  diagnostics?: UploadDiagnostics;
   id: number;
   /** @nullable */
   reseller_id?: number | null;

@@ -47,6 +47,7 @@ import type {
   TrendSeries,
   Upload,
   UploadFilesInput,
+  UploadRecheckInput,
   UploadReviewCard,
   WeekSummary
 } from './api.schemas';
@@ -834,6 +835,12 @@ export const getCreateUploadUrl = () => {
 export const createUpload = async (uploadFilesInput: UploadFilesInput, options?: RequestInit): Promise<UploadReviewCard[]> => {
     const formData = new FormData();
 formData.append(`files`, uploadFilesInput.files);
+if(uploadFilesInput.batch_week !== undefined) {
+ formData.append(`batch_week`, uploadFilesInput.batch_week);
+ }
+if(uploadFilesInput.ai_assist !== undefined) {
+ formData.append(`ai_assist`, uploadFilesInput.ai_assist.toString())
+ }
 
   return customFetch<UploadReviewCard[]>(getCreateUploadUrl(),
   {
@@ -891,6 +898,78 @@ export const useCreateUpload = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateUploadMutationOptions(options));
+    }
+
+export const getRecheckUploadUrl = (id: number,) => {
+
+
+
+
+  return `/api/uploads/${id}/recheck`
+}
+
+/**
+ * @summary Recheck a pending upload without changing analytics
+ */
+export const recheckUpload = async (id: number,
+    uploadRecheckInput: UploadRecheckInput, options?: RequestInit): Promise<Upload> => {
+
+  return customFetch<Upload>(getRecheckUploadUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(uploadRecheckInput)
+  }
+);}
+
+
+
+
+
+export const getRecheckUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recheckUpload>>, TError,{id: number;data: BodyType<UploadRecheckInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recheckUpload>>, TError,{id: number;data: BodyType<UploadRecheckInput>}, TContext> => {
+
+const mutationKey = ['recheckUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recheckUpload>>, {id: number;data: BodyType<UploadRecheckInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  recheckUpload(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecheckUploadMutationResult = NonNullable<Awaited<ReturnType<typeof recheckUpload>>>
+    export type RecheckUploadMutationBody = BodyType<UploadRecheckInput>
+    export type RecheckUploadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Recheck a pending upload without changing analytics
+ */
+export const useRecheckUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recheckUpload>>, TError,{id: number;data: BodyType<UploadRecheckInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recheckUpload>>,
+        TError,
+        {id: number;data: BodyType<UploadRecheckInput>},
+        TContext
+      > => {
+      return useMutation(getRecheckUploadMutationOptions(options));
     }
 
 export const getDeleteUploadUrl = (id: number,) => {
