@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 /** A point-in-time stock view; period filters select their ending week, never sum stock. */
 export function StockOnHandHeatmap({ category }: { category?: string }) {
-  const { apiParams, insightWeek, resellerIds, setFocusView } = useFilters();
+  const { apiParams, insightWeek, resellerIds } = useFilters();
   const stockParams = {
     week_iso: insightWeek,
     category,
@@ -35,9 +35,6 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
           Stock on Hand (SOH)
           <Badge variant="secondary">{data?.week_iso ?? insightWeek ?? "Latest week"}</Badge>
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={() => setFocusView(true)}>
-          Open Phocas sell-through
-        </Button>
       </CardHeader>
       <CardContent className="p-4">
         <p className="text-xs text-muted-foreground mb-3">

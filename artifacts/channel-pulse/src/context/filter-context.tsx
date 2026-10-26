@@ -38,7 +38,6 @@ interface FilterContextValue {
   periodLabel: string;
   isFiltered: boolean;
   focusView: boolean;
-  setFocusView: (enabled: boolean) => void;
 
   // Actions
   setFilters: (updates: Partial<{
@@ -61,7 +60,7 @@ interface FilterContextValue {
 const FilterContext = createContext<FilterContextValue>({
   partIds: [], resellerIds: [], mode: "week",
   apiParams: {}, periodLabel: "Latest", isFiltered: false,
-  focusView: false, setFocusView: () => {},
+  focusView: false,
   setFilters: () => {}, clearFilters: () => {}, availableWeeks: [],
 });
 
@@ -132,7 +131,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   const weekFrom   = params.get("from") ?? undefined;
   const weekTo     = params.get("to") ?? undefined;
   const weekIso    = params.get("week") ?? undefined;
-  const focusView = location === "/" && params.get("view") === "sell-through";
+  const focusView = location === "/sell-through";
 
   const mode: "week" | "period" = preset != null || (weekFrom != null && weekTo != null) ? "period" : "week";
 
@@ -240,22 +239,14 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
 
   const clearFilters = useCallback(() => {
     if (search) trackEvent("filters_reset", { page: location });
-    navigate(`${location}${focusView ? "?view=sell-through" : ""}`);
-  }, [location, navigate, search, focusView]);
-
-  const setFocusView = useCallback((enabled: boolean) => {
-    const p = new URLSearchParams(search);
-    if (enabled) p.set("view", "sell-through");
-    else p.delete("view");
-    const query = p.toString();
-    navigate(`/${query ? "?" + query : ""}`);
-  }, [search, navigate]);
+    navigate(location);
+  }, [location, navigate, search]);
 
   const value: FilterContextValue = {
     partIds, resellerIds, preset, weekFrom, weekTo, weekIso,
     mode, resolvedFrom, resolvedTo, resolvedWeek,
     apiParams, insightWeek,
-    periodLabel, isFiltered, focusView, setFocusView,
+    periodLabel, isFiltered, focusView,
     setFilters, clearFilters, availableWeeks,
   };
 

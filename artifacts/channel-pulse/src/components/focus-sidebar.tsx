@@ -29,16 +29,17 @@ const dimBtn =
   "w-full h-9 rounded-[2px] border border-[#cfd2d6] bg-[#ececec] text-[13px] text-[#333] hover:bg-[#e0e0e0] aria-expanded:bg-[#d6dde2] aria-expanded:border-[#5bc6e0]";
 
 export function FocusSidebar() {
-  const { partIds, resellerIds, setFilters, clearFilters, isFiltered, apiParams, insightWeek, focusView, setFocusView } = useFilters();
+  const { partIds, resellerIds, setFilters, clearFilters, isFiltered, apiParams, insightWeek } = useFilters();
   const { data: parts } = useGetParts();
   const { data: resellers } = useGetResellers();
+  const [open, setOpen] = useState(true);
   const [dim, setDim] = useState<DimKey | null>(null);
   const [q, setQ] = useState("");
 
   const heatParams = { week_iso: insightWeek, reseller_ids: apiParams.reseller_ids };
   const scoped = resellerIds.length > 0;
   const heat = useGetDashboardWeeklySales(heatParams, {
-    query: { enabled: scoped && focusView, queryKey: getGetDashboardWeeklySalesQueryKey(heatParams) },
+    query: { enabled: scoped, queryKey: getGetDashboardWeeklySalesQueryKey(heatParams) },
   });
 
   const allParts = useMemo(() => parts ?? [], [parts]);
@@ -185,14 +186,14 @@ export function FocusSidebar() {
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          aria-pressed={focusView}
-          aria-label={focusView ? "Return to SOH dashboard" : "Open Phocas sell-through focus"}
+          aria-pressed={open}
+          aria-label={open ? "Focus, collapse account and stock controls" : "Focus, expand account and stock controls"}
           data-testid="button-focus"
           onClick={() => {
-            trackEvent("focus_toggled", { expanded: !focusView });
-            setFocusView(!focusView);
+            trackEvent("focus_toggled", { expanded: !open });
+            setOpen(!open);
           }}
-          className={`h-9 rounded-[2px] text-[13px] text-white ${focusView ? "bg-[#37b6d6]" : "bg-[#8fd3e6]"}`}
+          className={`h-9 rounded-[2px] text-[13px] text-white ${open ? "bg-[#37b6d6]" : "bg-[#8fd3e6]"}`}
         >
           Focus
         </button>
@@ -233,8 +234,7 @@ export function FocusSidebar() {
         </ul>
       )}
 
-      {!focusView && <p className="text-xs text-muted-foreground">Select Focus for weekly sell-through by account and stock code.</p>}
-      {focusView && (
+      {open && (
         <div className="space-y-3">
           <div className="space-y-1.5">{ACCOUNT_DIMS.map(renderDim)}</div>
           <div className="space-y-1.5">{STOCK_DIMS.map(renderDim)}</div>

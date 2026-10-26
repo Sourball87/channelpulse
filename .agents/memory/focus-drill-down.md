@@ -33,8 +33,8 @@ Show weeks across the top with the most recent week first, Stock Codes down the 
 
 **How to apply:** Account selection scopes the sales and available Stock Codes to the 12-week history. Use consecutive calendar weeks ending at the reporting selection, not 12 nonconsecutive uploaded weeks. Preserve missing reports as missing, rather than inventing zero sales.
 
-Separate Dashboard stock monitoring from Phocas sell-through focus. The Dashboard keeps all current summary cards and shows current-week SOH with SKUs down the left and Account Codes across the top. Phocas means the existing Focus sidebar and heatmap, not a new navigation page, and focuses only on weekly sell-through.
+Separate SOH and Sell Through into navigation pages, with Sell Through directly below SOH (the former Dashboard). SOH keeps all current summary cards and shows current-week stock with SKUs down the left and Account Codes across the top. Sell Through contains the Phocas Focus sidebar and the weekly sales heatmap only.
 
-**Why:** The user explicitly confirmed those locations, SOH layout and retention of all Dashboard summary cards before implementation.
+**Why:** After trying a shared Dashboard/Focus toggle, the user said they would rather separate them and put Sell Through underneath the Dashboard/SOH navigation item. They previously confirmed the SOH layout and retention of all summary cards.
 
-**How to apply:** Default to the SOH Dashboard. Open the sell-through view through Focus, preserve account/stock/date filters between views, and retain the 12-week newest-first sales matrix. Keep Dashboard's stock/WOI summary cards out of the Phocas view.
+**How to apply:** Default to SOH. Open Phocas via the Sell Through navigation entry, not a Dashboard mode toggle. Preserve account/stock/date filters between pages and retain the 12-week newest-first sales matrix. Focus only expands/collapses the sell-through drill controls. Keep stock/WOI summary cards out of Sell Through.

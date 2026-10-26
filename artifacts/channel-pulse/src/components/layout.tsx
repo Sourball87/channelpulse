@@ -12,6 +12,7 @@ import {
 import { FocusSidebar } from "@/components/focus-sidebar";
 import {
   LayoutDashboard,
+  BarChart3,
   TableProperties,
   TrendingUp,
   AlertCircle,
@@ -24,7 +25,8 @@ import { GlobalFilterBar } from "@/components/global-filter-bar";
 import { useFilters } from "@/context/filter-context";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "SOH", href: "/", icon: LayoutDashboard },
+  { name: "Sell Through", href: "/sell-through", icon: BarChart3 },
   { name: "Insights", href: "/insights", icon: Lightbulb },
   { name: "Explorer", href: "/explorer", icon: TableProperties },
   { name: "Trends", href: "/trends", icon: TrendingUp },
@@ -34,7 +36,7 @@ const navigation = [
 ];
 
 // Pages that show the global filter bar
-const FILTER_PATHS = ["/", "/insights", "/explorer", "/trends", "/alerts"];
+const FILTER_PATHS = ["/", "/sell-through", "/insights", "/explorer", "/trends", "/alerts"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -81,7 +83,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <SidebarMenuItem key={item.name}>
                       <SidebarMenuButton
                         asChild
-                        isActive={location === item.href && !focusView}
+                        isActive={location === item.href}
                         tooltip={item.name}
                       >
                         <Link href={href} className="flex items-center gap-3">
@@ -94,7 +96,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 })}
               </SidebarMenu>
             </div>
-            {showFilterBar && <FocusSidebar />}
+            {focusView && <FocusSidebar />}
           </SidebarContent>
         </Sidebar>
         <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">

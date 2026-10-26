@@ -22,6 +22,7 @@ function Router() {
       <AppLayout>
         <Switch>
           <Route path="/" component={Dashboard} />
+          <Route path="/sell-through" component={Dashboard} />
           <Route path="/insights" component={Insights} />
           <Route path="/explorer" component={Explorer} />
           <Route path="/trends" component={Trends} />

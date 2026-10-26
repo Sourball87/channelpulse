@@ -33,7 +33,7 @@ const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
 
 export default function Dashboard() {
   const [category, setCategory] = useState<string>("All");
-  const { apiParams, insightWeek, resellerIds, focusView, setFocusView } = useFilters();
+  const { apiParams, insightWeek, resellerIds, focusView } = useFilters();
   const { data: accounts } = useGetResellers();
 
   const queryCategory = category === "All" ? undefined : category;
@@ -112,15 +112,14 @@ export default function Dashboard() {
     <div className="flex flex-col h-full bg-muted/20">
       <header className="flex-none bg-background border-b px-6 py-4 flex flex-wrap gap-3 items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{focusView ? "Phocas — Sell-Through" : "Dashboard"}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{focusView ? "Sell Through" : "SOH"}</h1>
           <p className="text-sm text-muted-foreground">
-            {focusView ? "Weekly units sold · Account Code and Stock Code focus" : kpiData?.is_period
+            {focusView ? "Phocas view · Weekly units sold by Account Code and Stock Code" : kpiData?.is_period
               ? `Period: ${kpiData.period_label}`
               : `Stock on Hand — ${kpiData?.week_iso ?? "Latest week"}`}
           </p>
         </div>
         <div className="flex items-center gap-4">
-          {focusView && <Button variant="outline" size="sm" onClick={() => setFocusView(false)}>Back to SOH dashboard</Button>}
           <Tabs value={category} onValueChange={setCategory} className="w-auto">
             <TabsList>
               {CATEGORIES.map((c) => (
