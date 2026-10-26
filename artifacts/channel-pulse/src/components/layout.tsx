@@ -20,6 +20,7 @@ import {
   Settings,
   Lightbulb,
   Activity,
+  ReceiptText,
 } from "lucide-react";
 import { GlobalFilterBar } from "@/components/global-filter-bar";
 import { useFilters } from "@/context/filter-context";
@@ -32,6 +33,7 @@ const navigation = [
   { name: "Trends", href: "/trends", icon: TrendingUp },
   { name: "Alerts", href: "/alerts", icon: AlertCircle },
   { name: "Uploads", href: "/upload", icon: UploadCloud },
+  { name: "Scanback Claims", href: "/scanback", icon: ReceiptText },
   { name: "Settings", href: "/admin", icon: Settings },
 ];
 

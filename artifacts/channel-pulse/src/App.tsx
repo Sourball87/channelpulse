@@ -13,6 +13,7 @@ import Trends from '@/pages/trends';
 import Alerts from '@/pages/alerts';
 import UploadCenter from '@/pages/upload';
 import AdminSettings from '@/pages/admin';
+import ScanbackClaims from '@/pages/scanback';
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ function Router() {
           <Route path="/trends" component={Trends} />
           <Route path="/alerts" component={Alerts} />
           <Route path="/upload" component={UploadCenter} />
+          <Route path="/scanback" component={ScanbackClaims} />
           <Route path="/admin" component={AdminSettings} />
           <Route component={NotFound} />
         </Switch>

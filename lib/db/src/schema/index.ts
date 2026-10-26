@@ -1,4 +1,5 @@
 import { pgTable, serial, text, integer, boolean, numeric, timestamp, jsonb, unique } from "drizzle-orm/pg-core";
+export * from "./scanback";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 

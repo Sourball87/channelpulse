@@ -16,6 +16,7 @@ import insightsOverstockRouter from "./insights-overstock";
 import insightsRebalancingRouter from "./insights-rebalancing";
 import insightsWhitespaceRouter from "./insights-whitespace";
 import insightsResellerPerfRouter from "./insights-reseller-perf";
+import scanbackRouter from "./scanback";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(insightsOverstockRouter);
 router.use(insightsRebalancingRouter);
 router.use(insightsWhitespaceRouter);
 router.use(insightsResellerPerfRouter);
+router.use(scanbackRouter);
 
 export default router;

@@ -31,3 +31,14 @@ when the new source types are correct.
 
 **How to apply:** Run `pnpm exec tsc --build --force` before the workspace typecheck
 when changing shared type-producing dependencies.
+
+After generator upgrades, actually regenerate the client and validators rather
+than relying only on compiling previously generated output.
+
+**Why:** The first regeneration after the Orval upgrade exposed new iterable DOM
+type requirements and a path/query parameter-name collision that the existing
+checked-in generated files could not reveal.
+
+**How to apply:** Run code generation and full typechecks together after generator
+changes. Check endpoints combining path and query parameters for duplicate
+exported validator/type names; do not manually patch generated code.

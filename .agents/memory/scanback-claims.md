@@ -20,3 +20,15 @@ Claim per serial equals the price charged to the reseller, excluding GST, minus 
 **Why:** The user explicitly selected the reseller invoiced price after the model's “Invoice Cost” label was identified as ambiguous.
 
 **How to apply:** Label the amount “Invoiced unit price (ex GST)”, distinguish it from purchase cost during import mapping, and calculate currency using exact decimal arithmetic or integer cents.
+
+Verification fingerprints must canonicalize JSON object keys before hashing.
+
+**Why:** PostgreSQL JSONB reorders object keys; hashing ordinary JSON serialization caused freshly saved verification results to appear stale immediately on approval.
+
+**How to apply:** Any new fields included in financial verification fingerprints must round-trip through JSONB without changing their hash. Keep genuine changes to program terms, invoice evidence and prior approvals invalidating stale verification.
+
+Keep CSV cell tokens raw until explicit date/serial normalization.
+
+**Why:** The spreadsheet reader otherwise interprets slash dates as month/day before the user's chosen day/month format can run. The same inference can erase leading zeros from numeric serials.
+
+**How to apply:** Preserve raw CSV strings at the reader boundary. Test both date formats using the same ambiguous input and preserve text serial identifiers; applying a date format after automatic spreadsheet inference is too late.

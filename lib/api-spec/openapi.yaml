@@ -18,6 +18,130 @@ tags:
   - name: column-mappings
 
 paths:
+  /scanback/workspace:
+    get:
+      operationId: getScanbackWorkspace
+      tags: [scanback]
+      responses:
+        "200":
+          description: Saved scanback workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackWorkspace" }
+  /scanback/programs:
+    post:
+      operationId: saveScanbackProgram
+      tags: [scanback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanbackProgramInput" }
+      responses:
+        "200":
+          description: Saved program
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackProgram" }
+  /scanback/imports/preview:
+    post:
+      operationId: previewScanbackImport
+      tags: [scanback]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/ScanbackUpload" }
+      responses:
+        "200":
+          description: Preview only, not committed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackImport" }
+  /scanback/imports/{id}/remap:
+    post:
+      operationId: remapScanbackImport
+      tags: [scanback]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanbackMapping" }
+      responses:
+        "200":
+          description: Updated preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackImport" }
+  /scanback/imports/{id}/commit:
+    post:
+      operationId: commitScanbackImport
+      tags: [scanback]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Committed import
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackImport" }
+  /scanback/verify:
+    post:
+      operationId: verifyScanbackClaim
+      tags: [scanback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanbackVerificationInput" }
+      responses:
+        "200":
+          description: Persisted verification draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackDraft" }
+  /scanback/approve:
+    post:
+      operationId: approveScanbackClaim
+      tags: [scanback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanbackApprovalInput" }
+      responses:
+        "200":
+          description: Immutable approved batch, not a payment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackBatch" }
+  /scanback/batches/{id}/export/{format}:
+    get:
+      operationId: exportScanbackBatch
+      tags: [scanback]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: format, in: path, required: true, schema: { type: string, enum: [xlsx, csv] } }
+      responses:
+        "200":
+          description: Approved statement from saved snapshot
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /scanback/drafts/{id}/export:
+    get:
+      operationId: exportScanbackDraft
+      tags: [scanback]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Draft Excel statement, not approved
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
   /healthz:
     get:
       operationId: healthCheck
@@ -569,6 +693,177 @@ paths:
 
 components:
   schemas:
+    ScanbackProgramLine:
+      type: object
+      required: [partId, gtmBuyCents, caps]
+      properties:
+        partId: { type: integer }
+        gtmBuyCents: { type: integer, minimum: 1 }
+        caps:
+          type: array
+          items: { $ref: "#/components/schemas/ScanbackCap" }
+    ScanbackCap:
+      type: object
+      required: [resellerId, quantity]
+      properties:
+        resellerId: { type: integer }
+        quantity: { type: [integer, "null"], minimum: 0 }
+    ScanbackProgramInput:
+      type: object
+      required: [name, start, end, notes, customerIds, lines]
+      properties:
+        id: { type: string }
+        version: { type: integer }
+        name: { type: string }
+        start: { type: string }
+        end: { type: string }
+        notes: { type: string }
+        archived: { type: boolean }
+        customerIds: { type: array, items: { type: integer } }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/ScanbackProgramLine" }
+    ScanbackProgram:
+      allOf:
+        - { $ref: "#/components/schemas/ScanbackProgramInput" }
+        - type: object
+          required: [id, version, archived, createdAt]
+          properties:
+            id: { type: string }
+            version: { type: integer }
+            archived: { type: boolean }
+            createdAt: { type: string }
+    ScanbackUpload:
+      type: object
+      required: [file, kind]
+      properties:
+        file: { type: string, format: binary }
+        kind: { type: string, enum: [evidence, claim, history] }
+    ScanbackMapping:
+      type: object
+      required: [mapping, dateFormat, sheet]
+      properties:
+        mapping:
+          type: object
+          additionalProperties: { type: string }
+        dateFormat: { type: string, enum: [dmy, mdy] }
+        sheet: { type: string }
+        accountId: { type: [integer, "null"] }
+    ScanbackImportRow:
+      type: object
+      required: [rowIndex, serial, sku, date, accountId, quantity, invoice, unitPriceCents, amountCents, program, reference]
+      properties:
+        rowIndex: { type: integer }
+        serial: { type: string }
+        sku: { type: string }
+        date: { type: string }
+        accountId: { type: [integer, "null"] }
+        quantity: { type: number }
+        invoice: { type: string }
+        unitPriceCents: { type: [integer, "null"] }
+        amountCents: { type: [integer, "null"] }
+        program: { type: string }
+        reference: { type: string }
+    ScanbackImportIssue:
+      type: object
+      required: [row, message]
+      properties:
+        row: { type: integer }
+        message: { type: string }
+    ScanbackImport:
+      type: object
+      required: [id, kind, name, state, createdAt, headers, sheets, mapping, dateFormat, sheet, accountId, rows, errors, warnings, duplicate, recordCount]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [evidence, claim, history] }
+        name: { type: string }
+        state: { type: string, enum: [preview, committed] }
+        createdAt: { type: string }
+        headers: { type: array, items: { type: string } }
+        sheets: { type: array, items: { type: string } }
+        mapping:
+          type: object
+          additionalProperties: { type: string }
+        dateFormat: { type: string, enum: [dmy, mdy] }
+        sheet: { type: string }
+        accountId: { type: [integer, "null"] }
+        rows: { type: array, items: { $ref: "#/components/schemas/ScanbackImportRow" } }
+        errors: { type: array, items: { $ref: "#/components/schemas/ScanbackImportIssue" } }
+        warnings: { type: array, items: { type: string } }
+        duplicate: { type: boolean }
+        recordCount: { type: integer }
+    ScanbackVerificationInput:
+      type: object
+      required: [programId, accountId, claimImportId, basis, from, to]
+      properties:
+        programId: { type: string }
+        accountId: { type: integer }
+        claimImportId: { type: string }
+        basis: { type: string, enum: [sell, invoice] }
+        from: { type: string }
+        to: { type: string }
+        draftId: { type: string }
+        selectedRows: { type: array, items: { type: integer } }
+    ScanbackResult:
+      type: object
+      required: [rowIndex, serial, sku, date, invoice, invoiceDate, unitPriceCents, gtmBuyCents, amountCents, quantity, status, reason, include, selectable, source]
+      properties:
+        rowIndex: { type: integer }
+        serial: { type: string }
+        sku: { type: string }
+        date: { type: string }
+        invoice: { type: string }
+        invoiceDate: { type: string }
+        unitPriceCents: { type: [integer, "null"] }
+        gtmBuyCents: { type: [integer, "null"] }
+        amountCents: { type: integer }
+        quantity: { type: number }
+        status: { type: string, enum: [eligible, review, rejected] }
+        reason: { type: string }
+        include: { type: boolean }
+        selectable: { type: boolean }
+        source: { type: string }
+    ScanbackDraft:
+      type: object
+      required: [id, settings, results, token, createdAt, totalCents]
+      properties:
+        id: { type: string }
+        settings: { $ref: "#/components/schemas/ScanbackVerificationInput" }
+        results: { type: array, items: { $ref: "#/components/schemas/ScanbackResult" } }
+        token: { type: string }
+        createdAt: { type: string }
+        totalCents: { type: integer }
+    ScanbackApprovalInput:
+      type: object
+      required: [draftId, token, reference]
+      properties:
+        draftId: { type: string }
+        token: { type: string }
+        reference: { type: string }
+    ScanbackBatch:
+      type: object
+      required: [id, reference, programName, accountCode, createdAt, totalCents, approvedCount, historical, basis, from, to, rows]
+      properties:
+        id: { type: string }
+        reference: { type: string }
+        programName: { type: string }
+        accountCode: { type: string }
+        createdAt: { type: string }
+        totalCents: { type: integer }
+        approvedCount: { type: integer }
+        historical: { type: boolean }
+        basis: { type: string }
+        from: { type: string }
+        to: { type: string }
+        rows: { type: array, items: { $ref: "#/components/schemas/ScanbackResult" } }
+    ScanbackWorkspace:
+      type: object
+      required: [programs, imports, drafts, batches]
+      properties:
+        programs: { type: array, items: { $ref: "#/components/schemas/ScanbackProgram" } }
+        imports: { type: array, items: { $ref: "#/components/schemas/ScanbackImport" } }
+        drafts: { type: array, items: { $ref: "#/components/schemas/ScanbackDraft" } }
+        batches: { type: array, items: { $ref: "#/components/schemas/ScanbackBatch" } }
     HealthStatus:
       type: object
       required: [status]
