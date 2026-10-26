@@ -3,6 +3,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
+  SidebarFooter,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
@@ -21,9 +22,12 @@ import {
   Lightbulb,
   Activity,
   ReceiptText,
+  LogOut,
 } from "lucide-react";
 import { GlobalFilterBar } from "@/components/global-filter-bar";
 import { useFilters } from "@/context/filter-context";
+import { useAuth } from "@/components/auth-provider";
+import { Button } from "@/components/ui/button";
 
 const navigation = [
   { name: "SOH", href: "/", icon: LayoutDashboard },
@@ -44,6 +48,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const search = useSearch();
   const { focusView } = useFilters();
+  const { signOut } = useAuth();
 
   const showFilterBar = FILTER_PATHS.includes(location);
 
@@ -100,11 +105,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             {focusView && <FocusSidebar />}
           </SidebarContent>
+          <SidebarFooter className="border-t border-sidebar-border px-3 py-3">
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 text-sidebar-foreground"
+              onClick={() => void signOut()}
+              aria-label="Sign out of ChannelPulse"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Sign out</span>
+            </Button>
+          </SidebarFooter>
         </Sidebar>
         <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
           <div className="flex-none flex items-center gap-2 border-b px-2 py-1 md:hidden">
             <SidebarTrigger aria-label="Open navigation and focus panel" />
             <span className="text-sm font-medium">ChannelPulse</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto"
+              onClick={() => void signOut()}
+              aria-label="Sign out of ChannelPulse"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
           {showFilterBar && <GlobalFilterBar />}
           {children}

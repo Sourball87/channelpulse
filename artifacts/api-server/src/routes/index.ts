@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import authRouter, { requireAdminSession } from "./auth";
 import healthRouter from "./health";
 import dashboardRouter from "./dashboard";
 import explorerRouter from "./explorer";
@@ -21,6 +22,8 @@ import scanbackRouter from "./scanback";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
+router.use(requireAdminSession);
 router.use(dashboardRouter);
 router.use(explorerRouter);
 router.use(trendsRouter);

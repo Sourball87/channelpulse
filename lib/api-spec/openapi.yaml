@@ -7,6 +7,7 @@ servers:
   - url: /api
     description: Base API path
 tags:
+  - name: auth
   - name: health
   - name: dashboard
   - name: explorer
@@ -18,6 +19,45 @@ tags:
   - name: column-mappings
 
 paths:
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      tags: [auth]
+      responses:
+        "200":
+          description: Current admin session state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+  /auth/login:
+    post:
+      operationId: loginAdmin
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminLoginInput" }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "401":
+          description: Invalid username or password
+        "429":
+          description: Too many attempts
+  /auth/logout:
+    post:
+      operationId: logoutAdmin
+      tags: [auth]
+      responses:
+        "200":
+          description: Session cleared
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
   /scanback/workspace:
     get:
       operationId: getScanbackWorkspace
@@ -693,6 +733,17 @@ paths:
 
 components:
   schemas:
+    AuthSession:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated: { type: boolean }
+    AdminLoginInput:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, enum: [admin] }
+        password: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
     ScanbackProgramLine:
       type: object
       required: [gtmBuyCents, caps]

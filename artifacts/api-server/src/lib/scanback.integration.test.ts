@@ -10,10 +10,13 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
     if (base !== "http://localhost:80/api") throw new Error("Integration test must use the local development proxy.");
     const prefix = `CPTEST${Date.now()}`;
     const ids = { programs: new Set<string>(), imports: new Set<string>(), drafts: new Set<string>(), batches: new Set<string>() };
+    let sessionCookie = "";
     async function call(path: string, body?: unknown) {
+      const headers: Record<string, string> = sessionCookie ? { Cookie: sessionCookie } : {};
       const response = await fetch(base + path, body instanceof FormData
-        ? { method: "POST", body }
-        : body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        ? { method: "POST", body, headers }
+        : body === undefined ? { headers }
+          : { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
       // The integration fixture deliberately asserts the raw wire shape rather
       // than trusting a generated client to cast the response under test.
       const data: any = await response.json();
@@ -40,6 +43,20 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       return result.data;
     }
     try {
+      expect((await fetch(base + "/parts")).status).toBe(401);
+      const badLogin = await fetch(base + "/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "not-the-password" }),
+      });
+      expect(badLogin.status).toBe(401);
+      const login = await fetch(base + "/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: process.env.CHANNELPULSE_ADMIN_PASSWORD }),
+      });
+      expect(login.status).toBe(200);
+      sessionCookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
+      expect(sessionCookie).toContain("channelpulse_session=");
+      expect((await call("/auth/session")).data).toMatchObject({ authenticated: true });
       const accounts = (await call("/resellers")).data;
       const parts = (await call("/parts")).data;
       const a = accounts[0], other = accounts[1], part = parts[0];
@@ -120,7 +137,9 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(doubleHistory.errors.length).toBeGreaterThan(0);
       expect((await call(`/scanback/imports/${doubleHistory.id}/commit`, {})).status).toBe(400);
       program = (await call("/scanback/programs", { ...program, lines: [{ ...program.lines[0], gtmBuyCents: 5000 }] })).data;
-      const exportResponse = await fetch(base + `/scanback/batches/${approved.id}/export/xlsx`);
+      const exportResponse = await fetch(base + `/scanback/batches/${approved.id}/export/xlsx`, {
+        headers: { Cookie: sessionCookie },
+      });
       expect(exportResponse.status).toBe(200);
       const book = XLSX.read(Buffer.from(await exportResponse.arrayBuffer()), { type: "buffer" });
       const exportRows = XLSX.utils.sheet_to_json<unknown[]>(book.Sheets[book.SheetNames[0]], { header: 1 });
@@ -187,6 +206,9 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         `Serial,SKU,Sale Date\n${prefix}CS3,${customSku},20/09/2026\n`, "custom-sku-cap-claim"));
       const exhausted = (await call("/scanback/verify", { ...customSettings, claimImportId: customClaimNext.id })).data;
       expect(exhausted.results[0].reason).toContain("cap reached");
+      expect((await call("/auth/logout", {})).status).toBe(200);
+      sessionCookie = "";
+      expect((await fetch(base + "/parts")).status).toBe(401);
     } finally {
       // Track historical batches even if an assertion fails before workspace read.
       const historyBatches = await pool.query("SELECT id FROM scanback_batches WHERE payload->>'programName' LIKE $1", [prefix + "%"]);

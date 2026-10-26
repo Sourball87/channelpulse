@@ -5,6 +5,26 @@
  * ChannelPulse - Reseller SOH & Sell-Through Monitoring API
  * OpenAPI spec version: 0.1.0
  */
+export interface AuthSession {
+  authenticated: boolean;
+}
+
+export type AdminLoginInputUsername = typeof AdminLoginInputUsername[keyof typeof AdminLoginInputUsername];
+
+
+export const AdminLoginInputUsername = {
+  admin: 'admin',
+} as const;
+
+export interface AdminLoginInput {
+  username: AdminLoginInputUsername;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  password: string;
+}
+
 export interface ScanbackCap {
   resellerId: number;
   /**

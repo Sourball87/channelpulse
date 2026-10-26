@@ -8,6 +8,30 @@
 import * as zod from 'zod';
 
 
+export const GetAuthSessionResponse = zod.object({
+  "authenticated": zod.boolean()
+})
+
+
+export const loginAdminBodyPasswordMax = 256;
+
+
+
+export const LoginAdminBody = zod.object({
+  "username": zod.enum(['admin']),
+  "password": zod.string().min(1).max(loginAdminBodyPasswordMax)
+})
+
+export const LoginAdminResponse = zod.object({
+  "authenticated": zod.boolean()
+})
+
+
+export const LogoutAdminResponse = zod.object({
+  "authenticated": zod.boolean()
+})
+
+
 export const getScanbackWorkspaceResponseProgramsItemOneLinesItemSkuMax = 120;
 
 
