@@ -49,6 +49,39 @@ Committed evidence is immutable. Re-importing identical invoice events does not
 add units; conflicting prices for the same invoice event require investigation.
 There is intentionally no silent overwrite or deletion of financial evidence.
 
+### Native Pronto POS extracts
+
+Choose **Invoice / credit evidence** for the full Pronto export. The importer
+recognizes the combination of Invoice No, Invoice Date, Account Code, Reseller
+Name, Stock Code, Ship Qty, Serial Number, Item Price and Line Price Ex.
+
+- Fixed mapping uses **Invoice Date**, **Ship Qty**, pipe-separated **Serial
+  Number** lists and **Item Price** (not Item Cost, Line Cost Ex, RRP or line totals).
+- Each included line must satisfy `Item Price × Ship Qty = Line Price Ex` in
+  exact cents. Explicit foreign-currency invoices are blocked rather than
+  comparing them with AUD promotion prices without a known exchange rate.
+- The account table maps Pronto codes to the **existing nine ChannelPulse
+  resellers only**. Suggestions are proposals, not automatic assignments.
+  Choose **Use suggested mappings** or map individual codes, review them, then
+  **Apply mapping**. Changed mappings disable commit until reapplied.
+- Unselected accounts, unknown Stock Codes and nonserial rows are reported as
+  excluded. No accounts or SKUs are created. Included/excluded counts refer to
+  original source rows; the record count refers to expanded serial events.
+- A selected reseller's credit for a known SKU without serials blocks commit:
+  skipping an unidentified return could make an ineligible serial payable.
+  Malformed serials, inconsistent quantities and price mismatches also block.
+- Serials appearing in excluded account/SKU rows are held for ownership/return
+  review, including across committed Pronto extracts. Exclusion must not hide
+  conflicting evidence and make a serial eligible.
+- Source row numbers are retained for tracing errors and invoice evidence.
+  Pronto contact/address/end-user/operator and purchase-cost columns are not
+  retained in saved previews.
+- Limits include **100,000 expanded serial events per import**. Other existing
+  file/sheet limits still apply.
+
+The original uploaded workbook is not changed by previewing or applying maps.
+Committed mappings remain immutable, just like other financial evidence.
+
 ## Verification and approval
 
 The confirmed calculation is:

@@ -749,6 +749,9 @@ components:
         dateFormat: { type: string, enum: [dmy, mdy] }
         sheet: { type: string }
         accountId: { type: [integer, "null"] }
+        prontoAccounts:
+          type: object
+          additionalProperties: { type: [integer, "null"] }
     ScanbackImportRow:
       type: object
       required: [rowIndex, serial, sku, date, accountId, quantity, invoice, unitPriceCents, amountCents, program, reference]
@@ -764,6 +767,41 @@ components:
         amountCents: { type: [integer, "null"] }
         program: { type: string }
         reference: { type: string }
+        sourceRow: { type: integer }
+    ScanbackProntoAccount:
+      type: object
+      required: [code, name, rowCount, serialCount, accountId, suggestedAccountId]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        rowCount: { type: integer }
+        serialCount: { type: integer }
+        accountId: { type: [integer, "null"] }
+        suggestedAccountId: { type: [integer, "null"] }
+    ScanbackProntoExclusion:
+      type: object
+      required: [row, accountCode, accountName, sku, quantity, serialCount, reason]
+      properties:
+        row: { type: integer }
+        accountCode: { type: string }
+        accountName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+        serialCount: { type: integer }
+        reason: { type: string }
+    ScanbackProntoPreview:
+      type: object
+      required: [sourceRows, sourceSerialEvents, includedSourceRows, excludedSourceRows, accounts, excludedCounts, excludedSamples]
+      properties:
+        sourceRows: { type: integer }
+        sourceSerialEvents: { type: integer }
+        includedSourceRows: { type: integer }
+        excludedSourceRows: { type: integer }
+        accounts: { type: array, items: { $ref: "#/components/schemas/ScanbackProntoAccount" } }
+        excludedCounts:
+          type: object
+          additionalProperties: { type: integer }
+        excludedSamples: { type: array, items: { $ref: "#/components/schemas/ScanbackProntoExclusion" } }
     ScanbackImportIssue:
       type: object
       required: [row, message]
@@ -787,6 +825,10 @@ components:
         dateFormat: { type: string, enum: [dmy, mdy] }
         sheet: { type: string }
         accountId: { type: [integer, "null"] }
+        prontoAccounts:
+          type: object
+          additionalProperties: { type: [integer, "null"] }
+        pronto: { $ref: "#/components/schemas/ScanbackProntoPreview" }
         rows: { type: array, items: { $ref: "#/components/schemas/ScanbackImportRow" } }
         errors: { type: array, items: { $ref: "#/components/schemas/ScanbackImportIssue" } }
         warnings: { type: array, items: { type: string } }

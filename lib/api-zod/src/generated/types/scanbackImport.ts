@@ -9,8 +9,10 @@ import type { ScanbackImportDateFormat } from './scanbackImportDateFormat';
 import type { ScanbackImportIssue } from './scanbackImportIssue';
 import type { ScanbackImportKind } from './scanbackImportKind';
 import type { ScanbackImportMapping } from './scanbackImportMapping';
+import type { ScanbackImportProntoAccounts } from './scanbackImportProntoAccounts';
 import type { ScanbackImportRow } from './scanbackImportRow';
 import type { ScanbackImportState } from './scanbackImportState';
+import type { ScanbackProntoPreview } from './scanbackProntoPreview';
 
 export interface ScanbackImport {
   id: string;
@@ -25,6 +27,8 @@ export interface ScanbackImport {
   sheet: string;
   /** @nullable */
   accountId: number | null;
+  prontoAccounts?: ScanbackImportProntoAccounts;
+  pronto?: ScanbackProntoPreview;
   rows: ScanbackImportRow[];
   errors: ScanbackImportIssue[];
   warnings: string[];

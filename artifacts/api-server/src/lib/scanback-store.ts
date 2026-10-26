@@ -6,6 +6,7 @@ import type {
 } from "@workspace/api-zod";
 import { verifyClaim, evidenceKey, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
 import { mapImport, type Sheets, type Account } from "./scanback-import";
+import { splitSerials } from "./scanback-pronto";
 
 export type Client = PoolClient;
 export class ScanbackError extends Error {
@@ -105,10 +106,27 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
   const claim = await get<ScanbackImport>(c, "scanback_imports", settings.claimImportId);
   requireThat(claim.state === "committed" && claim.kind === "claim", "Choose a committed customer claim import.");
   const imports = (await all<ScanbackImport>(c, "scanback_imports")).filter(i => i.state === "committed" && i.kind === "evidence");
-  const evidence: EvidenceRow[] = imports.flatMap(i => i.rows.map(r => ({ ...r, source: `${i.name} [${i.id}] record ${r.rowIndex + 1}` })));
+  const evidence: EvidenceRow[] = imports.flatMap(i => i.rows.map(r => ({ ...r, source: `${i.name} [${i.id}], ${i.sheet}, row ${r.sourceRow ?? r.rowIndex + 2}` })));
   const approved = await ledger(c);
   const cat = await catalog(c);
-  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts });
+  // Excluded accounts/SKUs never become payable evidence. Their overlapping
+  // serials still block automatic approval: scoping must not hide a subsequent
+  // transfer/return, including when it arrived in a different committed extract.
+  const restrictedSerials = new Set<string>();
+  const nativeIds = imports.filter(i => i.pronto).map(i => i.id);
+  if (nativeIds.length) {
+    const sources = await c.query("SELECT raw_sheets,payload FROM scanback_imports WHERE id=ANY($1::text[])", [nativeIds]);
+    const knownSkus = new Set(cat.parts.map(part => part.code.toUpperCase()));
+    for (const source of sources.rows) {
+      const imp = source.payload as ScanbackImport;
+      for (const row of (source.raw_sheets as Sheets)[imp.sheet] ?? []) {
+        const code = String(row["Account Code"] ?? "").trim(), sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
+        if (!imp.prontoAccounts?.[code] || !knownSkus.has(sku))
+          for (const serial of splitSerials(row["Serial Number"])) restrictedSerials.add(serial);
+      }
+    }
+  }
+  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts, restrictedSerials });
   const token = hash({ p, settings, imports: imports.map(i => i.id).sort(), approved, results });
   return { results, token, p, accounts: cat.accounts, parts: cat.parts };
 }

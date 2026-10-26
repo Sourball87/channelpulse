@@ -128,6 +128,33 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       past.forEach((b: { id: string }) => ids.batches.add(b.id));
       expect(past.some((b: { historical: boolean; totalCents: number }) => b.historical && b.totalCents === 1234)).toBe(true);
       expect(workspace.drafts.some((d: { id: string }) => d.id === draft.id)).toBe(false);
+      // Native Pronto POS scopes evidence without hiding cross-scope ownership.
+      const prontoHeader = "Invoice No,Invoice Date,Account Code,Reseller Name,Stock Code,Ship Qty,Serial Number,Item Price,Line Price Ex,EU Email\n";
+      const pr = (serial: string, sourceCode = "SOURCE1", stock = sku) =>
+        `${prefix}${serial},01/09/2026,${sourceCode},Computer Alliance,${stock},1,${serial ? prefix + serial : ""},100.00,100.00,unused@example.invalid\n`;
+      let native = await upload("evidence", prontoHeader + pr("NATIVEGOOD") + pr("NATIVEHELD") + pr("UNKNOWN-SKU", "SOURCE1", "NOT-IN-CATALOGUE") + pr(""), "pronto");
+      expect(native.pronto).toMatchObject({ sourceRows: 4, sourceSerialEvents: 3, includedSourceRows: 0 });
+      expect(native.errors.length).toBeGreaterThan(0); expect(native.rows).toEqual([]);
+      const nativeOptions = { mapping: native.mapping, sheet: native.sheet, dateFormat: native.dateFormat, accountId: null, prontoAccounts: { SOURCE1: a.id } };
+      native = (await call(`/scanback/imports/${native.id}/remap`, nativeOptions)).data;
+      expect(native.pronto).toMatchObject({ includedSourceRows: 2, excludedSourceRows: 2 });
+      expect(native.rows[0]).toMatchObject({ unitPriceCents: 10000, accountId: a.id, sourceRow: 2 });
+      await commit(native);
+      expect((await call(`/scanback/imports/${native.id}/remap`, { ...nativeOptions, prontoAccounts: { SOURCE1: other.id } })).status).toBe(400);
+      const retained = (await pool.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [native.id])).rows[0].raw_sheets;
+      expect(JSON.stringify(retained)).not.toContain("EU Email");
+      const nativeClaim = await commit(await upload("claim", `Serial,SKU,Sale Date\n${prefix}NATIVEGOOD,${sku},20/09/2026\n${prefix}NATIVEHELD,${sku},20/09/2026\n`, "native-claim"));
+      const nativeSettings = { ...settings, programId: second.id, claimImportId: nativeClaim.id };
+      const beforeScopeChange = (await call("/scanback/verify", nativeSettings)).data;
+      expect(beforeScopeChange.totalCents).toBe(6000);
+      let extra = await upload("evidence", prontoHeader + pr("OTHERGOOD") + pr("NATIVEHELD", "OUTSIDE"), "pronto-ownership");
+      extra = (await call(`/scanback/imports/${extra.id}/remap`, { ...nativeOptions, sheet: extra.sheet, mapping: extra.mapping })).data;
+      await commit(extra);
+      expect((await call("/scanback/approve", { draftId: beforeScopeChange.id, token: beforeScopeChange.token, reference: prefix + " stale ownership" })).status).toBe(409);
+      const held = (await call("/scanback/verify", { ...nativeSettings, draftId: beforeScopeChange.id })).data;
+      expect(held.totalCents).toBe(3000);
+      expect(held.results[1]).toMatchObject({ status: "review", include: false });
+      expect(held.results[1].reason).toContain("excluded Pronto");
     } finally {
       // Track historical batches even if an assertion fails before workspace read.
       const historyBatches = await pool.query("SELECT id FROM scanback_batches WHERE payload->>'programName' LIKE $1", [prefix + "%"]);

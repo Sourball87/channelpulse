@@ -64,12 +64,15 @@ export const ScanbackMappingDateFormat = {
   mdy: 'mdy',
 } as const;
 
+export type ScanbackMappingProntoAccounts = {[key: string]: number | null};
+
 export interface ScanbackMapping {
   mapping: ScanbackMappingMapping;
   dateFormat: ScanbackMappingDateFormat;
   sheet: string;
   /** @nullable */
   accountId?: number | null;
+  prontoAccounts?: ScanbackMappingProntoAccounts;
 }
 
 export interface ScanbackImportRow {
@@ -87,6 +90,40 @@ export interface ScanbackImportRow {
   amountCents: number | null;
   program: string;
   reference: string;
+  sourceRow?: number;
+}
+
+export interface ScanbackProntoAccount {
+  code: string;
+  name: string;
+  rowCount: number;
+  serialCount: number;
+  /** @nullable */
+  accountId: number | null;
+  /** @nullable */
+  suggestedAccountId: number | null;
+}
+
+export interface ScanbackProntoExclusion {
+  row: number;
+  accountCode: string;
+  accountName: string;
+  sku: string;
+  quantity: number;
+  serialCount: number;
+  reason: string;
+}
+
+export type ScanbackProntoPreviewExcludedCounts = {[key: string]: number};
+
+export interface ScanbackProntoPreview {
+  sourceRows: number;
+  sourceSerialEvents: number;
+  includedSourceRows: number;
+  excludedSourceRows: number;
+  accounts: ScanbackProntoAccount[];
+  excludedCounts: ScanbackProntoPreviewExcludedCounts;
+  excludedSamples: ScanbackProntoExclusion[];
 }
 
 export interface ScanbackImportIssue {
@@ -121,6 +158,8 @@ export const ScanbackImportDateFormat = {
   mdy: 'mdy',
 } as const;
 
+export type ScanbackImportProntoAccounts = {[key: string]: number | null};
+
 export interface ScanbackImport {
   id: string;
   kind: ScanbackImportKind;
@@ -134,6 +173,8 @@ export interface ScanbackImport {
   sheet: string;
   /** @nullable */
   accountId: number | null;
+  prontoAccounts?: ScanbackImportProntoAccounts;
+  pronto?: ScanbackProntoPreview;
   rows: ScanbackImportRow[];
   errors: ScanbackImportIssue[];
   warnings: string[];

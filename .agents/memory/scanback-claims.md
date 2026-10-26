@@ -32,3 +32,15 @@ Keep CSV cell tokens raw until explicit date/serial normalization.
 **Why:** The spreadsheet reader otherwise interprets slash dates as month/day before the user's chosen day/month format can run. The same inference can erase leading zeros from numeric serials.
 
 **How to apply:** Preserve raw CSV strings at the reader boundary. Test both date formats using the same ambiguous input and preserve text serial identifiers; applying a date format after automatic spreadsheet inference is too late.
+
+Native Pronto POS imports cover only the existing nine ChannelPulse resellers.
+
+**Why:** The user chose “Use the existing nine resellers (recommended)” rather than adding other Pronto accounts.
+
+**How to apply:** Keep source-to-reseller mapping explicit, report excluded accounts and unknown Stock Codes, and do not create accounts or SKUs automatically from the extract.
+
+Scoping out Pronto accounts must never hide conflicting serial ownership or returns.
+
+**Why:** Keeping only a selected customer's invoice while discarding another customer's event can turn ambiguous serial ownership into a false payable result.
+
+**How to apply:** Excluded events cannot grant eligibility, but serial overlaps must still trigger review across committed extracts. A missing-serial credit for a selected reseller/known SKU requires source correction, not silent exclusion.

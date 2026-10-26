@@ -93,7 +93,9 @@ router.post("/scanback/imports/preview", upload.single("file"), route(async (c, 
     sheets: Object.keys(raw), sheet, headers, mapping: suggestMapping(headers), dateFormat: "dmy",
     accountId: null, rows: [], errors: [], warnings: [], duplicate: false, recordCount: 0,
   };
-  const value = await rebuildImport(c, base, raw, base);
+  let value;
+  try { value = await rebuildImport(c, base, raw, base); }
+  catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not preview this spreadsheet."); }
   await c.query("INSERT INTO scanback_imports(id,content_key,raw_sheets,payload) VALUES($1,$2,$3::jsonb,$4::jsonb)",
     [value.id, key, JSON.stringify(raw), JSON.stringify(value)]);
   return publicImport(value, true);
@@ -104,13 +106,17 @@ router.post("/scanback/imports/:id/remap", route(async (c, req, res) => {
   if (base.state === "committed") {
     requireThat(options.sheet === base.sheet && options.dateFormat === base.dateFormat &&
       (options.accountId ?? null) === base.accountId &&
+      JSON.stringify(Object.entries(options.prontoAccounts ?? {}).sort()) === JSON.stringify(Object.entries(base.prontoAccounts ?? {}).sort()) &&
       Object.entries(options.mapping).every(([key, column]) => (base.mapping[key] ?? "") === column),
     "Committed evidence is immutable.");
     return publicImport(base, true);
   }
   const raw = (await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [base.id])).rows[0].raw_sheets;
-  if (options.sheet !== base.sheet && raw[options.sheet])
+  if (options.sheet !== base.sheet && raw[options.sheet]) {
     options.mapping = suggestMapping(Object.keys(raw[options.sheet][0] ?? {}));
+    options.prontoAccounts = {};
+    options.accountId = null;
+  }
   let value;
   try { value = await rebuildImport(c, base, raw, options); }
   catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not apply mapping."); }

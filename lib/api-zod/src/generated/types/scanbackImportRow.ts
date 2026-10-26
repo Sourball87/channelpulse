@@ -21,4 +21,5 @@ export interface ScanbackImportRow {
   amountCents: number | null;
   program: string;
   reference: string;
+  sourceRow?: number;
 }

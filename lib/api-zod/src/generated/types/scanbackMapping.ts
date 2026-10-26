@@ -7,6 +7,7 @@
  */
 import type { ScanbackMappingDateFormat } from './scanbackMappingDateFormat';
 import type { ScanbackMappingMapping } from './scanbackMappingMapping';
+import type { ScanbackMappingProntoAccounts } from './scanbackMappingProntoAccounts';
 
 export interface ScanbackMapping {
   mapping: ScanbackMappingMapping;
@@ -14,4 +15,5 @@ export interface ScanbackMapping {
   sheet: string;
   /** @nullable */
   accountId?: number | null;
+  prontoAccounts?: ScanbackMappingProntoAccounts;
 }

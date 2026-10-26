@@ -29,6 +29,7 @@ export interface VerificationContext {
   evidence: EvidenceRow[];
   approved: ApprovedSerial[];
   parts: CatalogPart[];
+  restrictedSerials?: Set<string>;
 }
 
 function ownerFor(events: EvidenceRow[]) {
@@ -90,6 +91,8 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     if (seen.has(r.serial)) return reject("Duplicate serial in this claim file");
     seen.add(r.serial);
     if (used.has(r.serial)) return reject(`Already approved in batch ${used.get(r.serial)!.batchId}`);
+    if (ctx.restrictedSerials?.has(r.serial))
+      return reject("Serial also appears in excluded Pronto account/SKU rows — review source ownership and returns before approval", true);
     const events = bySerial.get(r.serial);
     if (!events?.length) return reject("Serial not found on an invoice");
     const resolution = ownerFor(events);

@@ -17,6 +17,7 @@ import { Download, FileSpreadsheet, RefreshCw, Upload, CheckCircle2 } from "luci
 import { useToast } from "@/hooks/use-toast";
 import { FIELD_LABEL, KIND_META, MAPPING_KEYS, templateHref, type MappingKey } from "./import-config";
 import { SectionEmpty, errorMessage, formatCents, formatDateTime, useRefreshWorkspace } from "./shared";
+import { ProntoAccounts } from "./pronto-accounts";
 
 const NONE = "__none";
 
@@ -39,6 +40,7 @@ export function ImportPanel({
   const [dateFormat, setDateFormat] = useState<ScanbackMappingDateFormat>("dmy");
   const [sheet, setSheet] = useState("");
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [prontoAccounts, setProntoAccounts] = useState<Record<string, number | null>>({});
   const [error, setError] = useState<string | null>(null);
   const preview = usePreviewScanbackImport();
   const remap = useRemapScanbackImport();
@@ -51,6 +53,7 @@ export function ImportPanel({
     setDateFormat(imp.dateFormat);
     setSheet(imp.sheet);
     setAccountId(imp.accountId);
+    setProntoAccounts(imp.prontoAccounts ?? {});
   };
 
   const onFile = (file: File | undefined) => {
@@ -70,7 +73,7 @@ export function ImportPanel({
     if (!imp) return;
     setError(null);
     remap.mutate(
-      { id: imp.id, data: { mapping: Object.fromEntries(MAPPING_KEYS.map((k) => [k, mapping[k] ?? ""])), dateFormat, sheet, accountId } },
+      { id: imp.id, data: { mapping: Object.fromEntries(MAPPING_KEYS.map((k) => [k, mapping[k] ?? ""])), dateFormat, sheet, accountId, prontoAccounts } },
       { onSuccess: (r) => { load(r); refresh(); }, onError: (e) => setError(errorMessage(e)) },
     );
   };
@@ -78,7 +81,7 @@ export function ImportPanel({
   const loadSamples = (imp: ScanbackImport) => {
     setError(null);
     remap.mutate(
-      { id: imp.id, data: { mapping: imp.mapping, dateFormat: imp.dateFormat, sheet: imp.sheet, accountId: imp.accountId } },
+      { id: imp.id, data: { mapping: imp.mapping, dateFormat: imp.dateFormat, sheet: imp.sheet, accountId: imp.accountId, prontoAccounts: imp.prontoAccounts } },
       { onSuccess: (r) => load(r), onError: (e) => setError(errorMessage(e)) },
     );
   };
@@ -103,7 +106,8 @@ export function ImportPanel({
     return miss;
   }, [current, mapping, accountId]);
   const dirty = current
-    ? MAPPING_KEYS.some((k) => (mapping[k] ?? "") !== (current.mapping[k] ?? "")) || dateFormat !== current.dateFormat || sheet !== current.sheet || accountId !== current.accountId
+    ? MAPPING_KEYS.some((k) => (mapping[k] ?? "") !== (current.mapping[k] ?? "")) || dateFormat !== current.dateFormat || sheet !== current.sheet || accountId !== current.accountId ||
+      JSON.stringify(Object.entries(prontoAccounts).sort()) !== JSON.stringify(Object.entries(current.prontoAccounts ?? {}).sort())
     : false;
   const canCommit = current && current.state === "preview" && !current.duplicate && current.errors.length === 0 && missing.length === 0 && !dirty && current.recordCount > 0;
   const busy = preview.isPending || remap.isPending || commit.isPending;
@@ -131,7 +135,7 @@ export function ImportPanel({
               <a href={templateHref(kind)} download={`scanback-${kind}-template.csv`}><Download className="mr-1.5 h-4 w-4" /> Template</a>
             </Button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">{KIND_META[kind].blurb} Required: {KIND_META[kind].required.map((k) => FIELD_LABEL[k]).join(", ")}{KIND_META[kind].needsAccount ? ", plus an account column or fallback account" : ""}. Nothing is saved until you commit.</p>
+          <p className="mt-2 text-xs text-slate-500">{KIND_META[kind].blurb} Required: {KIND_META[kind].required.map((k) => FIELD_LABEL[k]).join(", ")}{KIND_META[kind].needsAccount ? ", plus an account column or fallback account" : ""}. Uploads are saved as previews, not used as evidence until you commit. Native Pronto POS extracts support the existing nine resellers only.</p>
         </div>
 
         {error && <div data-testid="text-import-error" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
@@ -171,7 +175,7 @@ export function ImportPanel({
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Fallback account</Label>
-                <Select value={accountId == null ? NONE : String(accountId)} onValueChange={(v) => setAccountId(v === NONE ? null : Number(v))} disabled={current.state === "committed"}>
+                <Select value={accountId == null ? NONE : String(accountId)} onValueChange={(v) => setAccountId(v === NONE ? null : Number(v))} disabled={current.state === "committed" || !!current.pronto}>
                   <SelectTrigger data-testid="select-import-account"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NONE}>None - use account column</SelectItem>
@@ -189,7 +193,7 @@ export function ImportPanel({
                     <span className={`w-1/2 text-xs ${k === "unitPrice" ? "font-semibold text-cyan-800" : "text-slate-600"}`}>
                       {FIELD_LABEL[k]}{req && <span className="text-rose-600"> *</span>}
                     </span>
-                    <Select value={mapping[k] || NONE} onValueChange={(v) => setMapping((m) => ({ ...m, [k]: v === NONE ? "" : v }))} disabled={current.state === "committed"}>
+                    <Select value={mapping[k] || NONE} onValueChange={(v) => setMapping((m) => ({ ...m, [k]: v === NONE ? "" : v }))} disabled={current.state === "committed" || !!current.pronto}>
                       <SelectTrigger className="h-8 w-1/2 text-xs" data-testid={`select-map-${k}`}><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NONE}>Not mapped</SelectItem>
@@ -200,6 +204,9 @@ export function ImportPanel({
                 );
               })}
             </div>
+
+            {current.pronto && <ProntoAccounts key={current.id + current.sheet} preview={current.pronto} values={prontoAccounts}
+              onChange={setProntoAccounts} resellers={resellers} disabled={busy || current.state === "committed"} />}
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-slate-50/60 px-4 py-3">
               <p className="text-xs text-slate-600">

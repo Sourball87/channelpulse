@@ -49,6 +49,31 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "dateFormat": zod.enum(['dmy', 'mdy']),
   "sheet": zod.string(),
   "accountId": zod.int().nullable(),
+  "prontoAccounts": zod.record(zod.string(), zod.int().nullable()).optional(),
+  "pronto": zod.object({
+  "sourceRows": zod.int(),
+  "sourceSerialEvents": zod.int(),
+  "includedSourceRows": zod.int(),
+  "excludedSourceRows": zod.int(),
+  "accounts": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "rowCount": zod.int(),
+  "serialCount": zod.int(),
+  "accountId": zod.int().nullable(),
+  "suggestedAccountId": zod.int().nullable()
+})),
+  "excludedCounts": zod.record(zod.string(), zod.int()),
+  "excludedSamples": zod.array(zod.object({
+  "row": zod.int(),
+  "accountCode": zod.string(),
+  "accountName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number(),
+  "serialCount": zod.int(),
+  "reason": zod.string()
+}))
+}).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -60,7 +85,8 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "unitPriceCents": zod.int().nullable(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
-  "reference": zod.string()
+  "reference": zod.string(),
+  "sourceRow": zod.int().optional()
 })),
   "errors": zod.array(zod.object({
   "row": zod.int(),
@@ -207,6 +233,31 @@ export const PreviewScanbackImportResponse = zod.object({
   "dateFormat": zod.enum(['dmy', 'mdy']),
   "sheet": zod.string(),
   "accountId": zod.int().nullable(),
+  "prontoAccounts": zod.record(zod.string(), zod.int().nullable()).optional(),
+  "pronto": zod.object({
+  "sourceRows": zod.int(),
+  "sourceSerialEvents": zod.int(),
+  "includedSourceRows": zod.int(),
+  "excludedSourceRows": zod.int(),
+  "accounts": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "rowCount": zod.int(),
+  "serialCount": zod.int(),
+  "accountId": zod.int().nullable(),
+  "suggestedAccountId": zod.int().nullable()
+})),
+  "excludedCounts": zod.record(zod.string(), zod.int()),
+  "excludedSamples": zod.array(zod.object({
+  "row": zod.int(),
+  "accountCode": zod.string(),
+  "accountName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number(),
+  "serialCount": zod.int(),
+  "reason": zod.string()
+}))
+}).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -218,7 +269,8 @@ export const PreviewScanbackImportResponse = zod.object({
   "unitPriceCents": zod.int().nullable(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
-  "reference": zod.string()
+  "reference": zod.string(),
+  "sourceRow": zod.int().optional()
 })),
   "errors": zod.array(zod.object({
   "row": zod.int(),
@@ -238,7 +290,8 @@ export const RemapScanbackImportBody = zod.object({
   "mapping": zod.record(zod.string(), zod.string()),
   "dateFormat": zod.enum(['dmy', 'mdy']),
   "sheet": zod.string(),
-  "accountId": zod.int().nullish()
+  "accountId": zod.int().nullish(),
+  "prontoAccounts": zod.record(zod.string(), zod.int().nullable()).optional()
 })
 
 export const RemapScanbackImportResponse = zod.object({
@@ -253,6 +306,31 @@ export const RemapScanbackImportResponse = zod.object({
   "dateFormat": zod.enum(['dmy', 'mdy']),
   "sheet": zod.string(),
   "accountId": zod.int().nullable(),
+  "prontoAccounts": zod.record(zod.string(), zod.int().nullable()).optional(),
+  "pronto": zod.object({
+  "sourceRows": zod.int(),
+  "sourceSerialEvents": zod.int(),
+  "includedSourceRows": zod.int(),
+  "excludedSourceRows": zod.int(),
+  "accounts": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "rowCount": zod.int(),
+  "serialCount": zod.int(),
+  "accountId": zod.int().nullable(),
+  "suggestedAccountId": zod.int().nullable()
+})),
+  "excludedCounts": zod.record(zod.string(), zod.int()),
+  "excludedSamples": zod.array(zod.object({
+  "row": zod.int(),
+  "accountCode": zod.string(),
+  "accountName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number(),
+  "serialCount": zod.int(),
+  "reason": zod.string()
+}))
+}).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -264,7 +342,8 @@ export const RemapScanbackImportResponse = zod.object({
   "unitPriceCents": zod.int().nullable(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
-  "reference": zod.string()
+  "reference": zod.string(),
+  "sourceRow": zod.int().optional()
 })),
   "errors": zod.array(zod.object({
   "row": zod.int(),
@@ -292,6 +371,31 @@ export const CommitScanbackImportResponse = zod.object({
   "dateFormat": zod.enum(['dmy', 'mdy']),
   "sheet": zod.string(),
   "accountId": zod.int().nullable(),
+  "prontoAccounts": zod.record(zod.string(), zod.int().nullable()).optional(),
+  "pronto": zod.object({
+  "sourceRows": zod.int(),
+  "sourceSerialEvents": zod.int(),
+  "includedSourceRows": zod.int(),
+  "excludedSourceRows": zod.int(),
+  "accounts": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "rowCount": zod.int(),
+  "serialCount": zod.int(),
+  "accountId": zod.int().nullable(),
+  "suggestedAccountId": zod.int().nullable()
+})),
+  "excludedCounts": zod.record(zod.string(), zod.int()),
+  "excludedSamples": zod.array(zod.object({
+  "row": zod.int(),
+  "accountCode": zod.string(),
+  "accountName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number(),
+  "serialCount": zod.int(),
+  "reason": zod.string()
+}))
+}).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -303,7 +407,8 @@ export const CommitScanbackImportResponse = zod.object({
   "unitPriceCents": zod.int().nullable(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
-  "reference": zod.string()
+  "reference": zod.string(),
+  "sourceRow": zod.int().optional()
 })),
   "errors": zod.array(zod.object({
   "row": zod.int(),
