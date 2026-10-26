@@ -87,8 +87,8 @@ export default function Dashboard() {
   const displayedParts = heatmapData
     ? sortByOrder(heatmapData.parts, activePartOrder)
     : [];
-  // Weeks always stay chronological; saved SKU row ordering is preserved.
-  const displayedWeeks = heatmapData?.weeks ?? [];
+  // Newest week first; copy so the shared query-cache data stays unchanged.
+  const displayedWeeks = [...(heatmapData?.weeks ?? [])].reverse();
   const maxWeeklySales = (heatmapData?.cells ?? []).reduce((max, cell) => Math.max(max, cell.units_sold), 0);
   const accountLabel = resellerIds.length
     ? resellerIds.map(id => accounts?.find(account => account.id === id)?.code ?? String(id)).join(", ")
@@ -218,7 +218,7 @@ export default function Dashboard() {
                   <Info className="h-4 w-4 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Stock Codes down the left, 12 consecutive ISO weeks across the top.</p>
+                  <p>Stock Codes down the left, 12 consecutive ISO weeks across the top, newest first.</p>
                   <p>Each cell is units sold that week, summed across the selected accounts.</p>
                   <p>The window ends at the selected reporting week or date-range end.</p>
                   <p>Darker blue means more units sold; 0 means reported zero sales.</p>
@@ -319,7 +319,7 @@ export default function Dashboard() {
                     Stock Code
                   </div>
 
-                  {/* ISO weeks always stay oldest-first. */}
+                  {/* ISO weeks always stay newest-first. */}
                   {displayedWeeks.map((week) => {
                     return (
                       <div
