@@ -2,3 +2,4 @@
 - [Focus drill-down](focus-drill-down.md) — user wants a PHO-style sidebar with account/SKU selections that automatically filter analytics.
 - [Analytics privacy](analytics-privacy.md) — measure actions and counts without sending channel data or account/SKU identities.
 - [Report interpretation](report-interpretation.md) — missing dates and shared formats require confirmation; calendar dates determine ISO weeks.
+- [Dependency security](dependency-security.md) — patched SheetJS releases still trigger unbounded npm advisories; force-rebuild composite types after upgrades.
