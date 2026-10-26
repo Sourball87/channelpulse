@@ -15,8 +15,8 @@ Keep only Account Code and Stock Code in the Focus sidebar; remove Account Name,
 
 **How to apply:** Use codes for options and selected labels, without name/description sublabels or stock-group drill-downs. Preserve account/stock filtering and Reset.
 
-Stock Code is used to measure stock sell-through per week.
+Stock Code is used to measure stock sell-through per week, meaning units sold per week, not a percentage.
 
-**Why:** The user clarified what they are measuring with Stock Code.
+**Why:** The user clarified what they are measuring with Stock Code and explicitly confirmed "Units sold per week".
 
-**How to apply:** Distinguish weekly sell-through from stock on hand and weeks of inventory. Confirm units versus a percentage before changing the metric.
+**How to apply:** Express weekly sell-through in units. Distinguish it from stock on hand, percentage sell-through and weeks of inventory.
