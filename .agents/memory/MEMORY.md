@@ -3,3 +3,4 @@
 - [Analytics privacy](analytics-privacy.md) — measure actions and counts without sending channel data or account/SKU identities.
 - [Report interpretation](report-interpretation.md) — missing dates and shared formats require confirmation; calendar dates determine ISO weeks.
 - [Dependency security](dependency-security.md) — patched SheetJS releases still trigger unbounded npm advisories; force-rebuild composite types after upgrades.
+- [Scanback claims rules](scanback-claims.md) — initial scope, spreadsheet sources and the global one-payment-per-serial rule.
