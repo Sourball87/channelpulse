@@ -10,24 +10,20 @@ import type { GetDashboardHeatmapParams } from "@workspace/api-client-react";
 import { X } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
 
-type DimKey = "code" | "name" | "sku" | "desc" | "group";
+type DimKey = "code" | "sku";
 
 interface Option {
   key: string;
   label: string;
-  sub?: string;
   selected: boolean;
   onPick: () => void;
 }
 
 const ACCOUNT_DIMS: { key: DimKey; label: string }[] = [
   { key: "code", label: "Account Code" },
-  { key: "name", label: "Account Name" },
 ];
 const STOCK_DIMS: { key: DimKey; label: string }[] = [
-  { key: "sku", label: "Stock Code (SKU)" },
-  { key: "desc", label: "Stock Description" },
-  { key: "group", label: "Stock Group" },
+  { key: "sku", label: "Stock Code" },
 ];
 
 const dimBtn =
@@ -49,18 +45,6 @@ export function FocusSidebar() {
 
   const allParts = useMemo(() => parts ?? [], [parts]);
   const selectedParts = useMemo(() => allParts.filter((p) => partIds.includes(p.id)), [allParts, partIds]);
-  const selectedCats = useMemo(
-    () => [...new Set(selectedParts.map((p) => p.category ?? "Other"))],
-    [selectedParts],
-  );
-  // a category is "selected" when all of its parts are in the URL
-  const fullCats = useMemo(
-    () =>
-      selectedCats.filter((c) =>
-        allParts.filter((p) => (p.category ?? "Other") === c).every((p) => partIds.includes(p.id)),
-      ),
-    [selectedCats, allParts, partIds],
-  );
 
   const scopedPartIds = useMemo(() => {
     if (!scoped || !heat.isSuccess || !heat.data) return null;
@@ -77,72 +61,45 @@ export function FocusSidebar() {
   const options: Option[] = useMemo(() => {
     if (!dim) return [];
     const s = q.trim().toLowerCase();
-    if (dim === "code" || dim === "name") {
+    if (dim === "code") {
       return (resellers ?? [])
-        .filter((r) => !s || r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s))
+        .filter((r) => !s || r.code.toLowerCase().includes(s))
         .map((r) => ({
           key: String(r.id),
-          label: dim === "code" ? r.code : r.name,
-          sub: dim === "code" ? r.name : r.code,
+          label: r.code,
           selected: resellerIds.includes(r.id),
           onPick: () => setFilters({ resellerIds: [r.id] }),
         }));
     }
-    if (dim === "group") {
-      const cats = [...new Set(allParts.map((p) => p.category ?? "Other"))].sort();
-      return cats
-        .filter((c) => !s || c.toLowerCase().includes(s))
-        .map((c) => ({
-          key: c,
-          label: c,
-          selected: fullCats.includes(c),
-          onPick: () =>
-            setFilters({
-              partIds: allParts.filter((p) => (p.category ?? "Other") === c).map((p) => p.id),
-            }),
-        }));
-    }
     return allParts
       .filter((p) => {
-        // Keep individually selected SKUs removable, but don't let an entire
-        // selected group bypass the account scope when drilling further.
-        if (partIds.includes(p.id) && !fullCats.includes(p.category ?? "Other")) return true;
+        // Keep selected stock codes available so they can still be cleared.
+        if (partIds.includes(p.id)) return true;
         if (scopedPartIds && !scopedPartIds.has(p.id)) return false;
-        if (selectedCats.length > 0 && !selectedCats.includes(p.category ?? "Other")) return false;
         return true;
       })
       .filter(
         (p) =>
-          !s || p.part_no.toLowerCase().includes(s) || (p.display_name ?? "").toLowerCase().includes(s),
+          !s || p.part_no.toLowerCase().includes(s),
       )
       .map((p) => ({
         key: String(p.id),
-        label: dim === "sku" ? p.part_no : p.display_name || p.part_no,
-        sub: dim === "sku" ? p.display_name ?? undefined : p.part_no,
+        label: p.part_no,
         selected: partIds.includes(p.id),
         onPick: () => setFilters({ partIds: [p.id] }),
       }));
-  }, [dim, q, resellers, allParts, resellerIds, partIds, fullCats, selectedCats, scopedPartIds, setFilters]);
+  }, [dim, q, resellers, allParts, resellerIds, partIds, scopedPartIds, setFilters]);
 
   const chips: { key: string; label: string; remove: () => void }[] = [];
   for (const id of resellerIds) {
     const r = resellers?.find((x) => x.id === id);
     chips.push({
       key: `r${id}`,
-      label: `Account: ${r?.name ?? id}`,
+      label: `Account: ${r?.code ?? id}`,
       remove: () => setFilters({ resellerIds: resellerIds.filter((x) => x !== id) }),
     });
   }
-  for (const c of fullCats) {
-    const ids = allParts.filter((p) => (p.category ?? "Other") === c).map((p) => p.id);
-    chips.push({
-      key: `c${c}`,
-      label: `Group: ${c}`,
-      remove: () => setFilters({ partIds: partIds.filter((x) => !ids.includes(x)) }),
-    });
-  }
   for (const p of selectedParts) {
-    if (fullCats.includes(p.category ?? "Other")) continue;
     chips.push({
       key: `p${p.id}`,
       label: `SKU: ${p.part_no}`,
@@ -158,7 +115,7 @@ export function FocusSidebar() {
 
   const renderDim = (d: { key: DimKey; label: string }) => {
     const expanded = dim === d.key;
-    const stockDim = d.key === "sku" || d.key === "desc";
+    const stockDim = d.key === "sku";
     return (
       <div key={d.key}>
         <button
@@ -190,7 +147,7 @@ export function FocusSidebar() {
                 className="w-full px-2 py-1.5 text-left text-xs text-[#0a8fb0] hover:bg-[#e8e8e8]"
                 onClick={() =>
                   setFilters(
-                    d.key === "code" || d.key === "name" ? { resellerIds: [] } : { partIds: [] },
+                    d.key === "code" ? { resellerIds: [] } : { partIds: [] },
                   )
                 }
               >
@@ -218,7 +175,6 @@ export function FocusSidebar() {
                   }`}
                 >
                   <span className="truncate">{o.label}</span>
-                  {o.sub && <span className="truncate text-[10px] text-[#777]">{o.sub}</span>}
                 </button>
               ))}
             </div>
