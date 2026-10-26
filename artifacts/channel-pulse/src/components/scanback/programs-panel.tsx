@@ -78,8 +78,8 @@ export function ProgramsPanel({ programs, resellers, parts }: { programs: Scanba
                 <thead><tr className="text-left text-xs text-slate-500"><th className="font-medium">SKU</th><th className="text-right font-medium">GTM Buy Ex</th><th className="text-right font-medium">Caps</th></tr></thead>
                 <tbody>
                   {p.lines.map((l) => (
-                    <tr key={l.partId} className="border-t border-slate-100">
-                      <td className="py-1 font-mono text-xs">{partById.get(l.partId)?.part_no ?? `#${l.partId}`}</td>
+                    <tr key={l.sku ?? l.partId} className="border-t border-slate-100">
+                      <td className="py-1 font-mono text-xs">{l.sku ?? partById.get(l.partId ?? -1)?.part_no ?? `#${l.partId}`}</td>
                       <td className="py-1 text-right tabular-nums">{formatCents(l.gtmBuyCents)}</td>
                       <td className="py-1 text-right text-xs text-slate-500">
                         {l.caps.filter((c) => c.quantity != null).length === 0

@@ -56,9 +56,18 @@ router.post("/scanback/programs", route(async (c, req, res) => {
   const cat = await catalog(c);
   requireThat(new Set(input.customerIds).size === input.customerIds.length &&
     input.customerIds.every(id => cat.accounts.some(a => a.id === id)), "Use existing, distinct Account Codes.");
-  requireThat(new Set(input.lines.map(l => l.partId)).size === input.lines.length, "Each Stock Code may appear only once.");
+  const normalizedLines = input.lines.map(line => {
+    const part = line.partId == null ? undefined : cat.parts.find(p => p.id === line.partId);
+    const sku = (line.sku ?? part?.code ?? "").trim().toUpperCase();
+    requireThat(sku.length <= 120 && /^[^\x00-\x1F\x7F]+$/.test(sku),
+      "Enter a non-empty SKU of at most 120 printable characters.");
+    requireThat(!part || part.code.toUpperCase() === sku, "The entered SKU does not match its selected catalogue item.");
+    requireThat(Number.isSafeInteger(line.gtmBuyCents) && line.gtmBuyCents > 0 && line.gtmBuyCents < 2_000_000_000, "Enter a valid positive GTM Buy Ex.");
+    return { ...line, sku, partId: part?.id ?? null };
+  });
+  requireThat(new Set(normalizedLines.map(line => line.sku)).size === normalizedLines.length, "Each Stock Code may appear only once.");
+  input.lines = normalizedLines;
   for (const line of input.lines) {
-    requireThat(cat.parts.some(p => p.id === line.partId) && Number.isSafeInteger(line.gtmBuyCents) && line.gtmBuyCents > 0 && line.gtmBuyCents < 2_000_000_000, "Enter an existing Stock Code and valid positive GTM Buy Ex.");
     requireThat(new Set(line.caps.map(cap => cap.resellerId)).size === line.caps.length, "Duplicate customer cap.");
     requireThat(line.caps.every(cap => input.customerIds.includes(cap.resellerId) &&
       (cap.quantity === null || (Number.isSafeInteger(cap.quantity) && cap.quantity >= 0 && cap.quantity <= 1_000_000))), "Caps must be blank or nonnegative whole numbers for eligible accounts.");

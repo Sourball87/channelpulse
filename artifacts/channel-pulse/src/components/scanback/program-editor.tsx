@@ -12,12 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { centsToInput, errorMessage, parseCents, useRefreshWorkspace } from "./shared";
 
-type LineDraft = { partId: string; gtm: string; caps: Record<number, string> };
+type LineDraft = { sku: string; gtm: string; caps: Record<number, string> };
 
 export function ProgramEditor({
   open,
@@ -53,7 +52,7 @@ export function ProgramEditor({
     setCustomers(program?.customerIds ?? []);
     setLines(
       (program?.lines ?? []).map((l) => ({
-        partId: String(l.partId),
+        sku: l.sku ?? parts.find(p => p.id === l.partId)?.part_no ?? "",
         gtm: centsToInput(l.gtmBuyCents),
         caps: Object.fromEntries(l.caps.map((c) => [c.resellerId, c.quantity == null ? "" : String(c.quantity)])),
       })),
@@ -75,9 +74,10 @@ export function ProgramEditor({
     const seen = new Set<string>();
     const out: ScanbackProgramInput["lines"] = [];
     for (const [i, l] of lines.entries()) {
-      if (!l.partId) return setError(`SKU line ${i + 1}: choose a SKU.`);
-      if (seen.has(l.partId)) return setError(`SKU line ${i + 1}: SKU is listed twice.`);
-      seen.add(l.partId);
+      const sku = l.sku.trim().toUpperCase();
+      if (!sku) return setError(`SKU line ${i + 1}: enter a SKU.`);
+      if (seen.has(sku)) return setError(`SKU line ${i + 1}: SKU is listed twice.`);
+      seen.add(sku);
       const gtm = parseCents(l.gtm);
       if (gtm == null || Number.isNaN(gtm) || gtm < 1)
         return setError(`SKU line ${i + 1}: GTM Buy Ex must be a positive amount with up to 2 decimals.`);
@@ -88,7 +88,8 @@ export function ProgramEditor({
         else if (!/^\d+$/.test(raw)) return setError(`SKU line ${i + 1}: caps must be whole numbers (blank = unlimited).`);
         else caps.push({ resellerId: cid, quantity: Number(raw) });
       }
-      out.push({ partId: Number(l.partId), gtmBuyCents: gtm, caps });
+      const part = parts.find(p => p.part_no.toUpperCase() === sku);
+      out.push({ sku, partId: part?.id ?? null, gtmBuyCents: gtm, caps });
     }
     const data: ScanbackProgramInput = {
       ...(program ? { id: program.id, version: program.version, archived: program.archived } : {}),
@@ -169,7 +170,7 @@ export function ProgramEditor({
               size="sm"
               variant="outline"
               data-testid="button-add-sku-line"
-              onClick={() => setLines((ls) => [...ls, { partId: "", gtm: "", caps: {} }])}
+              onClick={() => setLines((ls) => [...ls, { sku: "", gtm: "", caps: {} }])}
             >
               <Plus className="mr-1 h-3.5 w-3.5" /> Add SKU
             </Button>
@@ -177,21 +178,17 @@ export function ProgramEditor({
           <p className="text-xs text-muted-foreground">
             Caps are per customer per SKU. Blank means unlimited; 0 means that customer is ineligible for the SKU.
           </p>
+          <p className="text-xs text-muted-foreground">
+            Type the SKU code directly. New codes do not create product-catalogue entries; invoice evidence must use the exact same code.
+          </p>
           {lines.map((l, i) => (
             <div key={i} className="rounded-md border bg-slate-50/50 p-3 space-y-2">
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-[220px] flex-1 space-y-1">
-                  <span className="text-xs text-slate-500">SKU</span>
-                  <Select value={l.partId} onValueChange={(v) => updateLine(i, { partId: v })}>
-                    <SelectTrigger data-testid={`select-line-part-${i}`}><SelectValue placeholder="Choose SKU" /></SelectTrigger>
-                    <SelectContent>
-                      {parts.map((p) => (
-                        <SelectItem key={p.id} value={String(p.id)}>
-                          {p.part_no}{p.display_name ? ` - ${p.display_name}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs text-slate-500" htmlFor={`input-line-sku-${i}`}>SKU</Label>
+                  <Input id={`input-line-sku-${i}`} autoComplete="off" maxLength={120} placeholder="Type SKU code"
+                    data-testid={`input-line-sku-${i}`} value={l.sku}
+                    onChange={(e) => updateLine(i, { sku: e.target.value })} />
                 </div>
                 <div className="w-40 space-y-1">
                   <span className="text-xs text-slate-500">GTM Buy Ex ($)</span>

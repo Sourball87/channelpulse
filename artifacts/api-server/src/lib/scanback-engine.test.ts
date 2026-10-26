@@ -101,6 +101,16 @@ describe("scanback deterministic verification", () => {
     expect(first({ program: { ...p, lines: [{ ...p.lines[0], caps: [{ resellerId: 1, quantity: 0 }] }] } }).include).toBe(false);
     expect(first({ program: { ...p, lines: [{ ...p.lines[0], caps: [{ resellerId: 1, quantity: null }] }] } }).include).toBe(true);
   });
+  it("matches typed catalogue-independent SKU codes and tracks their promotion caps", () => {
+    const custom = { ...p, lines: [{ sku: "CUSTOM-SKU", partId: null, gtmBuyCents: 5000, caps: [{ resellerId: 1, quantity: 1 }] }] };
+    const claims = [row("CUSTOM1", { sku: "CUSTOM-SKU" }), row("CUSTOM2", { sku: "CUSTOM-SKU", rowIndex: 1 })];
+    const evidence = [ev("CUSTOM1", { sku: "CUSTOM-SKU" }), ev("CUSTOM2", { sku: "CUSTOM-SKU" })];
+    expect(verifyClaim(context({ program: custom, claims, evidence })).map(r => [r.status, r.amountCents, r.reason]))
+      .toEqual([["eligible", 5000, "Eligible"], ["rejected", 0, "Customer/SKU cap reached (1 units)"]]);
+    const approved = [{ serial: "OLD-CUSTOM", batchId: "old", programId: p.id, accountId: 1, partId: null, sku: "CUSTOM-SKU" }];
+    expect(verifyClaim(context({ program: custom, claims: [claims[0]], evidence: [evidence[0]], approved }))[0].reason)
+      .toContain("cap reached");
+  });
   it("permits deselecting every row without allocating caps", () => {
     expect(first({ settings: { ...settings, selectedRows: [] } }).include).toBe(false);
   });
@@ -134,8 +144,11 @@ describe("scanback imports", () => {
     expect(map({ Sheet1: [{ Serial: "SER001; SER002", Quantity: 1 }] }, "claim").errors
       .some(e => e.message.includes("one serial per customer claim"))).toBe(true);
   });
-  it("rejects unknown SKU/account and missing invoice reference", () => {
-    expect(map({ Sheet1: [{ ...raw.Sheet1[0], Account: "Unknown", SKU: "Wrong", Invoice: "" }] }).errors.length).toBeGreaterThanOrEqual(3);
+  it("accepts custom SKU codes in invoice evidence without cataloguing them", () => {
+    const result = map({ Sheet1: [{ ...raw.Sheet1[0], Account: "CA", SKU: "Custom-Model", Invoice: "CUSTOM-INV" }] });
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0].sku).toBe("CUSTOM-MODEL");
+    expect(result.warnings.some(w => w.includes("CUSTOM-MODEL") && w.includes("No product SKUs were created"))).toBe(true);
   });
   it("expands signed serial lists without multiplying payments", () => {
     const r = map({ Sheet1: [{ ...raw.Sheet1[0], Serial: "SN1; SN2", Quantity: -2 }] });

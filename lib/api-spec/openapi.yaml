@@ -695,9 +695,10 @@ components:
   schemas:
     ScanbackProgramLine:
       type: object
-      required: [partId, gtmBuyCents, caps]
+      required: [gtmBuyCents, caps]
       properties:
-        partId: { type: integer }
+        sku: { type: string, minLength: 1, maxLength: 120 }
+        partId: { type: [integer, "null"] }
         gtmBuyCents: { type: integer, minimum: 1 }
         caps:
           type: array

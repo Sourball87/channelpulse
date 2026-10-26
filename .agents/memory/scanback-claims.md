@@ -37,7 +37,7 @@ Native Pronto POS imports cover only the existing nine ChannelPulse resellers.
 
 **Why:** The user chose “Use the existing nine resellers (recommended)” rather than adding other Pronto accounts.
 
-**How to apply:** Keep source-to-reseller mapping explicit, report excluded accounts and unknown Stock Codes, and do not create accounts or SKUs automatically from the extract.
+**How to apply:** Keep source-to-reseller mapping explicit and do not create reseller accounts or product-catalogue SKUs automatically from the extract. Retain selected-account evidence with uncatalogued SKUs; those codes are usable only if manually entered on a promotion.
 
 The user wants imports to auto-detect the spreadsheet type and no template-download step.
 
@@ -50,3 +50,9 @@ Scoping out Pronto accounts must never hide conflicting serial ownership or retu
 **Why:** Keeping only a selected customer's invoice while discarding another customer's event can turn ambiguous serial ownership into a false payable result.
 
 **How to apply:** Excluded events cannot grant eligibility, but serial overlaps must still trigger review across committed extracts. A missing-serial credit for a selected reseller/known SKU requires source correction, not silent exclusion.
+
+Promotion SKUs may be typed even when no product-catalogue row exists.
+
+**Why:** The user explicitly chose to allow custom SKU codes outside the catalogue.
+
+**How to apply:** Keep SKU text on promotion lines, invoice evidence, and the approved-serial ledger. Match codes exactly after uppercase/trim normalization and track caps by code; never create a catalogue product as a side effect.

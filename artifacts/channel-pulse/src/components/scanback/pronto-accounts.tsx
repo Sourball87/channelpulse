@@ -33,7 +33,7 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
           {preview.sourceRows.toLocaleString()} invoice/credit rows contain {preview.sourceSerialEvents.toLocaleString()} serial events.
           {" "}Item Price is the invoiced unit price ex GST; Item Cost, Line Cost Ex and RRP are not used.
         </p>
-        <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; no accounts or Stock Codes are created.</p>
+        <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input className="h-8 max-w-xs" placeholder="Find Pronto code or reseller…" aria-label="Find Pronto account"
@@ -72,7 +72,7 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
       <div className="rounded-md bg-slate-50 p-3 text-xs" data-testid="pronto-exclusion-summary">
         <p className="font-medium">Applied preview: {preview.includedSourceRows.toLocaleString()} source rows included; {preview.excludedSourceRows.toLocaleString()} excluded.</p>
         {Object.entries(preview.excludedCounts).map(([reason, count]) => <p key={reason} className="mt-1">{reason}: {count.toLocaleString()} rows</p>)}
-        <p className="mt-2 text-slate-500">Excluded rows are not invoice evidence. A claim without matching serial evidence stays rejected. Apply mapping to refresh these counts.</p>
+        <p className="mt-2 text-slate-500">Excluded rows are not invoice evidence. A claim without matching serial evidence stays rejected. Type uncatalogued SKUs on promotion lines to make them eligible. Apply mapping to refresh these counts.</p>
       </div>
       {preview.excludedSamples.length > 0 && <details className="text-xs">
         <summary className="cursor-pointer font-medium">Review excluded row samples (up to 15 per reason)</summary>

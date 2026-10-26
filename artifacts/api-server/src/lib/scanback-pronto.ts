@@ -22,7 +22,7 @@ const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 export const splitSerials = (value: unknown) => String(value ?? "").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
 
 export function scopePronto(
-  rows: Record<string, unknown>[], options: ScanbackMapping, accounts: Account[], skuCodes: Set<string>,
+  rows: Record<string, unknown>[], options: ScanbackMapping, accounts: Account[],
 ) {
   const allowed = prontoAllowed(accounts), byCode = new Map<string, { names: Set<string>; rows: number; serials: number }>();
   const errors: ScanbackImportIssue[] = [], include = new Map<number, number>();
@@ -63,7 +63,6 @@ export function scopePronto(
     const id = mapping[code], serials = splitSerials(row["Serial Number"]), quantity = Number(row["Ship Qty"]);
     const validAccount = id != null && allowed.some(a => a.id === id);
     const reason = !validAccount ? "Account not selected"
-      : !skuCodes.has(sku) ? "Stock Code not in the existing catalogue"
       : !serials.length ? "No serial number — not serial-level evidence" : "";
     if (!reason) { include.set(i, id!); preview.includedSourceRows++; return; }
     preview.excludedSourceRows++;
@@ -72,9 +71,10 @@ export function scopePronto(
       row: i + 2, accountCode: code, accountName: String(row["Reseller Name"] ?? ""), sku,
       quantity: Number.isFinite(quantity) ? quantity : 0, serialCount: serials.length, reason,
     });
-    // An unidentified return of a claimable SKU is not safe to discard.
-    if (validAccount && skuCodes.has(sku) && !serials.length && quantity < 0)
-      errors.push({ row: i + 2, message: "Credit for a selected reseller/known SKU has no serials. Resolve the return before committing evidence." });
+    // A selected account's unidentified return could affect any manually
+    // configured SKU; do not discard it merely because the code is uncatalogued.
+    if (validAccount && sku && !serials.length && quantity < 0)
+      errors.push({ row: i + 2, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." });
   });
   return { preview, include, errors };
 }

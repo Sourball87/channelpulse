@@ -39,12 +39,13 @@ describe("native Pronto POS evidence", () => {
       ["SN001", 1, 10000, 2], ["SN002", 1, 10000, 2], ["SN001", -1, 10000, 3],
     ]);
   });
-  it("counts excluded accounts, unknown SKUs and nonserial lines without inventing evidence", () => {
+  it("retains uncatalogued SKUs as evidence while excluding unmapped accounts and nonserial lines", () => {
     const r = map([invoice(), invoice({ "Account Code": "999", "Reseller Name": "Outside scope" }),
       invoice({ "Stock Code": "UNKNOWN" }), invoice({ "Serial Number": "" })]);
-    expect(r.recordCount).toBe(2); expect(r.pronto?.excludedSourceRows).toBe(3);
-    expect(Object.keys(r.pronto!.excludedCounts)).toHaveLength(3);
+    expect(r.recordCount).toBe(4); expect(r.pronto?.includedSourceRows).toBe(2); expect(r.pronto?.excludedSourceRows).toBe(2);
+    expect(Object.keys(r.pronto!.excludedCounts)).toHaveLength(2);
     expect(r.rows.every(row => row.accountId === 1)).toBe(true);
+    expect(r.warnings.some(w => w.includes("UNKNOWN"))).toBe(true);
   });
   it("rejects mappings outside the nine resellers and non-existent source account codes", () => {
     expect(map(undefined, { "123": 3 }).errors.some(e => e.message.includes("existing nine"))).toBe(true);
@@ -110,10 +111,12 @@ describe.skipIf(!process.env.PRONTO_SAMPLE)("local uploaded Pronto sample — re
     expect(scoped.recordCount).toBeGreaterThan(0);
     expect(scoped.rows.every(row => cat.some(a => a.id === row.accountId))).toBe(true);
     expect(Object.keys(raw.Sheet1[0])).not.toContain("Reseller Address");
-    expect(scoped.errors).toHaveLength(2);
+    expect(scoped.errors).toHaveLength(4);
     expect(scoped.errors).toEqual(expect.arrayContaining([
+      { row: 14, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." },
+      { row: 19, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." },
+      { row: 1320, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." },
       { row: 131, message: "Serial has unsupported characters or length." },
-      { row: 1320, message: "Credit for a selected reseller/known SKU has no serials. Resolve the return before committing evidence." },
     ]));
   }, 30_000);
 });

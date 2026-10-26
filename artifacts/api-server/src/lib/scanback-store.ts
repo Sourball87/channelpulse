@@ -57,8 +57,9 @@ export async function catalog(c: Client): Promise<{ accounts: Account[]; parts: 
   return { accounts, parts };
 }
 export async function ledger(c: Client): Promise<ApprovedSerial[]> {
-  return (await c.query(`SELECT serial,batch_id AS "batchId",program_id AS "programId",
-    account_id AS "accountId",part_id AS "partId" FROM scanback_approved_serials ORDER BY serial`)).rows;
+  return (await c.query(`SELECT s.serial,s.batch_id AS "batchId",s.program_id AS "programId",
+    s.account_id AS "accountId",s.part_id AS "partId",COALESCE(s.sku,p.part_no) AS sku
+    FROM scanback_approved_serials s LEFT JOIN parts p ON p.id=s.part_id ORDER BY s.serial`)).rows;
 }
 export function publicImport(value: ScanbackImport, withRows = false): ScanbackImport {
   return { ...value, rows: withRows ? value.rows.slice(0, 200) : [], errors: value.errors.slice(0, 200) };
@@ -116,12 +117,11 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
   const nativeIds = imports.filter(i => i.pronto).map(i => i.id);
   if (nativeIds.length) {
     const sources = await c.query("SELECT raw_sheets,payload FROM scanback_imports WHERE id=ANY($1::text[])", [nativeIds]);
-    const knownSkus = new Set(cat.parts.map(part => part.code.toUpperCase()));
     for (const source of sources.rows) {
       const imp = source.payload as ScanbackImport;
       for (const row of (source.raw_sheets as Sheets)[imp.sheet] ?? []) {
-        const code = String(row["Account Code"] ?? "").trim(), sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
-        if (!imp.prontoAccounts?.[code] || !knownSkus.has(sku))
+        const code = String(row["Account Code"] ?? "").trim();
+        if (!imp.prontoAccounts?.[code])
           for (const serial of splitSerials(row["Serial Number"])) restrictedSerials.add(serial);
       }
     }
@@ -140,9 +140,9 @@ export async function recordApprovedSerials(
 ) {
   for (const row of batch.rows.filter(r => r.include)) {
     const part = parts.find(p => p.code.toUpperCase() === row.sku);
-    requireThat(part, "Stock Code no longer exists; re-verify.");
-    await c.query(`INSERT INTO scanback_approved_serials(serial,batch_id,program_id,account_id,part_id,amount_cents)
-      VALUES($1,$2,$3,$4,$5,$6)`, [row.serial, batch.id, programId, accountId, part.id, row.amountCents]);
+    requireThat(row.sku.trim().length > 0, "Stock Code is missing; re-verify.");
+    await c.query(`INSERT INTO scanback_approved_serials(serial,batch_id,program_id,account_id,part_id,sku,amount_cents)
+      VALUES($1,$2,$3,$4,$5,$6,$7)`, [row.serial, batch.id, programId, accountId, part?.id ?? null, row.sku, row.amountCents]);
   }
 }
 export function statementRows(batch: ScanbackBatch | ScanbackDraft): (string | number)[][] {

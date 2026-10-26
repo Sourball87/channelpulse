@@ -15,7 +15,13 @@ export interface ScanbackCap {
 }
 
 export interface ScanbackProgramLine {
-  partId: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  sku?: string;
+  /** @nullable */
+  partId?: number | null;
   /** @minimum 1 */
   gtmBuyCents: number;
   caps: ScanbackCap[];

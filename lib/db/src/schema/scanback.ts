@@ -31,7 +31,8 @@ export const scanbackApprovedSerials = pgTable("scanback_approved_serials", {
   batchId: text("batch_id").notNull().references(() => scanbackBatches.id),
   programId: text("program_id"),
   accountId: integer("account_id").notNull().references(() => resellersRef()),
-  partId: integer("part_id").notNull().references(() => partsRef()),
+  partId: integer("part_id").references(() => partsRef()),
+  sku: text("sku"),
   amountCents: integer("amount_cents").notNull(),
 });
 

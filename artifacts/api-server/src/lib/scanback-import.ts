@@ -101,7 +101,7 @@ export function mapImport(
   if (native && base.kind !== "evidence") throw new Error("This is a Pronto POS extract. Choose Invoice / credit evidence, not customer claims or historical approvals.");
   if (native && (options.accountId != null || Object.entries(prontoMapping).some(([key, column]) => (mapping[key] ?? "") !== column)))
     throw new Error("Pronto POS uses its fixed invoice/price columns and per-Pronto-account mappings; a single fallback account is not allowed.");
-  const scope = native ? scopePronto(rawRows, options, accounts, skuCodes) : undefined;
+  const scope = native ? scopePronto(rawRows, options, accounts) : undefined;
   if (scope) errors.push(...scope.errors);
   for (const key of required) if (!mapping[key]) errors.push({ row: 0, message: `Map the ${key} column.` });
   if (base.kind !== "claim" && !mapping.account && !options.accountId)
@@ -135,7 +135,9 @@ export function mapImport(
       error("Account column conflicts with the selected fallback account.");
     if (!scope && name && !matches.length && !options.accountId) error(`Unmapped account: ${text("account")}`);
     if (base.kind !== "claim" && accountId === null) error("An existing Account Code is required.");
-    if (sku && !skuCodes.has(sku)) error(`Unknown Stock Code: ${sku}`);
+    // Scanback promotions can name customer-supplied SKUs without creating
+    // product-catalogue rows. A typo cannot pay unless an exact promotion line
+    // and invoice both use the same code.
     if (base.kind !== "claim" && !sku) error("Stock Code is required.");
     if (value("date") !== "" && !date) error("Invalid date for the selected date format.");
     if (base.kind !== "claim" && !date) error("Date is required.");
@@ -164,6 +166,7 @@ export function mapImport(
     });
   });
   if (!rows.length) errors.push({ row: 0, message: "No serial records found." });
+  const unlistedSkus = [...new Set(rows.map(row => row.sku).filter(sku => !skuCodes.has(sku)))];
   return {
     ...base, ...options, accountId: options.accountId ?? null, headers,
     pronto: scope?.preview, prontoAccounts: scope ? options.prontoAccounts ?? {} : undefined,
@@ -176,6 +179,7 @@ export function mapImport(
         "Only explicitly mapped accounts and existing Stock Codes are included. Review every account mapping and exclusion before committing.",
         "Serials also appearing in excluded Pronto rows remain subject to ownership/return review; excluding an account cannot hide conflicting evidence.",
       ] : []),
+      ...(unlistedSkus.length ? [`Not in the product catalogue (enter the exact code on a promotion to make these claimable): ${unlistedSkus.slice(0, 25).join(", ")}${unlistedSkus.length > 25 ? " …" : ""}. No product SKUs were created.`] : []),
     ],
   };
 }

@@ -36,7 +36,10 @@ review mappings and issues before committing. No template download is needed.
 
 Store serials as text to preserve leading zeros and long identifiers. Put one
 serial per claim/history row. An invoice row can contain a semicolon-separated
-serial list, but the signed quantity must match the number of serials.
+serial list, but the signed quantity must match the number of serials. SKU codes
+not in the product catalogue can still be entered directly on promotion lines;
+invoice and claim evidence must use the same code. No product-catalogue row is
+created automatically.
 
 Money inputs allow at most two decimal places. **Invoiced unit price (ex GST)**
 is the price charged to the reseller, not the distributor's purchase cost,
@@ -67,9 +70,11 @@ Name, Stock Code, Ship Qty, Serial Number, Item Price and Line Price Ex.
   resellers only**. Suggestions are proposals, not automatic assignments.
   Choose **Use suggested mappings** or map individual codes, review them, then
   **Apply mapping**. Changed mappings disable commit until reapplied.
-- Unselected accounts, unknown Stock Codes and nonserial rows are reported as
-  excluded. No accounts or SKUs are created. Included/excluded counts refer to
-  original source rows; the record count refers to expanded serial events.
+- Unselected accounts and nonserial rows are reported as excluded. An
+  uncatalogued Stock Code is retained as invoice evidence (never auto-created
+  in the product catalogue); it is claimable only if the exact code is typed on
+  a promotion. Included/excluded counts refer to original source rows; the
+  record count refers to expanded serial events.
 - A selected reseller's credit for a known SKU without serials blocks commit:
   skipping an unidentified return could make an ineligible serial payable.
   Malformed serials, inconsistent quantities and price mismatches also block.

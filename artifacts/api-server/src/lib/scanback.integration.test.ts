@@ -141,7 +141,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(native.errors.length).toBeGreaterThan(0); expect(native.rows).toEqual([]);
       const nativeOptions = { mapping: native.mapping, sheet: native.sheet, dateFormat: native.dateFormat, accountId: null, prontoAccounts: { SOURCE1: a.id } };
       native = (await call(`/scanback/imports/${native.id}/remap`, nativeOptions)).data;
-      expect(native.pronto).toMatchObject({ includedSourceRows: 2, excludedSourceRows: 2 });
+      expect(native.pronto).toMatchObject({ includedSourceRows: 3, excludedSourceRows: 1 });
       expect(native.rows[0]).toMatchObject({ unitPriceCents: 10000, accountId: a.id, sourceRow: 2 });
       await commit(native);
       expect((await call(`/scanback/imports/${native.id}/remap`, { ...nativeOptions, prontoAccounts: { SOURCE1: other.id } })).status).toBe(400);
@@ -159,6 +159,34 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(held.totalCents).toBe(3000);
       expect(held.results[1]).toMatchObject({ status: "review", include: false });
       expect(held.results[1].reason).toContain("excluded Pronto");
+      const customSku = `${prefix}-CUSTOM`;
+      const customProgramResponse = await call("/scanback/programs", {
+        name: prefix + " Custom SKU", start: "2026-09-01", end: "2026-09-30", notes: "", customerIds: [a.id],
+        lines: [{ sku: customSku, partId: null, gtmBuyCents: 5000, caps: [{ resellerId: a.id, quantity: 1 }] }],
+      });
+      expect(customProgramResponse.status).toBe(200);
+      const customProgram = customProgramResponse.data;
+      expect(customProgram.lines[0]).toMatchObject({ sku: customSku, partId: null });
+      const customEvidence = await commit(await upload("auto",
+        `Invoice,Invoice Date,Account,SKU,Quantity,Serial,Unit Price\n${prefix}-CS1,01/09/2026,${a.code},${customSku},1,${prefix}CS1,100.00\n${prefix}-CS2,01/09/2026,${a.code},${customSku},1,${prefix}CS2,100.00\n${prefix}-CS3,01/09/2026,${a.code},${customSku},1,${prefix}CS3,100.00\n`,
+        "custom-sku-evidence"));
+      expect(customEvidence.rows[0].sku).toBe(customSku);
+      expect(customEvidence.warnings.some((w: string) => w.includes("No product SKUs were created"))).toBe(true);
+      const customClaim = await commit(await upload("claim",
+        `Serial,SKU,Sale Date\n${prefix}CS1,${customSku},20/09/2026\n${prefix}CS2,${customSku},20/09/2026\n`, "custom-sku-claim"));
+      const customSettings = { ...settings, programId: customProgram.id, claimImportId: customClaim.id, basis: "invoice" };
+      const customDraft = (await call("/scanback/verify", customSettings)).data;
+      expect(customDraft.totalCents).toBe(5000);
+      expect(customDraft.results.map((r: { status: string }) => r.status)).toEqual(["eligible", "rejected"]);
+      expect(customDraft.results[1].reason).toContain("cap reached");
+      const customApproval = await call("/scanback/approve", { draftId: customDraft.id, token: customDraft.token, reference: prefix + "-custom-approval" });
+      expect(customApproval.status).toBe(200);
+      const customLedger = await pool.query("SELECT part_id,sku FROM scanback_approved_serials WHERE serial=$1", [`${prefix}CS1`]);
+      expect(customLedger.rows[0]).toMatchObject({ part_id: null, sku: customSku });
+      const customClaimNext = await commit(await upload("claim",
+        `Serial,SKU,Sale Date\n${prefix}CS3,${customSku},20/09/2026\n`, "custom-sku-cap-claim"));
+      const exhausted = (await call("/scanback/verify", { ...customSettings, claimImportId: customClaimNext.id })).data;
+      expect(exhausted.results[0].reason).toContain("cap reached");
     } finally {
       // Track historical batches even if an assertion fails before workspace read.
       const historyBatches = await pool.query("SELECT id FROM scanback_batches WHERE payload->>'programName' LIKE $1", [prefix + "%"]);

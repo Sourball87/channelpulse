@@ -20,7 +20,7 @@ export const evidenceKey = (r: ScanbackImportRow) => JSON.stringify([
   r.serial, r.accountId, r.sku, r.date, r.invoice, Math.sign(r.quantity), r.unitPriceCents,
 ]);
 export interface EvidenceRow extends ScanbackImportRow { source: string }
-export interface ApprovedSerial { serial: string; batchId: string; programId: string | null; accountId: number; partId: number }
+export interface ApprovedSerial { serial: string; batchId: string; programId: string | null; accountId: number; partId: number | null; sku?: string | null }
 export interface CatalogPart { id: number; code: string }
 export interface VerificationContext {
   program: ScanbackProgram;
@@ -68,15 +68,20 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     bySerial.set(e.serial, [...(bySerial.get(e.serial) ?? []), e]);
   }
   const used = new Map(ctx.approved.map(a => [a.serial, a]));
-  const parts = new Map(ctx.parts.map(a => [a.code.toUpperCase(), a.id]));
-  const lines = new Map(p.lines.map(line => [line.partId, line]));
-  const priorUnits = new Map<number, number>();
+  const catalogCode = new Map(ctx.parts.map(part => [part.id, part.code.toUpperCase()]));
+  const lines = new Map(p.lines.map(line => [
+    (line.sku ?? catalogCode.get(line.partId ?? -1) ?? "").trim().toUpperCase(), line,
+  ]));
+  const priorUnits = new Map<string, number>();
   for (const approval of ctx.approved) {
     if (approval.programId === p.id && approval.accountId === s.accountId)
-      priorUnits.set(approval.partId, (priorUnits.get(approval.partId) ?? 0) + 1);
+      {
+        const sku = (approval.sku ?? catalogCode.get(approval.partId ?? -1) ?? "").trim().toUpperCase();
+        if (sku) priorUnits.set(sku, (priorUnits.get(sku) ?? 0) + 1);
+      }
   }
   const seen = new Set<string>();
-  const running = new Map<number, number>();
+  const running = new Map<string, number>();
   const selected = s.selectedRows ? new Set(s.selectedRows) : null;
   return ctx.claims.map(r => {
     const o: ScanbackResult = {
@@ -110,8 +115,8 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     if (date < p.start || date > p.end || date < s.from || date > s.to)
       return reject("Outside promotion or selected date period");
     if (!p.customerIds.includes(s.accountId)) return reject("Customer is not eligible for this promotion");
-    const partId = parts.get(inv.sku);
-    const line = partId == null ? undefined : lines.get(partId);
+    const sku = inv.sku.trim().toUpperCase();
+    const line = lines.get(sku);
     if (!line) return reject("SKU is not in this promotion");
     o.gtmBuyCents = line.gtmBuyCents;
     if (!(line.gtmBuyCents > 0) || inv.unitPriceCents == null)
@@ -121,14 +126,14 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     if (r.quantity !== 1) return reject("Quantity is not 1 for this serial — correct the source and re-import", true);
     const cap = line.caps.find(c => c.resellerId === s.accountId)?.quantity;
     if (cap === 0) return reject("Customer/SKU cap is 0 — not eligible");
-    const prior = priorUnits.get(partId!) ?? 0;
+    const prior = priorUnits.get(sku) ?? 0;
     o.selectable = true;
     const wants = selected ? selected.has(r.rowIndex) : true;
-    const count = running.get(partId!) ?? 0;
+    const count = running.get(sku) ?? 0;
     if (wants && cap != null && prior + count >= cap) return reject(`Customer/SKU cap reached (${cap} units)`);
     o.amountCents = amount; o.status = "eligible"; o.reason = wants ? "Eligible" : "Eligible — excluded from selection";
     o.include = wants;
-    if (wants) running.set(partId!, count + 1);
+    if (wants) running.set(sku, count + 1);
     return o;
   });
 }
