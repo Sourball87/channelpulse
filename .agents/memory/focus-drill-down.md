@@ -14,3 +14,9 @@ Keep only Account Code and Stock Code in the Focus sidebar; remove Account Name,
 **Why:** The user explicitly requested these simpler code-only controls.
 
 **How to apply:** Use codes for options and selected labels, without name/description sublabels or stock-group drill-downs. Preserve account/stock filtering and Reset.
+
+Stock Code is used to measure stock sell-through per week.
+
+**Why:** The user clarified what they are measuring with Stock Code.
+
+**How to apply:** Distinguish weekly sell-through from stock on hand and weeks of inventory. Confirm units versus a percentage before changing the metric.
