@@ -26,3 +26,9 @@ Show weekly sell-through (units sold) in the heatmap under Stock Code.
 **Why:** The user corrected their earlier choice: "no sorry switch the heatmap under stock code to weekly sell through".
 
 **How to apply:** Use weekly sales for cell values and heatmap colours, not weeks of inventory. Keep Account Code, Stock Code and reporting-week filters connected.
+
+Show weeks across the top, Stock Codes down the left, and units sold in each cell for the last 12 weeks.
+
+**Why:** The user explicitly selected "weeks across the top, SKUs down the left" and "Last 12 weeks".
+
+**How to apply:** Account selection scopes the sales and available Stock Codes to the 12-week history. Use consecutive calendar weeks ending at the reporting selection, not 12 nonconsecutive uploaded weeks. Preserve missing reports as missing, rather than inventing zero sales.

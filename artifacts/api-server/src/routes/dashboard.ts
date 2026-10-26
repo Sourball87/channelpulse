@@ -4,8 +4,10 @@ import { sql, eq, and, inArray, desc } from "drizzle-orm";
 import { previousWeekIso } from "../lib/parser";
 import { GetDashboardKpisQueryParams, GetDashboardHeatmapQueryParams } from "@workspace/api-zod";
 import { parseFilterParams, resolveRange, buildConditions } from "../lib/filter-params";
+import weeklySalesRouter from "./weekly-sales";
 
 const router: IRouter = Router();
+router.use(weeklySalesRouter);
 
 function woiColor(woi: number | null, soh: number, st: number): string {
   if (soh === 0) return "grey";

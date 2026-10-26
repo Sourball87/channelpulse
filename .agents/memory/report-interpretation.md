@@ -15,6 +15,12 @@ Use the ISO calendar week of an explicit report date, or the ending date of a fi
 
 **How to apply:** Keep calendar-derived dates unless the user establishes a different reporting convention.
 
+Use whole UTC calendar days when calculating ISO week numbers.
+
+**Why:** Carrying a noon time into a ceiling-based week calculation can shift all dates in an ISO year forward by one week when January 1 falls on Friday, repeating weeks when stepping backward.
+
+**How to apply:** Cover 52/53-week year boundaries and consecutive weekly windows when changing reporting-period arithmetic.
+
 Rechecking an existing pending upload must refresh recognition only, never retroactively import it. Missing original sheet metadata must stay missing, and unproven legacy week values must not become user-confirmed choices.
 
 **Why:** Earlier parser results can contain guessed weeks and outdated flags. Applying new automatic-import rules to an old queue could change analytics without a deliberate import action.

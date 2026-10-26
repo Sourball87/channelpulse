@@ -2,7 +2,8 @@ import { useState, useRef } from "react";
 import { Link } from "wouter";
 import {
   useGetDashboardKpis,
-  useGetDashboardHeatmap,
+  useGetDashboardWeeklySales,
+  useGetResellers,
 } from "@workspace/api-client-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +30,8 @@ const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
 
 export default function Dashboard() {
   const [category, setCategory] = useState<string>("All");
-  const { apiParams } = useFilters();
+  const { apiParams, insightWeek, resellerIds } = useFilters();
+  const { data: accounts } = useGetResellers();
 
   const queryCategory = category === "All" ? undefined : category;
 
@@ -38,30 +40,27 @@ export default function Dashboard() {
     category: queryCategory,
   });
 
-  const { data: heatmapData, isLoading: isLoadingHeatmap } = useGetDashboardHeatmap({
-    ...apiParams,
+  const { data: heatmapData, isLoading: isLoadingHeatmap, isError: heatmapError, refetch: refetchHeatmap } = useGetDashboardWeeklySales({
+    week_iso: insightWeek,
+    part_ids: apiParams.part_ids,
+    reseller_ids: apiParams.reseller_ids,
     category: queryCategory,
   });
 
   const {
     partOrder,
-    resellerOrder,
     draftPartOrder,
-    draftResellerOrder,
     isEditing,
     startEditing,
     commitOrder,
     cancelEditing,
     resetToDefaults,
     reorderPart,
-    reorderReseller,
   } = useHeatmapOrder();
 
   // ── Drag state ──────────────────────────────────────────────────────────────
   const dragPartRef = useRef<string | null>(null);
   const [dragOverPart, setDragOverPart] = useState<string | null>(null);
-  const dragResellerRef = useRef<string | null>(null);
-  const [dragOverReseller, setDragOverReseller] = useState<string | null>(null);
 
   // Part row drag handlers
   const onPartDragStart = (part: string) => { dragPartRef.current = part; };
@@ -81,35 +80,19 @@ export default function Dashboard() {
     setDragOverPart(null);
   };
 
-  // Reseller column drag handlers
-  const onResellerDragStart = (res: string) => { dragResellerRef.current = res; };
-  const onResellerDragOver = (e: React.DragEvent, res: string) => {
-    e.preventDefault();
-    if (dragResellerRef.current && dragResellerRef.current !== res) setDragOverReseller(res);
-  };
-  const onResellerDrop = (targetRes: string) => {
-    if (dragResellerRef.current && dragResellerRef.current !== targetRes) {
-      reorderReseller(dragResellerRef.current, targetRes);
-    }
-    dragResellerRef.current = null;
-    setDragOverReseller(null);
-  };
-  const onResellerDragEnd = () => {
-    dragResellerRef.current = null;
-    setDragOverReseller(null);
-  };
 
   // ── Sorted display data ─────────────────────────────────────────────────────
   const activePartOrder = isEditing ? draftPartOrder : partOrder;
-  const activeResellerOrder = isEditing ? draftResellerOrder : resellerOrder;
 
   const displayedParts = heatmapData
     ? sortByOrder(heatmapData.parts, activePartOrder)
     : [];
-  const displayedResellers = heatmapData
-    ? sortByOrder(heatmapData.resellers, activeResellerOrder)
-    : [];
-  const maxWeeklySales = Math.max(0, ...(heatmapData?.cells.map((cell) => cell.st) ?? []));
+  // Weeks always stay chronological; saved SKU row ordering is preserved.
+  const displayedWeeks = heatmapData?.weeks ?? [];
+  const maxWeeklySales = (heatmapData?.cells ?? []).reduce((max, cell) => Math.max(max, cell.units_sold), 0);
+  const accountLabel = resellerIds.length
+    ? resellerIds.map(id => accounts?.find(account => account.id === id)?.code ?? String(id)).join(", ")
+    : "All accounts";
 
   const reportedCount = kpiData?.reseller_statuses.filter((r) => r.reported).length || 0;
   const totalResellers = kpiData?.reseller_statuses.length || 9;
@@ -226,23 +209,20 @@ export default function Dashboard() {
         </Card>
 
         <Card className="shadow-xs flex-1 flex flex-col min-h-[400px]">
-          <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row flex-wrap gap-2 items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium flex flex-wrap items-center gap-2">
               Weekly Sell-Through (Units Sold) Heatmap
-              {kpiData?.is_period && (
-                <Badge variant="secondary" className="text-xs font-normal">
-                  Weekly average over selected period
-                </Badge>
-              )}
+              <Badge variant="secondary" className="text-xs font-normal">Last 12 weeks</Badge>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-4 w-4 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Units sold per Stock Code and Account Code for the selected week.</p>
-                  <p>For a date range, values are weekly averages across reported weeks.</p>
+                  <p>Stock Codes down the left, 12 consecutive ISO weeks across the top.</p>
+                  <p>Each cell is units sold that week, summed across the selected accounts.</p>
+                  <p>The window ends at the selected reporting week or date-range end.</p>
                   <p>Darker blue means more units sold; 0 means reported zero sales.</p>
-                  <p>A dash means no reported data for that stock/account combination.</p>
+                  <p>A dash means no reported data for that stock/week combination.</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
@@ -262,7 +242,7 @@ export default function Dashboard() {
             ) : (
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-muted-foreground mr-1 select-none">
-                  Drag rows &amp; columns to reorder
+                  Drag SKU rows to reorder
                 </span>
                 <Button
                   variant="ghost"
@@ -295,6 +275,13 @@ export default function Dashboard() {
           </CardHeader>
 
           <CardContent className="p-0 overflow-auto flex-1">
+            <p className="px-4 pt-3 text-xs text-muted-foreground">
+              Account Code: {accountLabel} · {heatmapData?.weeks[0] ?? "…"} – {heatmapData?.end_week ?? "…"}
+              {resellerIds.length !== 1 && " · Sales combined across reported accounts"}
+            </p>
+            <p className="px-4 pt-1 text-xs text-muted-foreground lg:hidden">
+              Scroll sideways to see all 12 weeks.
+            </p>
             {heatmapData && heatmapData.cells.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 px-4 pt-3 text-xs text-muted-foreground">
                 <span>0 units/wk</span>
@@ -307,6 +294,12 @@ export default function Dashboard() {
               <div className="p-8 flex items-center justify-center h-full">
                 <Skeleton className="h-full w-full" />
               </div>
+            ) : heatmapError ? (
+              <div className="p-8 flex flex-col items-center gap-2 text-muted-foreground">
+                <AlertCircle className="h-8 w-8" />
+                <p>Could not load weekly sell-through.</p>
+                <Button variant="outline" size="sm" onClick={() => refetchHeatmap()}>Try again</Button>
+              </div>
             ) : !heatmapData || heatmapData.parts.length === 0 ? (
               <div className="p-8 flex flex-col items-center justify-center h-full text-muted-foreground">
                 <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
@@ -318,36 +311,25 @@ export default function Dashboard() {
                 <div
                   className="grid gap-1"
                   style={{
-                    gridTemplateColumns: `minmax(${isEditing ? 200 : 180}px, max-content) repeat(${displayedResellers.length}, minmax(60px, 1fr))`,
+                    gridTemplateColumns: `${isEditing ? 180 : 152}px repeat(${displayedWeeks.length}, minmax(60px, 1fr))`,
                   }}
                 >
                   {/* Header row — top-left corner */}
                   <div className="sticky top-0 left-0 z-20 bg-card p-2 text-xs font-semibold text-muted-foreground border-b shadow-[1px_0_0_hsl(var(--border))]">
-                    Stock Code / Account Code
+                    Stock Code
                   </div>
 
-                  {/* Reseller column headers */}
-                  {displayedResellers.map((res) => {
-                    const isOver = dragOverReseller === res;
-                    const isDragging = dragResellerRef.current === res;
+                  {/* ISO weeks always stay oldest-first. */}
+                  {displayedWeeks.map((week) => {
                     return (
                       <div
-                        key={res}
-                        draggable={isEditing}
-                        onDragStart={() => onResellerDragStart(res)}
-                        onDragOver={(e) => onResellerDragOver(e, res)}
-                        onDrop={() => onResellerDrop(res)}
-                        onDragEnd={onResellerDragEnd}
-                        className={`sticky top-0 z-10 bg-card p-2 text-xs font-semibold text-center border-b text-muted-foreground transition-all select-none
-                          ${isEditing ? "cursor-grab active:cursor-grabbing" : ""}
-                          ${isOver ? "ring-2 ring-inset ring-primary/60 bg-primary/5 rounded" : ""}
-                          ${isDragging ? "opacity-40" : ""}
-                        `}
+                        key={week}
+                        title={week}
+                        aria-label={week}
+                        className="sticky top-0 z-10 bg-card p-2 text-xs font-semibold text-center border-b text-muted-foreground"
                       >
-                        {isEditing && (
-                          <GripVertical className="h-3 w-3 mx-auto mb-0.5 text-muted-foreground/50 rotate-90" />
-                        )}
-                        {res}
+                        <span className="block">{week.slice(5)}</span>
+                        <span className="block text-[10px] font-normal">{week.slice(0, 4)}</span>
                       </div>
                     );
                   })}
@@ -355,7 +337,7 @@ export default function Dashboard() {
                   {/* Data rows */}
                   {displayedParts.map((part) => {
                     const rowCells = heatmapData.cells.filter((c) => c.part_no === part);
-                    const cellMap = new Map(rowCells.map((c) => [c.reseller_code, c]));
+                    const cellMap = new Map(rowCells.map((c) => [c.week_iso, c]));
                     const isOver = dragOverPart === part;
                     const isDragging = dragPartRef.current === part;
 
@@ -377,73 +359,67 @@ export default function Dashboard() {
                           {isEditing && (
                             <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground/50" />
                           )}
-                          <span className="truncate" title={rowCells[0]?.display_name || part}>
+                          <span className="truncate" title={part}>
                             {part}
                           </span>
                         </div>
 
                         {/* Data cells */}
-                        {displayedResellers.map((res) => {
-                          const cell = cellMap.get(res);
-                          const colOver = dragOverReseller === res;
-                          const colDragging = dragResellerRef.current === res;
+                        {displayedWeeks.map((week) => {
+                          const cell = cellMap.get(week);
 
                           if (!cell) {
                             return (
                               <div
-                                key={res}
+                                key={week}
                                 title="No reported data"
-                                aria-label={`${part} at ${res}: no reported data`}
-                                className={`p-1 border-b bg-card group-hover:bg-muted/50 transition-colors text-center text-muted-foreground
-                                  ${colOver ? "bg-primary/5" : ""}
-                                  ${colDragging ? "opacity-40" : ""}
-                                `}
+                                aria-label={`${part}, ${week}: no reported data`}
+                                className="p-1 border-b bg-card group-hover:bg-muted/50 transition-colors text-center text-muted-foreground"
                               >
                                 <span className="h-8 flex items-center justify-center text-xs">—</span>
                               </div>
                             );
                           }
 
-                          const intensity = maxWeeklySales > 0 ? Math.max(0, Math.min(1, cell.st / maxWeeklySales)) : 0;
+                          const intensity = maxWeeklySales > 0 ? Math.max(0, Math.min(1, cell.units_sold / maxWeeklySales)) : 0;
                           const backgroundColor = `rgb(${Math.round(239 - 201 * intensity)}, ${Math.round(241 - 127 * intensity)}, ${Math.round(243 - 77 * intensity)})`;
-                          const salesDisplay = cell.st.toLocaleString();
+                          const salesDisplay = cell.units_sold.toLocaleString();
 
                           return (
                             <div
-                              key={res}
-                              className={`p-1 border-b bg-card group-hover:bg-muted/50 transition-colors
-                                ${colOver ? "bg-primary/5" : ""}
-                                ${colDragging ? "opacity-40" : ""}
-                              `}
+                              key={week}
+                              className="p-1 border-b bg-card group-hover:bg-muted/50 transition-colors"
                             >
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <div
                                     className={`h-8 rounded flex items-center justify-center text-xs font-medium cursor-default shadow-xs ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
                                     style={{ backgroundColor }}
-                                    aria-label={`${part} at ${res}: ${salesDisplay} units sold per week`}
+                                    aria-label={`${part}, ${week}: ${salesDisplay} units sold`}
                                   >
                                     {salesDisplay}
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
                                   <div className="font-semibold mb-1.5">
-                                    {part} @ {res}
+                                    {part} · {week}
                                   </div>
                                   <div className="space-y-1">
                                     <div>
-                                      {kpiData?.is_period ? "Average weekly sell-through: " : "Weekly sell-through: "}
+                                      Weekly sell-through:{" "}
                                       <span className="font-bold">
                                         {salesDisplay}
                                       </span>{" "}
                                       units/wk
                                     </div>
                                     <div>
-                                      Stock on hand:{" "}
+                                      Account Code:{" "}
                                       <span className="font-bold">
-                                        {cell.soh.toLocaleString()}
+                                        {accountLabel}
                                       </span>{" "}
-                                      units{kpiData?.is_period ? " (latest week)" : ""}
+                                    </div>
+                                    <div>
+                                      Based on {cell.reported_accounts} reported account{cell.reported_accounts !== 1 ? "s" : ""}.
                                     </div>
                                   </div>
                                 </TooltipContent>

@@ -74,6 +74,34 @@ export const GetDashboardHeatmapResponse = zod.object({
 
 
 /**
+ * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+ */
+export const getDashboardWeeklySalesQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+export const getDashboardWeeklySalesQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+
+
+export const GetDashboardWeeklySalesQueryParams = zod.object({
+  "week_iso": zod.coerce.string().optional().describe('Final week of the 12-week window; defaults to the latest uploaded week'),
+  "category": zod.coerce.string().optional(),
+  "part_ids": zod.coerce.string().regex(getDashboardWeeklySalesQueryPartIdsRegExp).optional(),
+  "reseller_ids": zod.coerce.string().regex(getDashboardWeeklySalesQueryResellerIdsRegExp).optional()
+})
+
+export const GetDashboardWeeklySalesResponse = zod.object({
+  "end_week": zod.string().nullable(),
+  "weeks": zod.array(zod.string()),
+  "parts": zod.array(zod.string()),
+  "cells": zod.array(zod.object({
+  "part_id": zod.number(),
+  "part_no": zod.string(),
+  "week_iso": zod.string(),
+  "units_sold": zod.number(),
+  "reported_accounts": zod.number()
+}))
+})
+
+
+/**
  * @summary Get list of available ISO weeks with data
  */
 export const GetAvailableWeeksResponseItem = zod.object({

@@ -3,10 +3,9 @@ import { useFilters } from "@/context/filter-context";
 import {
   useGetParts,
   useGetResellers,
-  useGetDashboardHeatmap,
-  getGetDashboardHeatmapQueryKey,
+  useGetDashboardWeeklySales,
+  getGetDashboardWeeklySalesQueryKey,
 } from "@workspace/api-client-react";
-import type { GetDashboardHeatmapParams } from "@workspace/api-client-react";
 import { X } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
 
@@ -30,17 +29,17 @@ const dimBtn =
   "w-full h-9 rounded-[2px] border border-[#cfd2d6] bg-[#ececec] text-[13px] text-[#333] hover:bg-[#e0e0e0] aria-expanded:bg-[#d6dde2] aria-expanded:border-[#5bc6e0]";
 
 export function FocusSidebar() {
-  const { partIds, resellerIds, setFilters, clearFilters, isFiltered, apiParams } = useFilters();
+  const { partIds, resellerIds, setFilters, clearFilters, isFiltered, apiParams, insightWeek } = useFilters();
   const { data: parts } = useGetParts();
   const { data: resellers } = useGetResellers();
   const [open, setOpen] = useState(true);
   const [dim, setDim] = useState<DimKey | null>(null);
   const [q, setQ] = useState("");
 
-  const heatParams = { ...apiParams, part_ids: undefined } as unknown as GetDashboardHeatmapParams;
+  const heatParams = { week_iso: insightWeek, reseller_ids: apiParams.reseller_ids };
   const scoped = resellerIds.length > 0;
-  const heat = useGetDashboardHeatmap(heatParams, {
-    query: { enabled: scoped, queryKey: getGetDashboardHeatmapQueryKey(heatParams) },
+  const heat = useGetDashboardWeeklySales(heatParams, {
+    query: { enabled: scoped, queryKey: getGetDashboardWeeklySalesQueryKey(heatParams) },
   });
 
   const allParts = useMemo(() => parts ?? [], [parts]);
@@ -49,9 +48,7 @@ export function FocusSidebar() {
   const scopedPartIds = useMemo(() => {
     if (!scoped || !heat.isSuccess || !heat.data) return null;
     return new Set(
-      heat.data.cells
-        .filter((c) => c.part_id != null && c.reseller_id != null && resellerIds.includes(c.reseller_id))
-        .map((c) => c.part_id as number),
+      heat.data.cells.map((c) => c.part_id),
     );
   }, [scoped, heat.isSuccess, heat.data, resellerIds]);
 

@@ -29,6 +29,7 @@ import type {
   GetAlertsParams,
   GetDashboardHeatmapParams,
   GetDashboardKpisParams,
+  GetDashboardWeeklySalesParams,
   GetExplorerDataParams,
   GetExplorerTrendParams,
   GetPartsParams,
@@ -49,7 +50,8 @@ import type {
   UploadFilesInput,
   UploadRecheckInput,
   UploadReviewCard,
-  WeekSummary
+  WeekSummary,
+  WeeklySalesData
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -312,6 +314,90 @@ export function useGetDashboardHeatmap<TData = Awaited<ReturnType<typeof getDash
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDashboardHeatmapQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetDashboardWeeklySalesUrl = (params?: GetDashboardWeeklySalesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dashboard/weekly-sales?${stringifiedParams}` : `/api/dashboard/weekly-sales`
+}
+
+/**
+ * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+ */
+export const getDashboardWeeklySales = async (params?: GetDashboardWeeklySalesParams, options?: RequestInit): Promise<WeeklySalesData> => {
+
+  return customFetch<WeeklySalesData>(getGetDashboardWeeklySalesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDashboardWeeklySalesQueryKey = (params?: GetDashboardWeeklySalesParams,) => {
+    return [
+    `/api/dashboard/weekly-sales`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetDashboardWeeklySalesQueryOptions = <TData = Awaited<ReturnType<typeof getDashboardWeeklySales>>, TError = ErrorType<void>>(params?: GetDashboardWeeklySalesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDashboardWeeklySales>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDashboardWeeklySalesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDashboardWeeklySales>>> = ({ signal }) => getDashboardWeeklySales(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDashboardWeeklySales>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDashboardWeeklySalesQueryResult = NonNullable<Awaited<ReturnType<typeof getDashboardWeeklySales>>>
+export type GetDashboardWeeklySalesQueryError = ErrorType<void>
+
+
+/**
+ * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+ */
+
+export function useGetDashboardWeeklySales<TData = Awaited<ReturnType<typeof getDashboardWeeklySales>>, TError = ErrorType<void>>(
+ params?: GetDashboardWeeklySalesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDashboardWeeklySales>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDashboardWeeklySalesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

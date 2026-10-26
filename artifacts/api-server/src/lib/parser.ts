@@ -256,6 +256,9 @@ export function dateStringToWeekIso(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00Z");
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  // Count whole calendar days. A noon timestamp can round a final-day
+  // Thursday up into the next week when the ISO year starts after Jan 1.
+  d.setUTCHours(0, 0, 0, 0);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;

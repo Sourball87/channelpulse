@@ -77,6 +77,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/HeatmapData"
 
+  /dashboard/weekly-sales:
+    get:
+      operationId: getDashboardWeeklySales
+      tags: [dashboard]
+      summary: Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+      parameters:
+        - name: week_iso
+          in: query
+          description: Final week of the 12-week window; defaults to the latest uploaded week
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: part_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+        - name: reseller_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+      responses:
+        "200":
+          description: Reported weekly sales, summed across selected accounts; absent cells represent missing data, not zero
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklySalesData"
+        "400":
+          description: Invalid week or filter
+
   /dashboard/weeks:
     get:
       operationId: getAvailableWeeks
@@ -657,6 +692,39 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HeatmapCell"
+
+    WeeklySalesCell:
+      type: object
+      required: [part_id, part_no, week_iso, units_sold, reported_accounts]
+      properties:
+        part_id:
+          type: integer
+        part_no:
+          type: string
+        week_iso:
+          type: string
+        units_sold:
+          type: integer
+        reported_accounts:
+          type: integer
+    WeeklySalesData:
+      type: object
+      required: [end_week, weeks, parts, cells]
+      properties:
+        end_week:
+          type: ["string", "null"]
+        weeks:
+          type: array
+          items:
+            type: string
+        parts:
+          type: array
+          items:
+            type: string
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeeklySalesCell"
 
     ExplorerRow:
       type: object

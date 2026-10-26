@@ -96,6 +96,22 @@ export interface HeatmapData {
   cells: HeatmapCell[];
 }
 
+export interface WeeklySalesCell {
+  part_id: number;
+  part_no: string;
+  week_iso: string;
+  units_sold: number;
+  reported_accounts: number;
+}
+
+export interface WeeklySalesData {
+  /** @nullable */
+  end_week: string | null;
+  weeks: string[];
+  parts: string[];
+  cells: WeeklySalesCell[];
+}
+
 export type ExplorerRowLevel = typeof ExplorerRowLevel[keyof typeof ExplorerRowLevel];
 
 
@@ -433,6 +449,22 @@ category?: string;
 export type GetDashboardHeatmapParams = {
 week_iso?: string;
 category?: string;
+};
+
+export type GetDashboardWeeklySalesParams = {
+/**
+ * Final week of the 12-week window; defaults to the latest uploaded week
+ */
+week_iso?: string;
+category?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+part_ids?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+reseller_ids?: string;
 };
 
 export type GetExplorerDataParams = {
