@@ -21,8 +21,8 @@ Stock Code is used to measure stock sell-through per week, meaning units sold pe
 
 **How to apply:** Express weekly sell-through in units. Distinguish it from stock on hand, percentage sell-through and weeks of inventory.
 
-Keep the current weeks-of-inventory heatmap.
+Show weekly sell-through (units sold) in the heatmap under Stock Code.
 
-**Why:** When offered a switch to weekly units sold, the user chose "Keep the current heatmap".
+**Why:** The user corrected their earlier choice: "no sorry switch the heatmap under stock code to weekly sell through".
 
-**How to apply:** Do not replace the main heatmap's inventory metric merely because weekly sell-through is measured in units.
+**How to apply:** Use weekly sales for cell values and heatmap colours, not weeks of inventory. Keep Account Code, Stock Code and reporting-week filters connected.

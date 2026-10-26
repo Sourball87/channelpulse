@@ -109,6 +109,7 @@ export default function Dashboard() {
   const displayedResellers = heatmapData
     ? sortByOrder(heatmapData.resellers, activeResellerOrder)
     : [];
+  const maxWeeklySales = Math.max(0, ...(heatmapData?.cells.map((cell) => cell.st) ?? []));
 
   const reportedCount = kpiData?.reseller_statuses.filter((r) => r.reported).length || 0;
   const totalResellers = kpiData?.reseller_statuses.length || 9;
@@ -227,10 +228,10 @@ export default function Dashboard() {
         <Card className="shadow-xs flex-1 flex flex-col min-h-[400px]">
           <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              Weeks of Inventory (WOI) Heatmap
+              Weekly Sell-Through (Units Sold) Heatmap
               {kpiData?.is_period && (
                 <Badge variant="secondary" className="text-xs font-normal">
-                  SOH: latest week · ST: avg over period
+                  Weekly average over selected period
                 </Badge>
               )}
               <Tooltip>
@@ -238,10 +239,10 @@ export default function Dashboard() {
                   <Info className="h-4 w-4 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Green: ≤8 weeks</p>
-                  <p>Amber: 9-15 weeks</p>
-                  <p>Red: &gt;15 weeks or no sales</p>
-                  <p>Grey: Out of stock</p>
+                  <p>Units sold per Stock Code and Account Code for the selected week.</p>
+                  <p>For a date range, values are weekly averages across reported weeks.</p>
+                  <p>Darker blue means more units sold; 0 means reported zero sales.</p>
+                  <p>A dash means no reported data for that stock/account combination.</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
@@ -294,6 +295,14 @@ export default function Dashboard() {
           </CardHeader>
 
           <CardContent className="p-0 overflow-auto flex-1">
+            {heatmapData && heatmapData.cells.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 px-4 pt-3 text-xs text-muted-foreground">
+                <span>0 units/wk</span>
+                <span className="h-3 w-28 rounded bg-gradient-to-r from-[#eff1f3] to-[#2672a6]" aria-hidden="true" />
+                <span>{maxWeeklySales.toLocaleString()} units/wk</span>
+                <span className="ml-2">— No reported data</span>
+              </div>
+            )}
             {isLoadingHeatmap ? (
               <div className="p-8 flex items-center justify-center h-full">
                 <Skeleton className="h-full w-full" />
@@ -314,7 +323,7 @@ export default function Dashboard() {
                 >
                   {/* Header row — top-left corner */}
                   <div className="sticky top-0 left-0 z-20 bg-card p-2 text-xs font-semibold text-muted-foreground border-b shadow-[1px_0_0_hsl(var(--border))]">
-                    Part / Reseller
+                    Stock Code / Account Code
                   </div>
 
                   {/* Reseller column headers */}
@@ -379,32 +388,25 @@ export default function Dashboard() {
                           const colOver = dragOverReseller === res;
                           const colDragging = dragResellerRef.current === res;
 
-                          if (!cell || cell.color === "empty") {
+                          if (!cell) {
                             return (
                               <div
                                 key={res}
-                                className={`p-1 border-b bg-card group-hover:bg-muted/50 transition-colors
+                                title="No reported data"
+                                aria-label={`${part} at ${res}: no reported data`}
+                                className={`p-1 border-b bg-card group-hover:bg-muted/50 transition-colors text-center text-muted-foreground
                                   ${colOver ? "bg-primary/5" : ""}
                                   ${colDragging ? "opacity-40" : ""}
                                 `}
-                              />
+                              >
+                                <span className="h-8 flex items-center justify-center text-xs">—</span>
+                              </div>
                             );
                           }
 
-                          let bgColor = "bg-muted text-muted-foreground";
-                          if (cell.color === "green")
-                            bgColor = "bg-[hsl(var(--heatmap-green))] text-white";
-                          else if (cell.color === "amber")
-                            bgColor = "bg-[hsl(var(--heatmap-amber))] text-amber-950";
-                          else if (cell.color === "red")
-                            bgColor = "bg-[hsl(var(--heatmap-red))] text-white";
-
-                          let woiDisplay = "—";
-                          if (cell.woi !== null) {
-                            woiDisplay = String(Math.round(cell.woi));
-                          } else if (cell.st === 0 && cell.soh > 0) {
-                            woiDisplay = "∞";
-                          }
+                          const intensity = maxWeeklySales > 0 ? Math.max(0, Math.min(1, cell.st / maxWeeklySales)) : 0;
+                          const backgroundColor = `rgb(${Math.round(239 - 201 * intensity)}, ${Math.round(241 - 127 * intensity)}, ${Math.round(243 - 77 * intensity)})`;
+                          const salesDisplay = cell.st.toLocaleString();
 
                           return (
                             <div
@@ -417,9 +419,11 @@ export default function Dashboard() {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <div
-                                    className={`h-8 rounded flex items-center justify-center text-xs font-medium cursor-default shadow-xs ${bgColor}`}
+                                    className={`h-8 rounded flex items-center justify-center text-xs font-medium cursor-default shadow-xs ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
+                                    style={{ backgroundColor }}
+                                    aria-label={`${part} at ${res}: ${salesDisplay} units sold per week`}
                                   >
-                                    {woiDisplay}
+                                    {salesDisplay}
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
@@ -428,23 +432,18 @@ export default function Dashboard() {
                                   </div>
                                   <div className="space-y-1">
                                     <div>
-                                      SOH:{" "}
+                                      {kpiData?.is_period ? "Average weekly sell-through: " : "Weekly sell-through: "}
                                       <span className="font-bold">
-                                        {cell.soh.toLocaleString()}
-                                      </span>{" "}
-                                      units
-                                    </div>
-                                    <div>
-                                      Avg ST:{" "}
-                                      <span className="font-bold">
-                                        {cell.st.toLocaleString()}
+                                        {salesDisplay}
                                       </span>{" "}
                                       units/wk
                                     </div>
                                     <div>
-                                      WOI:{" "}
-                                      <span className="font-bold">{woiDisplay}</span>{" "}
-                                      weeks
+                                      Stock on hand:{" "}
+                                      <span className="font-bold">
+                                        {cell.soh.toLocaleString()}
+                                      </span>{" "}
+                                      units{kpiData?.is_period ? " (latest week)" : ""}
                                     </div>
                                   </div>
                                 </TooltipContent>
