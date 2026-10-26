@@ -57,7 +57,8 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         `${prefix}${reference},${date},${account},${sku},${qty},${prefix}${serial},${price}\n`;
       const evidenceCsv = header + inv("A") + inv("E") + inv("B") + inv("B", "CREDIT-B", a.code, -1, "02/09/2026")
         + inv("C") + inv("C", "INV2-C", a.code, 1, "03/09/2026", "90.00") + inv("D", "D", other.code) + inv("H") + inv("I");
-      const evidence = await commit(await upload("evidence", evidenceCsv, "evidence"));
+      const evidence = await commit(await upload("auto", evidenceCsv, "evidence"));
+      expect(evidence.kind).toBe("evidence");
       const again = await upload("evidence", evidenceCsv, "same-evidence");
       expect(again).toMatchObject({ id: evidence.id, duplicate: true, state: "committed" });
       expect((await call(`/scanback/imports/${evidence.id}/remap`, {
@@ -68,7 +69,8 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       })).status).toBe(400);
       const claimCsv = "Serial,SKU,Sale Date,Quantity\n" + ["A", "E", "B", "C", "D", "A", "MISSING"].map(s =>
         `${prefix}${s},${sku},20/09/2026,1\n`).join("");
-      const claim = await commit(await upload("claim", claimCsv, "claim"));
+      const claim = await commit(await upload("auto", claimCsv, "claim"));
+      expect(claim.kind).toBe("claim");
       const settings = { programId: program.id, accountId: a.id, claimImportId: claim.id, basis: "sell", from: program.start, to: program.end };
       let draft = (await call("/scanback/verify", settings)).data;
       expect(draft.totalCents).toBe(3000);
@@ -106,7 +108,8 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(conflict.errors.length).toBeGreaterThan(0);
       expect((await call(`/scanback/imports/${conflict.id}/commit`, {})).status).toBe(400);
       const pastName = prefix + " Historical";
-      const history = await upload("history", `Serial,SKU,Date,Account,Amount,Promotion,Claim Reference\n${prefix}H,${sku},14/09/2026,${a.code},12.34,${pastName},${prefix}-old\n`, "history");
+      const history = await upload("auto", `Serial,SKU,Date,Account,Amount,Promotion,Claim Reference\n${prefix}H,${sku},14/09/2026,${a.code},12.34,${pastName},${prefix}-old\n`, "history");
+      expect(history.kind).toBe("history");
       await commit(history);
       const historicalProgram = (await call("/scanback/programs", { ...programInput, name: pastName })).data;
       const histClaim = await commit(await upload("claim", `Serial,SKU,Sale Date\n${prefix}H,${sku},20/09/2026\n${prefix}I,${sku},20/09/2026\n`, "history-claim"));
@@ -132,7 +135,8 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const prontoHeader = "Invoice No,Invoice Date,Account Code,Reseller Name,Stock Code,Ship Qty,Serial Number,Item Price,Line Price Ex,EU Email\n";
       const pr = (serial: string, sourceCode = "SOURCE1", stock = sku) =>
         `${prefix}${serial},01/09/2026,${sourceCode},Computer Alliance,${stock},1,${serial ? prefix + serial : ""},100.00,100.00,unused@example.invalid\n`;
-      let native = await upload("evidence", prontoHeader + pr("NATIVEGOOD") + pr("NATIVEHELD") + pr("UNKNOWN-SKU", "SOURCE1", "NOT-IN-CATALOGUE") + pr(""), "pronto");
+      let native = await upload("auto", prontoHeader + pr("NATIVEGOOD") + pr("NATIVEHELD") + pr("UNKNOWN-SKU", "SOURCE1", "NOT-IN-CATALOGUE") + pr(""), "pronto");
+      expect(native.kind).toBe("evidence");
       expect(native.pronto).toMatchObject({ sourceRows: 4, sourceSerialEvents: 3, includedSourceRows: 0 });
       expect(native.errors.length).toBeGreaterThan(0); expect(native.rows).toEqual([]);
       const nativeOptions = { mapping: native.mapping, sheet: native.sheet, dateFormat: native.dateFormat, accountId: null, prontoAccounts: { SOURCE1: a.id } };

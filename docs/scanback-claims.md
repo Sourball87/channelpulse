@@ -19,8 +19,11 @@ resolved, not automatically created from an unverified financial file.
 
 ## Evidence and claim files
 
-Download the CSV templates from Imports and replace their example values with
-real Account Codes, Stock Codes and serials. XLS and XLSX are also supported.
+Upload your existing CSV, XLS or XLSX file. Imports defaults to **Auto-detect**:
+the column headings identify invoice/credit evidence, customer serial reports or
+historical approvals. Mixed or incomplete financial layouts require an explicit
+type selection rather than a guess. The detected type is shown in the preview;
+review mappings and issues before committing. No template download is needed.
 
 - **Invoice / credit evidence:** Serial, SKU, Date, Invoice, signed Quantity,
   Account and Invoiced Unit Price Ex GST. An explicit fallback account can be
@@ -51,7 +54,7 @@ There is intentionally no silent overwrite or deletion of financial evidence.
 
 ### Native Pronto POS extracts
 
-Choose **Invoice / credit evidence** for the full Pronto export. The importer
+Upload the full Pronto export with **Auto-detect** selected. The importer
 recognizes the combination of Invoice No, Invoice Date, Account Code, Reseller
 Name, Stock Code, Ship Qty, Serial Number, Item Price and Line Price Ex.
 

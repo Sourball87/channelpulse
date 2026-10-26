@@ -14,7 +14,7 @@ export default function ScanbackClaims() {
   const resellersQ = useGetResellers();
   const partsQ = useGetParts();
   const [tab, setTab] = useState("verify");
-  const [importKind, setImportKind] = useState<ScanbackUploadKind>("claim");
+  const [importKind, setImportKind] = useState<ScanbackUploadKind>("auto");
   const resellers = resellersQ.data ?? [];
   const parts = partsQ.data ?? [];
   const data = ws.data;

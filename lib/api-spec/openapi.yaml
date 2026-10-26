@@ -738,7 +738,7 @@ components:
       required: [file, kind]
       properties:
         file: { type: string, format: binary }
-        kind: { type: string, enum: [evidence, claim, history] }
+        kind: { type: string, enum: [auto, evidence, claim, history] }
     ScanbackMapping:
       type: object
       required: [mapping, dateFormat, sheet]

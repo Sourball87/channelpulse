@@ -18,6 +18,20 @@ const fields: Record<string, string[]> = {
   reference: ["batch", "reference", "claimreference"],
 };
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9$]/g, "");
+export function detectImportKind(headers: string[]): ScanbackImport["kind"] {
+  if (isPronto(headers)) return "evidence";
+  const has = (key: string) => headers.some(h => fields[key].includes(norm(h)));
+  const evidence = ["invoice", "quantity", "unitPrice"].every(has);
+  const history = ["amount", "program", "reference"].every(has);
+  if (evidence && history)
+    throw new Error("This sheet contains both invoice and approval columns. Choose its spreadsheet type explicitly.");
+  if (history) return "history";
+  if (evidence) return "evidence";
+  if (["invoice", "unitPrice", "amount", "program", "reference"].some(has))
+    throw new Error("Could not confidently detect this spreadsheet type. Choose Invoice / credit evidence, Customer claim or Historical approved claims.");
+  if (has("serial")) return "claim";
+  throw new Error("Could not detect the spreadsheet type. A serial-number heading is required.");
+}
 export function suggestMapping(headers: string[]): Record<string, string> {
   if (isPronto(headers)) return { ...prontoMapping };
   return Object.fromEntries(Object.entries(fields).map(([f, aliases]) => {

@@ -44,6 +44,7 @@ export type ScanbackUploadKind = typeof ScanbackUploadKind[keyof typeof Scanback
 
 
 export const ScanbackUploadKind = {
+  auto: 'auto',
   evidence: 'evidence',
   claim: 'claim',
   history: 'history',

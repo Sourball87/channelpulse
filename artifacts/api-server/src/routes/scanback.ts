@@ -6,7 +6,7 @@ import {
   SaveScanbackProgramBody, RemapScanbackImportBody, VerifyScanbackClaimBody, ApproveScanbackClaimBody,
   type ScanbackProgram, type ScanbackImport, type ScanbackDraft, type ScanbackBatch, type ScanbackResult,
 } from "@workspace/api-zod";
-import { parseSheets, suggestMapping } from "../lib/scanback-import";
+import { parseSheets, suggestMapping, detectImportKind } from "../lib/scanback-import";
 import { validDate } from "../lib/scanback-engine";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
@@ -79,15 +79,18 @@ router.post("/scanback/programs", route(async (c, req, res) => {
 router.post("/scanback/imports/preview", upload.single("file"), route(async (c, req, res) => {
   requireThat(req.file, "Choose a CSV, XLS or XLSX file.");
   requireThat(/\.(csv|xlsx|xls)$/i.test(req.file.originalname), "Use a CSV, XLS or XLSX file.");
-  const kind = req.body.kind as ScanbackImport["kind"];
-  requireThat(["evidence", "claim", "history"].includes(kind), "Choose evidence, claim or history.");
-  const key = createHash("sha256").update(kind).update(req.file.buffer).digest("hex");
-  const existing = await c.query("SELECT payload FROM scanback_imports WHERE content_key=$1", [key]);
-  if (existing.rowCount) return publicImport({ ...existing.rows[0].payload, duplicate: true }, true);
+   const requestedKind = req.body.kind ?? "auto";
+   requireThat(["auto", "evidence", "claim", "history"].includes(requestedKind), "Choose auto-detect, evidence, claim or history.");
   let raw;
   try { raw = parseSheets(req.file.buffer); }
   catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not read this spreadsheet."); }
   const sheet = Object.keys(raw)[0], headers = Object.keys(raw[sheet][0] ?? {});
+   let kind: ScanbackImport["kind"];
+   try { kind = requestedKind === "auto" ? detectImportKind(headers) : requestedKind; }
+   catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not detect spreadsheet type."); }
+   const key = createHash("sha256").update(kind).update(req.file.buffer).digest("hex");
+   const existing = await c.query("SELECT payload FROM scanback_imports WHERE content_key=$1", [key]);
+   if (existing.rowCount) return publicImport({ ...existing.rows[0].payload, duplicate: true }, true);
   const base: ScanbackImport = {
     id: randomUUID(), kind, name: req.file.originalname, state: "preview", createdAt: new Date().toISOString(),
     sheets: Object.keys(raw), sheet, headers, mapping: suggestMapping(headers), dateFormat: "dmy",

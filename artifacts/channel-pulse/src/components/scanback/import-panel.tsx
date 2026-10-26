@@ -13,9 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, FileSpreadsheet, RefreshCw, Upload, CheckCircle2 } from "lucide-react";
+import { FileSpreadsheet, RefreshCw, Upload, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { FIELD_LABEL, KIND_META, MAPPING_KEYS, templateHref, type MappingKey } from "./import-config";
+import { FIELD_LABEL, KIND_META, MAPPING_KEYS, type MappingKey } from "./import-config";
 import { SectionEmpty, errorMessage, formatCents, formatDateTime, useRefreshWorkspace } from "./shared";
 import { ProntoAccounts } from "./pronto-accounts";
 
@@ -97,7 +97,7 @@ export function ImportPanel({
     );
   };
 
-  const meta = KIND_META[current?.kind ?? kind];
+  const meta = KIND_META[current?.kind ?? "claim"];
   const missing = useMemo(() => {
     if (!current) return [] as MappingKey[];
     const m = KIND_META[current.kind];
@@ -123,7 +123,8 @@ export function ImportPanel({
               <Select value={kind} onValueChange={(v) => onKindChange(v as ScanbackUploadKind)}>
                 <SelectTrigger className="w-64" data-testid="select-import-kind"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(KIND_META) as ScanbackUploadKind[]).map((k) => <SelectItem key={k} value={k}>{KIND_META[k].label}</SelectItem>)}
+                  <SelectItem value="auto">Auto-detect (recommended)</SelectItem>
+                  {(Object.keys(KIND_META) as ScanbackImport["kind"][]).map((k) => <SelectItem key={k} value={k}>{KIND_META[k].label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -131,11 +132,10 @@ export function ImportPanel({
             <Button disabled={busy} onClick={() => fileRef.current?.click()} data-testid="button-choose-import-file">
               <Upload className="mr-1.5 h-4 w-4" /> {preview.isPending ? "Reading..." : "Upload CSV / Excel"}
             </Button>
-            <Button variant="outline" asChild data-testid="link-download-template">
-              <a href={templateHref(kind)} download={`scanback-${kind}-template.csv`}><Download className="mr-1.5 h-4 w-4" /> Template</a>
-            </Button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">{KIND_META[kind].blurb} Required: {KIND_META[kind].required.map((k) => FIELD_LABEL[k]).join(", ")}{KIND_META[kind].needsAccount ? ", plus an account column or fallback account" : ""}. Uploads are saved as previews, not used as evidence until you commit. Native Pronto POS extracts support the existing nine resellers only.</p>
+          <p className="mt-2 text-xs text-slate-500">{kind === "auto"
+            ? "Upload your existing spreadsheet. Its type and columns are detected automatically; unclear layouts will ask you to choose a type."
+            : KIND_META[kind].blurb} Uploads are saved as previews for review before committing. Native Pronto POS extracts support the existing nine resellers only.</p>
         </div>
 
         {error && <div data-testid="text-import-error" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}

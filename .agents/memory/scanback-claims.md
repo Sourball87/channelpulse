@@ -39,6 +39,12 @@ Native Pronto POS imports cover only the existing nine ChannelPulse resellers.
 
 **How to apply:** Keep source-to-reseller mapping explicit, report excluded accounts and unknown Stock Codes, and do not create accounts or SKUs automatically from the extract.
 
+The user wants imports to auto-detect the spreadsheet type and no template-download step.
+
+**Why:** The user asked “have the import auto detect... also whats the template? remove that”.
+
+**How to apply:** Default to detection from the uploaded headings, keep manual selection for unclear layouts, and retain preview/review before financial commit.
+
 Scoping out Pronto accounts must never hide conflicting serial ownership or returns.
 
 **Why:** Keeping only a selected customer's invoice while discarding another customer's event can turn ambiguous serial ownership into a false payable result.

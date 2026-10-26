@@ -218,7 +218,7 @@ export const SaveScanbackProgramResponse = zod.object({
 
 export const PreviewScanbackImportBody = zod.object({
   "file": zod.instanceof(Blob),
-  "kind": zod.enum(['evidence', 'claim', 'history'])
+  "kind": zod.enum(['auto', 'evidence', 'claim', 'history'])
 })
 
 export const PreviewScanbackImportResponse = zod.object({
