@@ -32,3 +32,9 @@ Show weeks across the top with the most recent week first, Stock Codes down the 
 **Why:** The user selected "weeks across the top, SKUs down the left" and "Last 12 weeks", then requested reversing the columns so the most recent week is first.
 
 **How to apply:** Account selection scopes the sales and available Stock Codes to the 12-week history. Use consecutive calendar weeks ending at the reporting selection, not 12 nonconsecutive uploaded weeks. Preserve missing reports as missing, rather than inventing zero sales.
+
+Separate Dashboard stock monitoring from Phocas sell-through focus. The Dashboard keeps all current summary cards and shows current-week SOH with SKUs down the left and Account Codes across the top. Phocas means the existing Focus sidebar and heatmap, not a new navigation page, and focuses only on weekly sell-through.
+
+**Why:** The user explicitly confirmed those locations, SOH layout and retention of all Dashboard summary cards before implementation.
+
+**How to apply:** Default to the SOH Dashboard. Open the sell-through view through Focus, preserve account/stock/date filters between views, and retain the 12-week newest-first sales matrix. Keep Dashboard's stock/WOI summary cards out of the Phocas view.

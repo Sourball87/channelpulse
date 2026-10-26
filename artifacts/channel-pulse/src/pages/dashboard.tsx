@@ -4,6 +4,8 @@ import {
   useGetDashboardKpis,
   useGetDashboardWeeklySales,
   useGetResellers,
+  getGetDashboardKpisQueryKey,
+  getGetDashboardWeeklySalesQueryKey,
 } from "@workspace/api-client-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,27 +27,35 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilters } from "@/context/filter-context";
 import { useHeatmapOrder, sortByOrder } from "@/hooks/use-heatmap-order";
+import { StockOnHandHeatmap } from "@/components/stock-on-hand-heatmap";
 
 const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
 
 export default function Dashboard() {
   const [category, setCategory] = useState<string>("All");
-  const { apiParams, insightWeek, resellerIds } = useFilters();
+  const { apiParams, insightWeek, resellerIds, focusView, setFocusView } = useFilters();
   const { data: accounts } = useGetResellers();
 
   const queryCategory = category === "All" ? undefined : category;
 
-  const { data: kpiData, isLoading: isLoadingKpis } = useGetDashboardKpis({
+  const kpiParams = {
     ...apiParams,
     category: queryCategory,
+  };
+  const { data: kpiData, isLoading: isLoadingKpis } = useGetDashboardKpis(kpiParams, {
+    query: { enabled: !focusView, queryKey: getGetDashboardKpisQueryKey(kpiParams) },
   });
 
-  const { data: heatmapData, isLoading: isLoadingHeatmap, isError: heatmapError, refetch: refetchHeatmap } = useGetDashboardWeeklySales({
+  const weeklyParams = {
     week_iso: insightWeek,
     part_ids: apiParams.part_ids,
     reseller_ids: apiParams.reseller_ids,
     category: queryCategory,
-  });
+  };
+  const { data: heatmapData, isLoading: isLoadingHeatmap, isError: heatmapError, refetch: refetchHeatmap } = useGetDashboardWeeklySales(
+    weeklyParams,
+    { query: { enabled: focusView, queryKey: getGetDashboardWeeklySalesQueryKey(weeklyParams) } },
+  );
 
   const {
     partOrder,
@@ -100,16 +110,17 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col h-full bg-muted/20">
-      <header className="flex-none bg-background border-b px-6 py-4 flex items-center justify-between">
+      <header className="flex-none bg-background border-b px-6 py-4 flex flex-wrap gap-3 items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{focusView ? "Phocas — Sell-Through" : "Dashboard"}</h1>
           <p className="text-sm text-muted-foreground">
-            {kpiData?.is_period
+            {focusView ? "Weekly units sold · Account Code and Stock Code focus" : kpiData?.is_period
               ? `Period: ${kpiData.period_label}`
-              : `SOH & Sell-Through — ${kpiData?.week_iso ?? "Latest week"}`}
+              : `Stock on Hand — ${kpiData?.week_iso ?? "Latest week"}`}
           </p>
         </div>
         <div className="flex items-center gap-4">
+          {focusView && <Button variant="outline" size="sm" onClick={() => setFocusView(false)}>Back to SOH dashboard</Button>}
           <Tabs value={category} onValueChange={setCategory} className="w-auto">
             <TabsList>
               {CATEGORIES.map((c) => (
@@ -123,6 +134,7 @@ export default function Dashboard() {
       </header>
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
+        {!focusView && <>
         <div className="grid grid-cols-4 gap-4">
           {isLoadingKpis
             ? Array.from({ length: 4 }).map((_, i) => (
@@ -208,7 +220,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-xs flex-1 flex flex-col min-h-[400px]">
+        </>}
+        {focusView ? <Card className="shadow-xs flex-1 flex flex-col min-h-[400px]" data-testid="sell-through-heatmap">
           <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row flex-wrap gap-2 items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium flex flex-wrap items-center gap-2">
               Weekly Sell-Through (Units Sold) Heatmap
@@ -434,7 +447,7 @@ export default function Dashboard() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card> : <StockOnHandHeatmap category={queryCategory} />}
       </div>
     </div>
   );

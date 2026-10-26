@@ -21,6 +21,7 @@ import {
   Activity,
 } from "lucide-react";
 import { GlobalFilterBar } from "@/components/global-filter-bar";
+import { useFilters } from "@/context/filter-context";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -38,6 +39,7 @@ const FILTER_PATHS = ["/", "/insights", "/explorer", "/trends", "/alerts"];
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const search = useSearch();
+  const { focusView } = useFilters();
 
   const showFilterBar = FILTER_PATHS.includes(location);
 
@@ -68,15 +70,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   // Preserve filter params when navigating between filter-enabled pages
                   const targetIsFilterPage = FILTER_PATHS.includes(item.href);
                   const sourceIsFilterPage = FILTER_PATHS.includes(location);
-                  const href = targetIsFilterPage && sourceIsFilterPage && search
-                    ? `${item.href}?${search}`
+                  const navParams = new URLSearchParams(search);
+                  navParams.delete("view");
+                  const navSearch = navParams.toString();
+                  const href = targetIsFilterPage && sourceIsFilterPage && navSearch
+                    ? `${item.href}?${navSearch}`
                     : item.href;
 
                   return (
                     <SidebarMenuItem key={item.name}>
                       <SidebarMenuButton
                         asChild
-                        isActive={location === item.href}
+                        isActive={location === item.href && !focusView}
                         tooltip={item.name}
                       >
                         <Link href={href} className="flex items-center gap-3">
