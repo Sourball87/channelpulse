@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useEffect, useMemo, useState } from "react";
 import {
   getExportScanbackBatchUrl,
@@ -127,7 +128,7 @@ export function VerifyPanel({
             <Label className="text-xs">Account</Label>
             <Select value={accountId} onValueChange={setAccountId} disabled={!program}>
               <SelectTrigger data-testid="select-verify-account"><SelectValue placeholder="Account" /></SelectTrigger>
-              <SelectContent>{accounts.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.code} - {r.name}</SelectItem>)}</SelectContent>
+              <SelectContent>{accounts.map((r) => <SelectItem key={r.id} value={String(r.id)}>{customerLabel(r.code)}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1 xl:col-span-3">
@@ -185,7 +186,7 @@ export function VerifyPanel({
               {recentDrafts.map((d) => (
                 <button key={d.id} type="button" onClick={() => restore(d)} data-testid={`button-restore-draft-${d.id}`}
                   className="flex w-full items-center justify-between gap-2 border-b px-4 py-2 text-left text-sm last:border-0 hover:bg-cyan-50/50">
-                  <span>{programs.find((p) => p.id === d.settings.programId)?.name ?? "Promotion"} &middot; {resById.get(d.settings.accountId)?.code ?? d.settings.accountId}</span>
+                  <span>{programs.find((p) => p.id === d.settings.programId)?.name ?? "Promotion"} &middot; {customerLabel(resById.get(d.settings.accountId)?.code ?? d.settings.accountId)}</span>
                   <span className="font-mono text-xs text-slate-500">{formatCents(d.totalCents)} &middot; {formatDateTime(d.createdAt)}</span>
                 </button>
               ))}

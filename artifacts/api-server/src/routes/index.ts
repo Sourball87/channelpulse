@@ -18,12 +18,14 @@ import insightsRebalancingRouter from "./insights-rebalancing";
 import insightsWhitespaceRouter from "./insights-whitespace";
 import insightsResellerPerfRouter from "./insights-reseller-perf";
 import scanbackRouter from "./scanback";
+import { maskCustomerResponses } from "../lib/customer-display";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
 router.use(requireAdminSession);
+router.use(maskCustomerResponses);
 router.use(dashboardRouter);
 router.use(explorerRouter);
 router.use(trendsRouter);

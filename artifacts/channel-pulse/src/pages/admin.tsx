@@ -1,3 +1,4 @@
+import { customerLabel, isMaskedCustomer } from "@/lib/customer-display";
 import { useState, useMemo } from "react";
 import { 
   useGetResellers, 
@@ -87,7 +88,7 @@ function ResellersTab() {
               <TableHead>Code</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Expected Files/Wk</TableHead>
-              <TableHead>Filename Patterns</TableHead>
+              <TableHead>Source Matching</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -99,14 +100,14 @@ function ResellersTab() {
                 <TableCell>
                   <div className={`h-2 w-2 rounded-full ${r.active !== false ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />
                 </TableCell>
-                <TableCell className="font-mono text-xs font-semibold">{r.code}</TableCell>
+                <TableCell className="font-mono text-xs font-semibold">{customerLabel(r.code)}</TableCell>
                 <TableCell className="font-medium">{r.name}</TableCell>
                 <TableCell>{r.expected_weekly_files || 0}</TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    {r.filename_patterns?.map((p, i) => (
-                      <Badge key={i} variant="secondary" className="font-mono text-[10px]">{p}</Badge>
-                    ))}
+                    <Badge variant="secondary" className="text-[10px]">
+                      {r.filename_patterns?.length ?? 0} saved rules
+                    </Badge>
                   </div>
                 </TableCell>
                 <TableCell className="text-right">
@@ -124,6 +125,7 @@ function ResellersTab() {
 }
 
 function ResellerDialog({ open, onOpenChange, reseller, onClose }: { open: boolean, onOpenChange: (open: boolean) => void, reseller: any, onClose: () => void }) {
+  const maskedCustomer = !!reseller && isMaskedCustomer(reseller.code);
   const [formData, setFormData] = useState({
     code: "", name: "", expected_weekly_files: 1, filename_patterns: "", active: true
   });
@@ -139,10 +141,10 @@ function ResellerDialog({ open, onOpenChange, reseller, onClose }: { open: boole
     if (open) {
       if (reseller) {
         setFormData({
-          code: reseller.code,
-          name: reseller.name,
+          code: customerLabel(reseller.code),
+          name: maskedCustomer ? customerLabel(reseller.code) : reseller.name,
           expected_weekly_files: reseller.expected_weekly_files || 1,
-          filename_patterns: reseller.filename_patterns?.join(", ") || "",
+          filename_patterns: maskedCustomer ? "" : reseller.filename_patterns?.join(", ") || "",
           active: reseller.active !== false
         });
       } else {
@@ -153,10 +155,11 @@ function ResellerDialog({ open, onOpenChange, reseller, onClose }: { open: boole
 
   const handleSubmit = () => {
     const data = {
-      code: formData.code,
-      name: formData.name,
+      ...(maskedCustomer ? {} : { code: formData.code, name: formData.name }),
       expected_weekly_files: Number(formData.expected_weekly_files),
-      filename_patterns: formData.filename_patterns.split(",").map(s => s.trim()).filter(Boolean),
+      ...(maskedCustomer && !formData.filename_patterns.trim() ? {} : {
+        filename_patterns: formData.filename_patterns.split(",").map(s => s.trim()).filter(Boolean),
+      }),
       active: formData.active
     };
     
@@ -170,7 +173,7 @@ function ResellerDialog({ open, onOpenChange, reseller, onClose }: { open: boole
         }
       });
     } else {
-      createReseller.mutate({ data }, {
+      createReseller.mutate({ data: { ...data, code: formData.code, name: formData.name } }, {
         onSuccess: () => {
           toast({ title: "Reseller created" });
           queryClient.invalidateQueries({ queryKey: getGetResellersQueryKey() });
@@ -193,11 +196,11 @@ function ResellerDialog({ open, onOpenChange, reseller, onClose }: { open: boole
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <label className="text-right text-sm font-medium">Code</label>
-            <Input className="col-span-3 font-mono" value={formData.code} onChange={e => setFormData({...formData, code: e.target.value.toUpperCase()})} />
+            <Input readOnly={maskedCustomer} className="col-span-3 font-mono" value={formData.code} onChange={e => setFormData({...formData, code: e.target.value.toUpperCase()})} />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <label className="text-right text-sm font-medium">Name</label>
-            <Input className="col-span-3" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+            <Input readOnly={maskedCustomer} className="col-span-3" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <label className="text-right text-sm font-medium">Expected Files</label>
@@ -206,8 +209,10 @@ function ResellerDialog({ open, onOpenChange, reseller, onClose }: { open: boole
           <div className="grid grid-cols-4 items-start gap-4">
             <label className="text-right text-sm font-medium mt-2">Patterns</label>
             <div className="col-span-3 space-y-1">
-              <Input placeholder="e.g. Dicker_Data, DickerData" value={formData.filename_patterns} onChange={e => setFormData({...formData, filename_patterns: e.target.value})} />
-              <p className="text-[10px] text-muted-foreground">Comma-separated regex/strings to match filenames</p>
+              <Input placeholder={maskedCustomer ? "Leave blank to keep current matching rules" : "Comma-separated matching patterns"} value={formData.filename_patterns} onChange={e => setFormData({...formData, filename_patterns: e.target.value})} />
+              <p className="text-[10px] text-muted-foreground">
+                {maskedCustomer ? "Customer identity and existing source rules are hidden and preserved. Enter patterns only to replace the matching rules." : "Comma-separated regex/strings to match filenames"}
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">

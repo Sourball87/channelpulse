@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useMemo, useRef, useState } from "react";
 import {
   useCommitScanbackImport,
@@ -179,7 +180,7 @@ export function ImportPanel({
                   <SelectTrigger data-testid="select-import-account"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NONE}>None - use account column</SelectItem>
-                    {resellers.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.code} - {r.name}</SelectItem>)}
+                    {resellers.map((r) => <SelectItem key={r.id} value={String(r.id)}>{customerLabel(r.code)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -244,7 +245,7 @@ export function ImportPanel({
                       {current.rows.slice(0, 50).map((r) => (
                         <TableRow key={r.rowIndex} className="font-mono text-xs">
                           <TableCell>{r.rowIndex}</TableCell><TableCell>{r.serial}</TableCell><TableCell>{r.sku}</TableCell><TableCell>{r.date}</TableCell>
-                          <TableCell>{r.accountId == null ? "-" : resById.get(r.accountId)?.code ?? r.accountId}</TableCell>
+                          <TableCell>{r.accountId == null ? "-" : customerLabel(resById.get(r.accountId)?.code ?? r.accountId)}</TableCell>
                           <TableCell className="text-right">{r.quantity}</TableCell><TableCell>{r.invoice}</TableCell>
                           <TableCell className="text-right">{r.unitPriceCents == null ? "-" : formatCents(r.unitPriceCents)}</TableCell>
                           <TableCell className="text-right">{r.amountCents == null ? "-" : formatCents(r.amountCents)}</TableCell>

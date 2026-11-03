@@ -7,6 +7,7 @@ import type {
 import { verifyClaim, evidenceKey, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
 import { mapImport, type Sheets, type Account } from "./scanback-import";
 import { splitSerials } from "./scanback-pronto";
+import { maskCustomerText } from "./customer-display";
 
 export type Client = PoolClient;
 export class ScanbackError extends Error {
@@ -163,5 +164,7 @@ export function statementRows(batch: ScanbackBatch | ScanbackDraft): (string | n
     ["Serial", "Stock Code", "Sell date", "Invoice", "Invoice date", "Invoiced unit price (ex GST)", "GTM Buy Ex", "Claim (ex GST)", "Status", "Reason", "Included", "Source evidence"],
     ...results.map(r => [r.serial, r.sku, r.date, r.invoice, r.invoiceDate, r.unitPriceCents == null ? "" : r.unitPriceCents / 100,
       r.gtmBuyCents == null ? "" : r.gtmBuyCents / 100, r.include ? r.amountCents / 100 : 0, r.status, r.reason, r.include ? "Yes" : "No", r.source]),
-  ];
+  ].map((row, index) => row.map((value, column) =>
+    typeof value === "string" && (index < 11 || (column !== 0 && column !== 1))
+      ? maskCustomerText(value) : value));
 }

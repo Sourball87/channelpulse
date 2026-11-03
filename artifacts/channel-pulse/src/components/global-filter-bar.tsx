@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useState, useMemo } from "react";
 import { useFilters } from "@/context/filter-context";
 import { useGetParts, useGetResellers } from "@workspace/api-client-react";
@@ -202,7 +203,7 @@ function ResellersPicker() {
                 <CommandItem key={r.id} onSelect={() => toggleReseller(r.id)} className="gap-2">
                   <Checkbox checked={resellerIds.includes(r.id)} className="h-3.5 w-3.5 pointer-events-none" />
                   <span className="text-sm">{r.name}</span>
-                  <span className="ml-auto text-xs text-muted-foreground font-mono">{r.code}</span>
+                  <span className="ml-auto text-xs text-muted-foreground font-mono">{customerLabel(r.code)}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

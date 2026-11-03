@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useEffect, useState } from "react";
 import {
   useSaveScanbackProgram,
@@ -155,7 +156,7 @@ export function ProgramEditor({
                   checked={customers.includes(r.id)}
                   onCheckedChange={() => toggleCustomer(r.id)}
                 />
-                <span className="font-mono text-xs text-slate-500">{r.code}</span>
+                <span className="font-mono text-xs text-slate-500">{customerLabel(r.code)}</span>
                 <span className="truncate">{r.name}</span>
               </label>
             ))}
@@ -215,7 +216,7 @@ export function ProgramEditor({
                 <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-4">
                   {selectedCustomers.map((c) => (
                     <label key={c.id} className="flex items-center gap-2 text-xs">
-                      <span className="w-16 truncate font-mono text-slate-500">{c.code}</span>
+                      <span className="w-16 truncate font-mono text-slate-500">{customerLabel(c.code)}</span>
                       <Input
                         className="h-7"
                         placeholder="Unlimited"

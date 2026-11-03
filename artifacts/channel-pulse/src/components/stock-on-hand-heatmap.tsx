@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useGetDashboardHeatmap, useGetResellers } from "@workspace/api-client-react";
 import { useFilters } from "@/context/filter-context";
 import { sortByOrder, useHeatmapOrder } from "@/hooks/use-heatmap-order";
@@ -64,7 +65,7 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
                       Stock Code
                     </th>
                     {columns.map(code => (
-                      <th key={code} scope="col" className="text-center font-semibold text-muted-foreground p-2 border-b min-w-[76px]">{code}</th>
+                      <th key={code} scope="col" className="text-center font-semibold text-muted-foreground p-2 border-b min-w-[76px]">{customerLabel(code)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -75,7 +76,7 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
                       {columns.map(code => {
                         const cell = cells.get(`${stock}:${code}`);
                         if (!cell) return (
-                          <td key={code} className="p-1 border-b text-center text-muted-foreground" aria-label={`${stock} at ${code}: no reported data`}>—</td>
+                          <td key={code} className="p-1 border-b text-center text-muted-foreground" aria-label={`${stock} at ${customerLabel(code)}: no reported data`}>—</td>
                         );
                         const intensity = maxStock > 0 ? Math.max(0, Math.min(1, cell.soh / maxStock)) : 0;
                         const backgroundColor = `rgb(${Math.round(239 - 201 * intensity)}, ${Math.round(241 - 127 * intensity)}, ${Math.round(243 - 77 * intensity)})`;
@@ -86,11 +87,11 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
                                 <div
                                   className={`h-8 rounded flex items-center justify-center font-medium ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
                                   style={{ backgroundColor }}
-                                  aria-label={`${stock} at ${code}: ${cell.soh.toLocaleString()} units on hand`}
+                                  aria-label={`${stock} at ${customerLabel(code)}: ${cell.soh.toLocaleString()} units on hand`}
                                 >{cell.soh.toLocaleString()}</div>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>{stock} · {code} · {data?.week_iso}</p>
+                                <p>{stock} · {customerLabel(code)} · {data?.week_iso}</p>
                                 <p>Stock on hand: {cell.soh.toLocaleString()} units</p>
                               </TooltipContent>
                             </Tooltip>

@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useState } from "react";
 import { useSaveScanbackProgram, type Part, type Reseller, type ScanbackProgram } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -71,7 +72,7 @@ export function ProgramsPanel({ programs, resellers, parts }: { programs: Scanba
               {p.notes && <p className="mt-2 text-sm text-slate-600">{p.notes}</p>}
               <div className="mt-3 flex flex-wrap gap-1">
                 {p.customerIds.map((id) => (
-                  <span key={id} className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono text-[11px] text-cyan-800">{resById.get(id)?.code ?? `#${id}`}</span>
+                  <span key={id} className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono text-[11px] text-cyan-800">{customerLabel(resById.get(id)?.code ?? `#${id}`)}</span>
                 ))}
               </div>
               <table className="mt-3 w-full text-sm">
@@ -84,7 +85,7 @@ export function ProgramsPanel({ programs, resellers, parts }: { programs: Scanba
                       <td className="py-1 text-right text-xs text-slate-500">
                         {l.caps.filter((c) => c.quantity != null).length === 0
                           ? "Unlimited"
-                          : l.caps.filter((c) => c.quantity != null).map((c) => `${resById.get(c.resellerId)?.code ?? c.resellerId}: ${c.quantity}`).join(", ")}
+                          : l.caps.filter((c) => c.quantity != null).map((c) => `${customerLabel(resById.get(c.resellerId)?.code ?? c.resellerId)}: ${c.quantity}`).join(", ")}
                       </td>
                     </tr>
                   ))}

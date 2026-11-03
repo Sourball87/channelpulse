@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useMemo, useState } from "react";
 import { useFilters } from "@/context/filter-context";
 import {
@@ -60,10 +61,10 @@ export function FocusSidebar() {
     const s = q.trim().toLowerCase();
     if (dim === "code") {
       return (resellers ?? [])
-        .filter((r) => !s || r.code.toLowerCase().includes(s))
+        .filter((r) => !s || customerLabel(r.code).toLowerCase().includes(s))
         .map((r) => ({
           key: String(r.id),
-          label: r.code,
+          label: customerLabel(r.code),
           selected: resellerIds.includes(r.id),
           onPick: () => setFilters({ resellerIds: [r.id] }),
         }));
@@ -92,7 +93,7 @@ export function FocusSidebar() {
     const r = resellers?.find((x) => x.id === id);
     chips.push({
       key: `r${id}`,
-      label: `Account: ${r?.code ?? id}`,
+      label: `Account: ${customerLabel(r?.code ?? id)}`,
       remove: () => setFilters({ resellerIds: resellerIds.filter((x) => x !== id) }),
     });
   }

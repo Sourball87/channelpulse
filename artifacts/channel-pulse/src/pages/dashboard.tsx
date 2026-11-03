@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useState, useRef } from "react";
 import { Link } from "wouter";
 import {
@@ -101,7 +102,7 @@ export default function Dashboard() {
   const displayedWeeks = [...(heatmapData?.weeks ?? [])].reverse();
   const maxWeeklySales = (heatmapData?.cells ?? []).reduce((max, cell) => Math.max(max, cell.units_sold), 0);
   const accountLabel = resellerIds.length
-    ? resellerIds.map(id => accounts?.find(account => account.id === id)?.code ?? String(id)).join(", ")
+    ? resellerIds.map(id => customerLabel(accounts?.find(account => account.id === id)?.code ?? String(id))).join(", ")
     : "All accounts";
 
   const reportedCount = kpiData?.reseller_statuses.filter((r) => r.reported).length || 0;
@@ -209,7 +210,7 @@ export default function Dashboard() {
                       : "bg-muted border-border text-muted-foreground"
                   }`}
                 >
-                  <div className="truncate">{reseller.code}</div>
+                  <div className="truncate">{customerLabel(reseller.code)}</div>
                   <div className="text-[10px] mt-1 opacity-70 font-normal">
                     {reseller.reported ? "Reported" : "Missing"}
                   </div>

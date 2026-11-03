@@ -1,3 +1,4 @@
+import { customerLabel, maskCustomerText } from "@/lib/customer-display";
 import { useState } from "react";
 import type { Reseller, ScanbackProntoPreview } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -47,14 +48,14 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
           <TableHeader><TableRow><TableHead>Pronto account</TableHead><TableHead>Rows / serials</TableHead><TableHead>ChannelPulse reseller</TableHead></TableRow></TableHeader>
           <TableBody>{accounts.slice(currentPage * 12, currentPage * 12 + 12).map(a => (
             <TableRow key={a.code}>
-              <TableCell className="min-w-36"><p className="font-mono text-xs">{a.code || "(missing)"}</p><p className="max-w-64 text-xs">{a.name || "(unnamed)"}</p></TableCell>
+              <TableCell className="min-w-36"><p className="font-mono text-xs">{maskCustomerText(a.code) || "(missing)"}</p><p className="max-w-64 text-xs">{a.name || "(unnamed)"}</p></TableCell>
               <TableCell className="text-xs tabular-nums">{a.rowCount.toLocaleString()} / {a.serialCount.toLocaleString()}</TableCell>
               <TableCell>
                 <Select disabled={disabled} value={values[a.code] == null ? "__exclude" : String(values[a.code])}
                   onValueChange={v => onChange({ ...values, [a.code]: v === "__exclude" ? null : Number(v) })}>
-                  <SelectTrigger className="h-8 min-w-40 text-xs" aria-label={`Map Pronto account ${a.code}`} data-testid={`select-pronto-${a.code}`}><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 min-w-40 text-xs" aria-label={`Map Pronto account ${maskCustomerText(a.code)}`} data-testid={`select-pronto-${a.code}`}><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="__exclude">Exclude this account</SelectItem>
-                    {allowed.map(r => <SelectItem key={r.id} value={String(r.id)}>{r.code} — {r.name}</SelectItem>)}
+                    {allowed.map(r => <SelectItem key={r.id} value={String(r.id)}>{customerLabel(r.code)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </TableCell>
@@ -79,7 +80,7 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
         <div className="mt-2 max-h-56 overflow-auto rounded border">
           <Table><TableHeader><TableRow><TableHead>Source row</TableHead><TableHead>Account / SKU</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
             <TableBody>{preview.excludedSamples.map(a => <TableRow key={a.row}>
-              <TableCell>{a.row}</TableCell><TableCell>{a.accountCode} · {a.sku}</TableCell><TableCell>{a.reason}</TableCell>
+              <TableCell>{a.row}</TableCell><TableCell>{maskCustomerText(a.accountCode)} · {a.sku}</TableCell><TableCell>{a.reason}</TableCell>
             </TableRow>)}</TableBody>
           </Table>
         </div>

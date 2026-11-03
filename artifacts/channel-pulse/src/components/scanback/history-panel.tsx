@@ -1,3 +1,4 @@
+import { customerLabel } from "@/lib/customer-display";
 import { useMemo, useState } from "react";
 import { getExportScanbackBatchUrl, type Reseller, type ScanbackBatch } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,6 @@ export function HistoryPanel({ batches, resellers, onImportHistory }: { batches:
   const [open, setOpen] = useState<ScanbackBatch | null>(null);
   const programNames = useMemo(() => [...new Set(batches.map((b) => b.programName))].sort(), [batches]);
   const accountCodes = useMemo(() => [...new Set(batches.map((b) => b.accountCode))].sort(), [batches]);
-  const nameByCode = new Map(resellers.map((r) => [r.code, r.name]));
 
   const filtered = batches
     .filter((b) => program === ALL || b.programName === program)
@@ -43,7 +43,7 @@ export function HistoryPanel({ batches, resellers, onImportHistory }: { batches:
         </Select>
         <Select value={account} onValueChange={setAccount}>
           <SelectTrigger className="w-44" data-testid="select-history-account"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value={ALL}>All accounts</SelectItem>{accountCodes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+          <SelectContent><SelectItem value={ALL}>All accounts</SelectItem>{accountCodes.map((c) => <SelectItem key={c} value={c}>{customerLabel(c)}</SelectItem>)}</SelectContent>
         </Select>
         <Input type="date" className="w-40" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Approved from" data-testid="input-history-from" />
         <Input type="date" className="w-40" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Approved to" data-testid="input-history-to" />
@@ -68,7 +68,7 @@ export function HistoryPanel({ batches, resellers, onImportHistory }: { batches:
                 <TableRow key={b.id} className="cursor-pointer hover:bg-cyan-50/40" onClick={() => setOpen(b)} data-testid={`row-batch-${b.id}`}>
                   <TableCell className="font-mono text-xs font-semibold">{b.reference}{b.historical && <Badge variant="secondary" className="ml-2">Historical</Badge>}</TableCell>
                   <TableCell>{b.programName}</TableCell>
-                  <TableCell><span className="font-mono text-xs">{b.accountCode}</span> <span className="text-xs text-slate-500">{nameByCode.get(b.accountCode) ?? ""}</span></TableCell>
+                  <TableCell><span className="font-mono text-xs">{customerLabel(b.accountCode)}</span></TableCell>
                   <TableCell className="text-xs">{formatDateTime(b.createdAt)}</TableCell>
                   <TableCell className="text-xs">{b.basis === "sell" ? "Sale date" : b.basis === "invoice" ? "Invoice date" : b.basis || "-"}{b.from && <span className="block text-slate-500">{formatDate(b.from)} to {formatDate(b.to)}</span>}</TableCell>
                   <TableCell className="text-right tabular-nums">{b.approvedCount}</TableCell>
@@ -93,7 +93,7 @@ export function HistoryPanel({ batches, resellers, onImportHistory }: { batches:
               <DialogHeader>
                 <DialogTitle className="font-mono">{open.reference}</DialogTitle>
                 <DialogDescription>
-                  {open.programName} &middot; {open.accountCode} &middot; {open.historical ? "Imported historical claim" : `Approved ${formatDateTime(open.createdAt)}`} &middot; {formatCents(open.totalCents)}.
+                  {open.programName} &middot; {customerLabel(open.accountCode)} &middot; {open.historical ? "Imported historical claim" : `Approved ${formatDateTime(open.createdAt)}`} &middot; {formatCents(open.totalCents)}.
                   Recorded claim decision from saved snapshot, not a payment.
                 </DialogDescription>
               </DialogHeader>
