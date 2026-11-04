@@ -1,3 +1,4 @@
+import { formatWeekLabel } from "@/lib/week-display";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -541,7 +542,7 @@ function WhitespaceSection({ week, category }: { week: string; category: string 
                 <div className="flex-1 min-w-0">
                   <span className="font-mono text-xs">{nl.part_no}</span>
                   <span className="text-muted-foreground ml-2 text-xs">
-                    first seen {nl.first_week} · {nl.resellers_ranged}/{nl.total_resellers} resellers
+                    first seen {formatWeekLabel(nl.first_week)} · {nl.resellers_ranged}/{nl.total_resellers} resellers
                   </span>
                   {nl.slow_ramp && <Badge variant="outline" className="ml-2 text-[10px] text-amber-600 border-amber-300">Slow ramp</Badge>}
                 </div>
@@ -664,7 +665,7 @@ function SummaryExport({ week, category, health, stockout, overstock, rebalancin
     const html = `<!DOCTYPE html>
 <html>
 <head>
-<title>ChannelPulse Weekly Summary — ${week}</title>
+<title>ChannelPulse Weekly Summary — ${formatWeekLabel(health?.week_iso ?? week)}</title>
 <style>
   body { font-family: system-ui, sans-serif; font-size: 12px; color: #111; max-width: 800px; margin: 40px auto; padding: 0 24px; }
   h1 { font-size: 18px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 16px; }
@@ -682,7 +683,7 @@ function SummaryExport({ week, category, health, stockout, overstock, rebalancin
 </head>
 <body>
 <h1>ChannelPulse — Weekly Channel Summary</h1>
-<div style="color:#888;margin-bottom:16px">Week: ${health?.week_iso ?? week} ${category !== "All" ? `| Category: ${category}` : ""} | Generated: ${new Date().toLocaleDateString("en-AU")}</div>
+<div style="color:#888;margin-bottom:16px">Reporting week: ${formatWeekLabel(health?.week_iso ?? week)} ${category !== "All" ? `| Category: ${category}` : ""} | Generated: ${new Date().toLocaleDateString("en-AU")}</div>
 
 <h2>Channel Health</h2>
 <div class="kpi-grid">

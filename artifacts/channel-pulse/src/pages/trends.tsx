@@ -1,3 +1,4 @@
+import { formatWeekLabel, formatWeekRange } from "@/lib/week-display";
 import { useState, useMemo } from "react";
 import { useGetTrends, GetTrendsMetric } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -123,9 +124,11 @@ export default function Trends() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                  <XAxis dataKey="week_iso" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} dy={10} />
+                  <XAxis dataKey="week_iso" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} dy={10} height={64} minTickGap={35}
+                    tickFormatter={week => `${String(week).slice(5)} · ${formatWeekRange(String(week))}`} angle={-15} textAnchor="end" />
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} dx={-10} />
                   <RechartsTooltip 
+                    labelFormatter={label => formatWeekLabel(String(label))}
                     contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "6px", fontSize: "12px" }}
                     labelStyle={{ fontWeight: "bold", marginBottom: "4px" }}
                   />

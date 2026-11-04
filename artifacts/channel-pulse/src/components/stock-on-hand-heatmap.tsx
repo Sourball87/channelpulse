@@ -1,3 +1,4 @@
+import { formatWeekLabel } from "@/lib/week-display";
 import { customerLabel } from "@/lib/customer-display";
 import { useGetDashboardHeatmap, useGetResellers } from "@workspace/api-client-react";
 import { useFilters } from "@/context/filter-context";
@@ -34,7 +35,7 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
       <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-sm font-medium flex flex-wrap items-center gap-2">
           Stock on Hand (SOH)
-          <Badge variant="secondary">{data?.week_iso ?? insightWeek ?? "Latest week"}</Badge>
+          <Badge variant="secondary">{formatWeekLabel(data?.week_iso ?? insightWeek)}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-4">
@@ -91,7 +92,7 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
                                 >{cell.soh.toLocaleString()}</div>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>{stock} · {customerLabel(code)} · {data?.week_iso}</p>
+                                <p>{stock} · {customerLabel(code)} · {formatWeekLabel(data?.week_iso)}</p>
                                 <p>Stock on hand: {cell.soh.toLocaleString()} units</p>
                               </TooltipContent>
                             </Tooltip>

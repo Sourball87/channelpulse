@@ -1,3 +1,4 @@
+import { formatWeekLabel } from "@/lib/week-display";
 import { customerLabel } from "@/lib/customer-display";
 import { useState, useMemo } from "react";
 import { useFilters } from "@/context/filter-context";
@@ -236,7 +237,7 @@ function DatePicker() {
   const isCustom = preset === "custom" || (!preset && weekFrom && weekTo);
 
   const buttonLabel = mode === "week"
-    ? (resolvedWeek ?? "Latest week")
+    ? formatWeekLabel(resolvedWeek)
     : periodLabel;
 
   return (
@@ -261,7 +262,7 @@ function DatePicker() {
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[280px] p-3" align="start">
+      <PopoverContent className="w-[min(460px,calc(100vw-2rem))] p-3" align="start">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full mb-3">
             <TabsTrigger value="week" className="flex-1 text-xs">Single Week</TabsTrigger>
@@ -270,7 +271,7 @@ function DatePicker() {
 
           {tab === "week" && (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Choose a reference week</p>
+              <p className="text-xs text-muted-foreground">Reporting week · Monday–Sunday (not the upload date)</p>
               <Select
                 value={weekIso ?? resolvedWeek ?? ""}
                 onValueChange={v => { setFilters({ weekIso: v }); setOpen(false); }}
@@ -279,9 +280,9 @@ function DatePicker() {
                   <SelectValue placeholder="Latest week" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={availableWeeks[0] ?? "latest"}>Latest ({availableWeeks[0] ?? "…"})</SelectItem>
+                  <SelectItem value={availableWeeks[0] ?? "latest"}>Latest · {formatWeekLabel(availableWeeks[0])}</SelectItem>
                   {availableWeeks.slice(1).map(w => (
-                    <SelectItem key={w} value={w}>{w}</SelectItem>
+                    <SelectItem key={w} value={w}>{formatWeekLabel(w)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -307,7 +308,7 @@ function DatePicker() {
 
               <Separator />
               <p className="text-xs text-muted-foreground font-medium">Custom range</p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col items-stretch gap-2">
                 <Select
                   value={weekFrom ?? ""}
                   onValueChange={v => setFilters({ weekFrom: v, weekTo: weekTo ?? availableWeeks[0] })}
@@ -317,11 +318,11 @@ function DatePicker() {
                   </SelectTrigger>
                   <SelectContent>
                     {availableWeeks.slice().reverse().map(w => (
-                      <SelectItem key={w} value={w} className="text-xs">{w}</SelectItem>
+                      <SelectItem key={w} value={w} className="text-xs">{formatWeekLabel(w)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <span className="text-xs text-muted-foreground">–</span>
+                <span className="text-xs text-muted-foreground">to</span>
                 <Select
                   value={weekTo ?? ""}
                   onValueChange={v => setFilters({ weekTo: v, weekFrom: weekFrom ?? availableWeeks[availableWeeks.length - 1] })}
@@ -331,7 +332,7 @@ function DatePicker() {
                   </SelectTrigger>
                   <SelectContent>
                     {availableWeeks.map(w => (
-                      <SelectItem key={w} value={w} className="text-xs">{w}</SelectItem>
+                      <SelectItem key={w} value={w} className="text-xs">{formatWeekLabel(w)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

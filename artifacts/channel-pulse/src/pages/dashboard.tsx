@@ -1,3 +1,4 @@
+import { formatWeekLabel, formatWeekRange, formatWeekSpan, formatWeekText } from "@/lib/week-display";
 import { customerLabel } from "@/lib/customer-display";
 import { useState, useRef } from "react";
 import { Link } from "wouter";
@@ -107,7 +108,7 @@ export default function Dashboard() {
 
   const reportedCount = kpiData?.reseller_statuses.filter((r) => r.reported).length || 0;
   const totalResellers = kpiData?.reseller_statuses.length || 9;
-  const deltaLabel = kpiData?.delta_label ?? "vs last week";
+  const deltaLabel = formatWeekText(kpiData?.delta_label ?? "vs last week");
 
   return (
     <div className="flex flex-col h-full bg-muted/20">
@@ -116,8 +117,8 @@ export default function Dashboard() {
           <h1 className="text-2xl font-semibold tracking-tight">{focusView ? "Sell Through" : "SOH"}</h1>
           <p className="text-sm text-muted-foreground">
             {focusView ? "Phocas view · Weekly units sold by Account Code and Stock Code" : kpiData?.is_period
-              ? `Period: ${kpiData.period_label}`
-              : `Stock on Hand — ${kpiData?.week_iso ?? "Latest week"}`}
+              ? `Period: ${formatWeekText(kpiData.period_label ?? "")}`
+              : `Stock on Hand — ${formatWeekLabel(kpiData?.week_iso)}`}
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -191,7 +192,7 @@ export default function Dashboard() {
         <Card className="shadow-xs">
           <CardHeader className="px-4 py-3 border-b bg-muted/10 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium">
-              Reporting Status: {kpiData?.week_iso || "Week"}
+              Reporting Status: {formatWeekLabel(kpiData?.week_iso)}
             </CardTitle>
             <Badge
               variant={reportedCount === totalResellers ? "default" : "secondary"}
@@ -289,7 +290,7 @@ export default function Dashboard() {
 
           <CardContent className="p-0 overflow-auto flex-1">
             <p className="px-4 pt-3 text-xs text-muted-foreground">
-              Account Code: {accountLabel} · {heatmapData?.weeks[0] ?? "…"} – {heatmapData?.end_week ?? "…"}
+              Account Code: {accountLabel} · {formatWeekSpan(heatmapData?.weeks[0], heatmapData?.end_week)}
               {resellerIds.length !== 1 && " · Sales combined across reported accounts"}
             </p>
             <p className="px-4 pt-1 text-xs text-muted-foreground lg:hidden">
@@ -324,7 +325,7 @@ export default function Dashboard() {
                 <div
                   className="grid gap-1"
                   style={{
-                    gridTemplateColumns: `${isEditing ? 180 : 152}px repeat(${displayedWeeks.length}, minmax(60px, 1fr))`,
+                    gridTemplateColumns: `${isEditing ? 180 : 152}px repeat(${displayedWeeks.length}, minmax(96px, 1fr))`,
                   }}
                 >
                   {/* Header row — top-left corner */}
@@ -337,12 +338,13 @@ export default function Dashboard() {
                     return (
                       <div
                         key={week}
-                        title={week}
-                        aria-label={week}
+                        title={formatWeekLabel(week)}
+                        aria-label={formatWeekLabel(week)}
                         className="sticky top-0 z-10 bg-card p-2 text-xs font-semibold text-center border-b text-muted-foreground"
                       >
                         <span className="block">{week.slice(5)}</span>
                         <span className="block text-[10px] font-normal">{week.slice(0, 4)}</span>
+                        <span className="block text-[10px] font-normal leading-tight mt-1">{formatWeekRange(week)}</span>
                       </div>
                     );
                   })}
@@ -386,7 +388,7 @@ export default function Dashboard() {
                               <div
                                 key={week}
                                 title="No reported data"
-                                aria-label={`${part}, ${week}: no reported data`}
+                                aria-label={`${part}, ${formatWeekLabel(week)}: no reported data`}
                                 className="p-1 border-b bg-card group-hover:bg-muted/50 transition-colors text-center text-muted-foreground"
                               >
                                 <span className="h-8 flex items-center justify-center text-xs">—</span>
@@ -408,14 +410,14 @@ export default function Dashboard() {
                                   <div
                                     className={`h-8 rounded flex items-center justify-center text-xs font-medium cursor-default shadow-xs ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
                                     style={{ backgroundColor }}
-                                    aria-label={`${part}, ${week}: ${salesDisplay} units sold`}
+                                    aria-label={`${part}, ${formatWeekLabel(week)}: ${salesDisplay} units sold`}
                                   >
                                     {salesDisplay}
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
                                   <div className="font-semibold mb-1.5">
-                                    {part} · {week}
+                                    {part} · {formatWeekLabel(week)}
                                   </div>
                                   <div className="space-y-1">
                                     <div>

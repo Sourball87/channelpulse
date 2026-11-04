@@ -3,6 +3,12 @@ name: Report interpretation
 description: Reporting-period and attribution decisions for supplier report ingestion.
 ---
 
+Show each reporting week alongside its Monday–Sunday calendar date range, not the week the file was uploaded.
+
+**Why:** The user said week numbers were difficult to interpret and explicitly chose the report's calendar week over the upload week.
+
+**How to apply:** Add calendar ranges to reporting-week labels while preserving ISO-week identifiers, grouping, and actual upload timestamps.
+
 Do not assume all files supplied together share a reporting week or reseller. Undated reports require explicit week confirmation, and V-Report attribution must be reviewed rather than inferred from another report.
 
 **Why:** These exports omit metadata, and the same V-Report structure can belong to PCCG or DigiDirect. Recognition does not establish ownership or reporting period.

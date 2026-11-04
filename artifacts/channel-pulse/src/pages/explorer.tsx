@@ -1,3 +1,4 @@
+import { formatWeekLabel, formatWeekRange } from "@/lib/week-display";
 import { useState, useMemo, useCallback } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
@@ -96,7 +97,7 @@ export default function Explorer() {
               </span>
             ) : <span className="w-4" />}
             <span className={isTopLevel ? "font-semibold" : ""}>
-              {row.label}
+              {row.level === "week" ? formatWeekLabel(row.label) : row.label}
             </span>
             {!childrenExist && row.level !== "week" && (
               <BarChart2 className="h-3 w-3 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100" />
@@ -250,10 +251,12 @@ export default function Explorer() {
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={trendData.slice().reverse()} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                      <XAxis dataKey="week_iso" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <XAxis dataKey="week_iso" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} height={64} minTickGap={35}
+                        tickFormatter={week => `${String(week).slice(5)} · ${formatWeekRange(String(week))}`} angle={-15} textAnchor="end" />
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                       <RechartsTooltip 
+                        labelFormatter={label => formatWeekLabel(String(label))}
                         contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }}
                       />
                       <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />

@@ -1,3 +1,4 @@
+import { formatWeekLabel, formatWeekSpan } from "@/lib/week-display";
 import { createContext, useContext, useCallback, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useGetAvailableWeeks } from "@workspace/api-client-react";
@@ -167,15 +168,15 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
 
   // Period label for display
   const periodLabel = useMemo(() => {
-    if (mode === "week") return resolvedWeek ?? "Latest";
+    if (mode === "week") return formatWeekLabel(resolvedWeek);
     const LABELS: Record<string, string> = {
       last4: "Last 4 weeks", last8: "Last 8 weeks", last12: "Last 12 weeks",
       mtd: "Month to date", qtd: "Quarter to date", ytd: "Year to date",
     };
-    if (preset && LABELS[preset]) return LABELS[preset];
+    if (preset && LABELS[preset]) return `${LABELS[preset]}${resolvedFrom && resolvedTo ? ` · ${formatWeekSpan(resolvedFrom, resolvedTo)}` : ""}`;
     if (resolvedFrom && resolvedTo) {
       // e.g. "W20 – W27"
-      return `${resolvedFrom.replace(/^\d{4}-/, "")} – ${resolvedTo.replace(/^\d{4}-/, "")}`;
+      return formatWeekSpan(resolvedFrom, resolvedTo);
     }
     return "Period";
   }, [mode, preset, resolvedFrom, resolvedTo, resolvedWeek]);

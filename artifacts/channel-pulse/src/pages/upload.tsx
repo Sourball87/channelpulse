@@ -1,3 +1,4 @@
+import { formatWeekLabel } from "@/lib/week-display";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetUploads, useDeleteUpload, useGetResellers, getGetUploadsQueryKey } from "@workspace/api-client-react";
@@ -333,6 +334,7 @@ export default function UploadCenter() {
                 split different weeks into separate batches. Copy numbers such as (1) are not dates.
               </p>
               {!!batchWeek && !validWeek(batchWeek) && <p className="text-sm text-destructive">Enter a valid ISO week, for example 2026-W27.</p>}
+              {!!batchWeek && validWeek(batchWeek) && <p className="text-sm text-muted-foreground">{formatWeekLabel(batchWeek)} (Mon–Sun)</p>}
             </div>
             <div className="flex gap-3 items-start">
               <Checkbox id="ai-assist" checked={aiAssist} onCheckedChange={v => setAiAssist(v === true)}
@@ -447,7 +449,7 @@ export default function UploadCenter() {
                         </div>
                       </TableCell>
                       <TableCell>{upload.reseller_name || "Unknown"}</TableCell>
-                      <TableCell>{upload.week_iso || "—"}</TableCell>
+                      <TableCell>{upload.week_iso ? formatWeekLabel(upload.week_iso) : "—"}</TableCell>
                       <TableCell>
                         {upload.status === "committed" && <Badge className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 border-emerald-500/20">Committed</Badge>}
                         {upload.status === "review" && <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 border-amber-500/20">{upload.diagnostics?.ready_to_commit ? "Ready" : "Review"}</Badge>}
@@ -650,9 +652,10 @@ function ReviewCard({
                 onChange={(e) => setWeekIso(e.target.value.trim())}
               />
               {weekIso && !validWeek(weekIso) && <p className="text-xs text-destructive mt-1">Enter a valid ISO week.</p>}
+              {weekIso && validWeek(weekIso) && <p className="text-xs text-muted-foreground mt-1">{formatWeekLabel(weekIso)} (Mon–Sun)</p>}
               {review.detected_week_iso && weekIso !== review.detected_week_iso && (
                 <p className="text-xs text-amber-700 mt-1 max-w-[200px]">
-                  You are overriding {review.detected_week_iso}. Check the reporting period before committing.
+                  You are overriding {formatWeekLabel(review.detected_week_iso)}. Check the reporting period before committing.
                 </p>
               )}
             </div>
