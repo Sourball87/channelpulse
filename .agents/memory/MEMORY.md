@@ -1,4 +1,5 @@
 - [ChannelPulse build decisions](channel-pulse.md) — key architecture choices and gotchas for this project
+- [Preview resize notifications](preview-resize-notifications.md) — distinguish harmless browser ResizeObserver notices from real application exceptions.
 - [Focus drill-down](focus-drill-down.md) — user wants a PHO-style sidebar with account/SKU selections that automatically filter analytics.
 - [Analytics privacy](analytics-privacy.md) — measure actions and counts without sending channel data or account/SKU identities.
 - [Report interpretation](report-interpretation.md) — missing dates and shared formats require confirmation; calendar dates determine ISO weeks.

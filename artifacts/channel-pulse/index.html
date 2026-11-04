@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+      // Register before deferred preview-module listeners. These browser-only
+      // layout notices are retried next frame, not JavaScript exceptions.
+      if ("%MODE%" === "development") {
+        window.addEventListener("error", function (event) {
+          if (!event.error && (
+            event.message === "ResizeObserver loop completed with undelivered notifications." ||
+            event.message === "ResizeObserver loop limit exceeded"
+          )) event.stopImmediatePropagation();
+        }, true);
+      }
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>ChannelPulse</title>

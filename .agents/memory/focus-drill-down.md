@@ -38,3 +38,9 @@ Separate SOH and Sell Through into navigation pages, with Sell Through directly 
 **Why:** After trying a shared Dashboard/Focus toggle, the user said they would rather separate them and put Sell Through underneath the Dashboard/SOH navigation item. They previously confirmed the SOH layout and retention of all summary cards.
 
 **How to apply:** Default to SOH. Open Phocas via the Sell Through navigation entry, not a Dashboard mode toggle. Preserve account/stock/date filters between pages and retain the 12-week newest-first sales matrix. Focus only expands/collapses the sell-through drill controls. Keep stock/WOI summary cards out of Sell Through.
+
+The customer-by-Stock-Code table should support SOH-only, ST-only and combined ST/SOH subcolumns, with metrics dragged into the table.
+
+**Why:** The user provided a reference with paired metrics under each customer and explicitly chose “Drag metrics into the table.”
+
+**How to apply:** Allow selecting/removing/reordering the displayed measures without changing underlying reports. Keep the separate 12-week ST history available; paired metrics describe the same selected reporting week, not mismatched periods.

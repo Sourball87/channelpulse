@@ -114,11 +114,11 @@ export default function Dashboard() {
     <div className="flex flex-col h-full bg-muted/20">
       <header className="flex-none bg-background border-b px-6 py-4 flex flex-wrap gap-3 items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{focusView ? "Sell Through" : "SOH"}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{focusView ? "Sell Through" : "SOH & ST"}</h1>
           <p className="text-sm text-muted-foreground">
             {focusView ? "Phocas view · Weekly units sold by Account Code and Stock Code" : kpiData?.is_period
               ? `Period: ${formatWeekText(kpiData.period_label ?? "")}`
-              : `Stock on Hand — ${formatWeekLabel(kpiData?.week_iso)}`}
+              : `Stock on Hand & Sell Through — ${formatWeekLabel(kpiData?.week_iso)}`}
           </p>
         </div>
         <div className="flex items-center gap-4">
