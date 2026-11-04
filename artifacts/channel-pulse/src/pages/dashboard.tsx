@@ -31,7 +31,7 @@ import { useFilters } from "@/context/filter-context";
 import { useHeatmapOrder, sortByOrder } from "@/hooks/use-heatmap-order";
 import { StockOnHandHeatmap } from "@/components/stock-on-hand-heatmap";
 
-const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
+const CATEGORIES = ["All", "SSD", "Monitor", "Mobility"];
 
 export default function Dashboard() {
   const [category, setCategory] = useState<string>("All");

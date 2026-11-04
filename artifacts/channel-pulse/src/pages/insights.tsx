@@ -39,7 +39,7 @@ function useInsightQuery<T>(key: string[], path: string, week: string, category:
   });
 }
 
-const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
+const CATEGORIES = ["All", "SSD", "Monitor", "Mobility"];
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 function woiColor(woi: number | null) {

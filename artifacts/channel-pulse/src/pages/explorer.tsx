@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ComposedChart } from "recharts";
 import { useFilters } from "@/context/filter-context";
 
-const CATEGORIES = ["All", "SSD", "Monitor", "Mobility", "HDD & Memory"];
+const CATEGORIES = ["All", "SSD", "Monitor", "Mobility"];
 
 function ValueWithDelta({ value, delta }: { value: number | null | undefined, delta: number | null | undefined }) {
   if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;

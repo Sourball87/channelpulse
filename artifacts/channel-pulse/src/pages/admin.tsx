@@ -325,7 +325,6 @@ function PartsTab() {
                       <SelectItem value="SSD">SSD</SelectItem>
                       <SelectItem value="Monitor">Monitor</SelectItem>
                       <SelectItem value="Mobility">Mobility</SelectItem>
-                      <SelectItem value="HDD & Memory">HDD & Memory</SelectItem>
                     </SelectContent>
                   </Select>
                 </TableCell>

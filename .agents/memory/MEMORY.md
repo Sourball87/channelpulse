@@ -5,3 +5,4 @@
 - [Dependency security](dependency-security.md) — patched SheetJS releases still trigger unbounded npm advisories; force-rebuild composite types after upgrades.
 - [Scanback claims rules](scanback-claims.md) — initial scope, spreadsheet sources and the global one-payment-per-serial rule.
 - [Customer masking](customer-masking.md) — show the nine customers only by their requested abbreviations; preserve internal matching identities.
+- [Category options](category-options.md) — HDD & Memory must not be offered as a category option.
