@@ -9,7 +9,7 @@ it does not send payments or issue credits in Pronto.
    Account Codes and Stock Codes.
 2. Enter **GTM Buy Ex** for each SKU. A blank customer/SKU quantity cap is
    unlimited; zero makes that customer ineligible for the SKU.
-3. In **Imports**, upload Pronto invoice/credit evidence. Review the worksheet,
+3. In **Upload Center**, upload Pronto invoice/credit evidence. Review the worksheet,
    column mappings, date format and account attribution, then commit.
 4. Import **historical approved claims** before approving new claims, so previous
    payouts are included in duplicate checks and applicable promotion caps.
@@ -19,11 +19,18 @@ resolved, not automatically created from an unverified financial file.
 
 ## Evidence and claim files
 
-Upload your existing CSV, XLS or XLSX file. Imports defaults to **Auto-detect**:
+Upload your existing CSV, XLS or XLSX file in **Upload Center**, the sole file-intake
+screen. Files default to **Auto-detect**:
 the column headings identify invoice/credit evidence, customer serial reports or
 historical approvals. Mixed or incomplete financial layouts require an explicit
 type selection rather than a guess. The detected type is shown in the preview;
 review mappings and issues before committing. No template download is needed.
+
+The separate Imports tab has been removed. Use Upload Center's weekly customer
+serial card to open Verify Claims with that report, customer and applicable
+promotion preselected. Configure report expectations in Settings. See
+[Upload Center](upload-center.md) for price lists, program tables, weekly report
+tracking and pending-file corrections.
 
 - **Invoice / credit evidence:** Serial, SKU, Date, Invoice, signed Quantity,
   Account and Invoiced Unit Price Ex GST. An explicit fallback account can be

@@ -322,10 +322,10 @@ const REPORT_FORMATS: ReportFormat[] = [
     resellerCodes: ["ple"],
   },
   {
-    formatId: "umart_weekly",
+    formatId: "centrecom_forecast",
     headers: ["sapcode", "sku", "totalonhand", "otheronhand", "daystosale", "onorderqty", "soldqty"],
     optionalHeaders: ["sapprice", "cost", "totalonhandallwhrevenue", "revenue", "purchaseqty", "purchasevalue", "ageing90", "ageing90cost", "ageing120", "ageing120cost"],
-    resellerCodes: ["umart"],
+    resellerCodes: ["centrecom"],
   },
   {
     formatId: "jw_weekly",
@@ -363,7 +363,7 @@ const BUILTIN_HINTS: Record<string, {
     collapsedNeedToken: "ks",
   },
   scorptec:   { collapsedHints: ["scorptec", "scorp"] },
-  umart:      { collapsedHints: ["umart", "sellthruandsoh", "samsungssdsellthru"] },
+  umart:      { collapsedHints: ["umart"] },
   ple:        { shortCodes: ["ple"], collapsedHints: ["reportingprocurementcustom"] },
   centrecom:  { collapsedHints: ["centrecom"] },
   pccg:       { collapsedHints: ["pccg"] },
@@ -527,7 +527,7 @@ export function detectResellerFromHeaders(
       if ((sl.includes("samsung soh report") || sl.includes("samsungsohreport")) && code === "ks") {
         return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
-      if ((sl.includes("itemforcastreport") || sl.includes("itemforecastreport")) && code === "umart") {
+      if ((sl.includes("itemforcastreport") || sl.includes("itemforecastreport")) && code === "centrecom") {
         return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
       if (sl === "forecast" && code === "centrecom") {

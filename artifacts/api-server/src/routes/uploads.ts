@@ -279,7 +279,8 @@ router.post("/uploads", upload.array("files"), async (req, res) => {
         //  4. Week detected from filename (not inferred)
         //  5. No overwrite conflict
         let reviewDiagnostics = diagnostics(parseResult, existingSnapshotCount ?? 0, recognition);
-        const canAutoCommit = reviewDiagnostics.auto_eligible;
+        // The Upload Center requires an explicit confirmation for every file.
+        const canAutoCommit = false;
 
         const [uploadRow] = await db
           .insert(uploads)
@@ -762,7 +763,9 @@ router.delete("/uploads/:id", async (req, res) => {
   if (!params.success) return res.status(400).json({ error: "Invalid id" });
 
   try {
-    await db.delete(uploads).where(eq(uploads.id, params.data.id));
+    const deleted = await db.delete(uploads)
+      .where(and(eq(uploads.id, params.data.id), sql`${uploads.status} <> 'committed'`)).returning();
+    if (!deleted.length) return res.status(409).json({ error: "Committed reports are immutable, or this upload no longer exists." });
     res.json({ success: true, message: "Upload and associated snapshots deleted" });
   } catch (err) {
     req.log.error({ err }, "Failed to delete upload");

@@ -1,20 +1,18 @@
 import { customerLabel } from "@/lib/customer-display";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useCommitScanbackImport,
-  usePreviewScanbackImport,
   useRemapScanbackImport,
   type Reseller,
   type ScanbackImport,
   type ScanbackMappingDateFormat,
-  type ScanbackUploadKind,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileSpreadsheet, RefreshCw, Upload, CheckCircle2 } from "lucide-react";
+import { FileSpreadsheet, RefreshCw, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { FIELD_LABEL, KIND_META, MAPPING_KEYS, type MappingKey } from "./import-config";
 import { SectionEmpty, errorMessage, formatCents, formatDateTime, useRefreshWorkspace } from "./shared";
@@ -25,17 +23,17 @@ const NONE = "__none";
 export function ImportPanel({
   imports,
   resellers,
-  kind,
-  onKindChange,
+  selectedId,
+  onCommitted,
 }: {
   imports: ScanbackImport[];
   resellers: Reseller[];
-  kind: ScanbackUploadKind;
-  onKindChange: (k: ScanbackUploadKind) => void;
+  /** Scanback import UUID to open for mapping review (from the Upload Center). */
+  selectedId?: string | null;
+  onCommitted?: (imp: ScanbackImport) => void;
 }) {
   const { toast } = useToast();
   const refresh = useRefreshWorkspace();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [current, setCurrent] = useState<ScanbackImport | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [dateFormat, setDateFormat] = useState<ScanbackMappingDateFormat>("dmy");
@@ -43,7 +41,6 @@ export function ImportPanel({
   const [accountId, setAccountId] = useState<number | null>(null);
   const [prontoAccounts, setProntoAccounts] = useState<Record<string, number | null>>({});
   const [error, setError] = useState<string | null>(null);
-  const preview = usePreviewScanbackImport();
   const remap = useRemapScanbackImport();
   const commit = useCommitScanbackImport();
   const resById = new Map(resellers.map((r) => [r.id, r]));
@@ -55,19 +52,6 @@ export function ImportPanel({
     setSheet(imp.sheet);
     setAccountId(imp.accountId);
     setProntoAccounts(imp.prontoAccounts ?? {});
-  };
-
-  const onFile = (file: File | undefined) => {
-    if (!file) return;
-    setError(null);
-    preview.mutate(
-      { data: { file, kind } },
-      {
-        onSuccess: (imp) => { load(imp); refresh(); },
-        onError: (e) => setError(errorMessage(e)),
-      },
-    );
-    if (fileRef.current) fileRef.current.value = "";
   };
 
   const applyMapping = (imp: ScanbackImport | null = current) => {
@@ -92,7 +76,7 @@ export function ImportPanel({
     commit.mutate(
       { id: current.id },
       {
-        onSuccess: (r) => { load({ ...r, rows: r.rows.length ? r.rows : current.rows }); refresh(); toast({ title: "Import committed", description: `${r.recordCount} records saved.` }); },
+        onSuccess: (r) => { load({ ...r, rows: r.rows.length ? r.rows : current.rows }); refresh(); toast({ title: "Import committed", description: `${r.recordCount} records saved.` }); onCommitted?.(r); },
         onError: (e) => setError(errorMessage(e)),
       },
     );
@@ -111,38 +95,24 @@ export function ImportPanel({
       JSON.stringify(Object.entries(prontoAccounts).sort()) !== JSON.stringify(Object.entries(current.prontoAccounts ?? {}).sort())
     : false;
   const canCommit = current && current.state === "preview" && !current.duplicate && current.errors.length === 0 && missing.length === 0 && !dirty && current.recordCount > 0;
-  const busy = preview.isPending || remap.isPending || commit.isPending;
+  const busy = remap.isPending || commit.isPending;
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedId || opened.current === selectedId) return;
+    const imp = imports.find((i) => i.id === selectedId);
+    if (!imp) return;
+    opened.current = selectedId;
+    loadSamples(imp);
+  }, [selectedId, imports]); // eslint-disable-line react-hooks/exhaustive-deps
   const sorted = [...imports].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
       <div className="space-y-4 min-w-0">
-        <div className="rounded-lg border bg-background p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1.5">
-              <Label>Spreadsheet type</Label>
-              <Select value={kind} onValueChange={(v) => onKindChange(v as ScanbackUploadKind)}>
-                <SelectTrigger className="w-64" data-testid="select-import-kind"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto-detect (recommended)</SelectItem>
-                  {(Object.keys(KIND_META) as ScanbackImport["kind"][]).map((k) => <SelectItem key={k} value={k}>{KIND_META[k].label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" data-testid="input-import-file" onChange={(e) => onFile(e.target.files?.[0])} />
-            <Button disabled={busy} onClick={() => fileRef.current?.click()} data-testid="button-choose-import-file">
-              <Upload className="mr-1.5 h-4 w-4" /> {preview.isPending ? "Reading..." : "Upload CSV / Excel"}
-            </Button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">{kind === "auto"
-            ? "Upload your existing spreadsheet. Its type and columns are detected automatically; unclear layouts will ask you to choose a type."
-            : KIND_META[kind].blurb} Uploads are saved as previews for review before committing. Native Pronto POS extracts support the existing nine resellers only.</p>
-        </div>
-
         {error && <div data-testid="text-import-error" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
         {!current ? (
-          <SectionEmpty title="No import open" body="Upload a file to preview it, or open a previous import from the list to review its mapping and sample rows." />
+          <SectionEmpty title="No import open" body="Open a pending file from the list to review its mapping and sample rows. New files come in through the drop zone above." />
         ) : (
           <div className="rounded-lg border bg-background">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">

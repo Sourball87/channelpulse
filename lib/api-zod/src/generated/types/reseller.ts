@@ -14,4 +14,6 @@ export interface Reseller {
   filename_patterns?: string[];
   expected_weekly_files?: number;
   active?: boolean;
+  sends_soh?: boolean;
+  sends_serial_reports?: boolean;
 }

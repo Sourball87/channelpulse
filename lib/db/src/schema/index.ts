@@ -11,6 +11,25 @@ export const resellers = pgTable("resellers", {
   filenamePatterns: text("filename_patterns").array().default([]).notNull(),
   expectedWeeklyFiles: integer("expected_weekly_files").default(1).notNull(),
   active: boolean("active").default(true).notNull(),
+  sendsSoh: boolean("sends_soh").default(true).notNull(),
+  sendsSerialReports: boolean("sends_serial_reports").default(false).notNull(),
+});
+
+// Parsed spreadsheet records only, never file bytes or base64.
+export const centerUploads = pgTable("center_uploads", {
+  id: text("id").primaryKey(),
+  payload: jsonb("payload").notNull(),
+  rawSheets: jsonb("raw_sheets").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+export const priceList = pgTable("price_list", {
+  sku: text("sku").primaryKey(),
+  description: text("description").notNull(),
+  rrpIncCents: integer("rrp_inc_cents").notNull(),
+  ddCostExCents: integer("dd_cost_ex_cents").notNull(),
+  t1BuyExCents: integer("t1_buy_ex_cents").notNull(),
+  uploadId: text("upload_id").notNull().references(() => centerUploads.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const parts = pgTable("parts", {

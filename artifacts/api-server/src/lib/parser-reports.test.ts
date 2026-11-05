@@ -41,7 +41,7 @@ const fixtures = [
     row: ["MZ-77E1T0BW", 4, 1, 2, 100], soh: 4, sold: 1 },
   { filename: "samsung_soh_report_(1).xlsx", code: "ca", week: null, sheet: "ComputerAlliance",
     headers: shared, row: ["MZ-77E1T0BW", 10, 0, 2, 4, 100, null], soh: 10, sold: 2 },
-  { filename: "Samsung_ssd_sell_thru_and_soh_Report_2026-06-29_2026-07-05.xlsx", code: "umart", week: "2026-W27", sheet: "ItemForcastReport",
+  { filename: "Samsung_ssd_sell_thru_and_soh_Report_2026-06-29_2026-07-05.xlsx", code: "centrecom", week: "2026-W27", sheet: "ItemForcastReport",
     headers: umart, row: [1234, "MZ-77E1T0BW", 12, 1, 30, 4, 3, 150, 100, 1200, 300, 2, 200, 1, 100], soh: 12, sold: 3 },
   ...[
     ["SSD", "MZ-V9P1T0BW"], ["Mobility", "SM-S918BZKASTS"], ["Monitor", "LS24F320GAEXXY"],
@@ -59,7 +59,7 @@ describe("supported real-report structures", () => {
       "Samsung_ssd_sell_thru_and_soh_Report_2026-06-22_2026-06-28.xlsx",
       profiles,
     );
-    expect(result.detectedFormatId).toBe("umart_weekly");
+    expect(result.detectedFormatId).toBe("centrecom_forecast");
     expect(result.detectedWeekIso).toBe("2026-W26");
     expect(result.rows[0]).toMatchObject({ soh: 12, sell_through_7d: 3, avg_cost: 100, flagged: false });
     expect(result.mappings.filter(m => m.source_col.startsWith("Purchase")).every(m => m.canonical_field === null)).toBe(true);
@@ -78,7 +78,7 @@ describe("supported real-report structures", () => {
       expect(parsed.rows[0].soh).toBe(fixture.soh);
       expect(parsed.rows[0].sell_through_7d).toBe(fixture.sold);
       expect(parsed.headers).not.toContain("__EMPTY");
-      if (fixture.code === "centrecom") {
+      if (fixture.code === "centrecom" && fixture.sheet !== "ItemForcastReport") {
         expect(parsed.rows[0].sold_14d).toBe(10);
         expect(parsed.rows[0].sold_30d).toBe(20);
       }
@@ -119,7 +119,7 @@ describe("no silent data corruption", () => {
   });
   it("blocks auto-commit for flags, overwrite, learned results or duplicate SKUs", async () => {
     const result = await parseFile(workbook(umart, [1, "MZ-V9P1T0BW", 10, 0, 10, 0, 2, 10, 10]),
-      "Umart_2026-07-05.xlsx", profiles);
+      "Centrecom_2026-07-05.xlsx", profiles);
     expect(isAutoCommitEligible(result)).toBe(true);
     expect(isAutoCommitEligible(result, result.mappings, true)).toBe(false);
     expect(isAutoCommitEligible({ ...result, headerResolutionSource: "learned" })).toBe(false);

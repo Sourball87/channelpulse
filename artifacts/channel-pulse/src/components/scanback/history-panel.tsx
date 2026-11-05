@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { customerLabel } from "@/lib/customer-display";
 import { useMemo, useState } from "react";
 import { getExportScanbackBatchUrl, type Reseller, type ScanbackBatch } from "@workspace/api-client-react";
@@ -12,7 +13,7 @@ import { SectionEmpty, StatusPill, formatCents, formatDate, formatDateTime } fro
 
 const ALL = "__all";
 
-export function HistoryPanel({ batches, resellers, onImportHistory }: { batches: ScanbackBatch[]; resellers: Reseller[]; onImportHistory: () => void }) {
+export function HistoryPanel({ batches, resellers }: { batches: ScanbackBatch[]; resellers: Reseller[] }) {
   const [program, setProgram] = useState(ALL);
   const [account, setAccount] = useState(ALL);
   const [from, setFrom] = useState("");
@@ -51,7 +52,7 @@ export function HistoryPanel({ batches, resellers, onImportHistory }: { batches:
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
           <Input className="pl-8" placeholder="Reference, serial or invoice" value={q} onChange={(e) => setQ(e.target.value)} data-testid="input-history-search" />
         </div>
-        <Button variant="outline" onClick={onImportHistory} data-testid="button-import-history"><History className="mr-1.5 h-4 w-4" /> Import historical claims</Button>
+        <Button variant="outline" asChild data-testid="button-import-history"><Link href="/upload"><History className="mr-1.5 h-4 w-4" /> Import historical claims in Upload Center</Link></Button>
       </div>
 
       {filtered.length === 0 ? (

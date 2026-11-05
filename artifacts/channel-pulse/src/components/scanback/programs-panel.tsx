@@ -1,14 +1,43 @@
-import { customerLabel } from "@/lib/customer-display";
-import { useState } from "react";
+import { customerLabel, maskCustomerText } from "@/lib/customer-display";
+import { useMemo, useState } from "react";
 import { useSaveScanbackProgram, type Part, type Reseller, type ScanbackProgram } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Archive, ArchiveRestore, Pencil, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil, Plus, TableProperties } from "lucide-react";
+import { Link } from "wouter";
+import { findHeading, rawCell, type PriceRow, type ProgramRow } from "@/lib/upload-center";
 import { useToast } from "@/hooks/use-toast";
-import { ProgramEditor } from "./program-editor";
-import { SectionEmpty, errorMessage, formatCents, formatDate, useRefreshWorkspace } from "./shared";
+import { ProgramEditor, type LineDraft } from "./program-editor";
+import { centsToInput, SectionEmpty, errorMessage, formatCents, formatDate, useRefreshWorkspace } from "./shared";
 
-export function ProgramsPanel({ programs, resellers, parts }: { programs: ScanbackProgram[]; resellers: Reseller[]; parts: Part[] }) {
+export function ProgramsPanel({ programs, resellers, parts, prices = [], programRows = [] }: {
+  programs: ScanbackProgram[]; resellers: Reseller[]; parts: Part[]; prices?: PriceRow[]; programRows?: ProgramRow[];
+}) {
+  const [seed, setSeed] = useState<LineDraft[] | null>(null);
+  const staged = useMemo<LineDraft[]>(() => {
+    const out: LineDraft[] = [];
+    const seen = new Set<string>();
+    for (const row of programRows) {
+      const skuKey = "sku" in row ? "sku" : findHeading(row, [/^sku$/, /partno/, /^sku/]);
+      const gtmKey = "gtmBuyCents" in row ? "gtmBuyCents" : undefined;
+      const sku = skuKey ? rawCell(row[skuKey]).toUpperCase() : "";
+      if (!sku || seen.has(sku)) continue;
+      seen.add(sku);
+      const caps: Record<number, string> = {};
+      for (const key of Object.keys(row)) {
+        if (key === skuKey || key === gtmKey || key === "description") continue;
+        const k = maskCustomerText(key).toLowerCase().replace(/[^a-z0-9]/g, "");
+        const r = resellers.find((x) => {
+          const names = [x.code, x.name, customerLabel(x.code)].map(c => String(c).toLowerCase().replace(/[^a-z0-9]/g, ""));
+          return names.some(c => c.length >= 2 && [c, `${c}cap`, `${c}qty`, `${c}cappedqty`, `${c}quantity`].includes(k));
+        });
+        const v = rawCell(row[key]);
+        if (r && /^\d+$/.test(v)) caps[r.id] = v;
+      }
+      out.push({ sku, gtm: gtmKey && /^\d+$/.test(rawCell(row[gtmKey])) ? centsToInput(Number(rawCell(row[gtmKey]))) : "", caps });
+    }
+    return out;
+  }, [programRows, resellers]);
   const [editing, setEditing] = useState<ScanbackProgram | null>(null);
   const [open, setOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -42,7 +71,16 @@ export function ProgramsPanel({ programs, resellers, parts }: { programs: Scanba
           <Button variant="outline" size="sm" data-testid="button-toggle-archived" onClick={() => setShowArchived((s) => !s)}>
             {showArchived ? "Hide archived" : "Show archived"}
           </Button>
-          <Button size="sm" data-testid="button-new-program" onClick={() => { setEditing(null); setOpen(true); }}>
+          {staged.length > 0 ? (
+            <Button variant="outline" size="sm" data-testid="button-build-from-table" onClick={() => { setEditing(null); setSeed(staged); setOpen(true); }}>
+              <TableProperties className="mr-1 h-4 w-4" /> Build from program table ({staged.length} SKUs)
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" asChild data-testid="link-upload-program-table">
+              <Link href="/upload"><TableProperties className="mr-1 h-4 w-4" /> Upload a program table</Link>
+            </Button>
+          )}
+          <Button size="sm" data-testid="button-new-program" onClick={() => { setEditing(null); setSeed(null); setOpen(true); }}>
             <Plus className="mr-1 h-4 w-4" /> New promotion
           </Button>
         </div>
@@ -61,7 +99,7 @@ export function ProgramsPanel({ programs, resellers, parts }: { programs: Scanba
                 </div>
                 <div className="flex items-center gap-1">
                   {p.archived && <Badge variant="secondary">Archived</Badge>}
-                  <Button variant="ghost" size="icon" aria-label="Edit" data-testid={`button-edit-program-${p.id}`} onClick={() => { setEditing(p); setOpen(true); }}>
+                  <Button variant="ghost" size="icon" aria-label="Edit" data-testid={`button-edit-program-${p.id}`} onClick={() => { setEditing(p); setSeed(null); setOpen(true); }}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button variant="ghost" size="icon" aria-label={p.archived ? "Restore" : "Archive"} disabled={save.isPending} data-testid={`button-archive-program-${p.id}`} onClick={() => toggleArchive(p)}>
@@ -96,7 +134,7 @@ export function ProgramsPanel({ programs, resellers, parts }: { programs: Scanba
         </div>
       )}
 
-      <ProgramEditor open={open} onOpenChange={setOpen} program={editing} resellers={resellers} parts={parts} />
+      <ProgramEditor open={open} onOpenChange={setOpen} program={editing} resellers={resellers} parts={parts} prices={prices} seedLines={editing ? null : seed} />
     </div>
   );
 }

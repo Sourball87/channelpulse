@@ -1,10 +1,10 @@
-# [Project name]
+# ChannelPulse
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Distributor reporting for reseller stock on hand, weekly sell-through and auditable scanback claims.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- Use the existing managed workflows for the API and ChannelPulse web app; services bind to their workflow-provided `PORT`.
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -21,24 +21,43 @@ _Replace the heading above with the project's name, and this line with one sente
 - Build: esbuild (CJS bundle)
 
 ## Where things live
-
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/channel-pulse/` — React/Vite UI, SOH, Sell Through, Upload Center, Scanback Claims and Settings.
+- `artifacts/api-server/` — authenticated Express API, deterministic parsers and financial verification.
+- `lib/db/src/schema/` — additive PostgreSQL/Drizzle schema.
+- `lib/api-spec/openapi.yaml` — API contract; regenerate clients after changes.
+- `docs/upload-center.md` and `docs/scanback-claims.md` — operating instructions and safeguards.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Upload Center is the only file-intake UI. Other pages link to `/upload`; do not add file pickers elsewhere.
+- Every upload requires human review and confirmation. Recognition and AI suggestions never commit reports or financial evidence automatically.
+- Parsed spreadsheet records are retained in PostgreSQL, not original workbook bytes. Financial imports reuse the existing strict Pronto scope, returns and duplicate checks.
+- Committed reports and financial evidence are immutable. Correct/delete pending previews; do not change committed source history.
+- Claims use reseller invoiced unit price **excluding GST minus GTM Buy Ex**, never distributor purchase cost. A serial may be paid only once across all promotions.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- SOH and ST can appear together in a customer-by-Stock-Code table. A separate Sell Through page retains the newest-first 12-week history.
+- Upload Center detects customer SOH, customer sales/serial reports, DD invoice/serial evidence, historical approved claims, price lists and scanback program tables.
+- Weekly customer-report cards use reporting weeks ending Sunday, reseller-specific expectations, coverage summaries and copyable chase lists.
+- Price lists are persistent reference data. Program-table uploads feed editable promotion drafts; name, dates and eligible customers must be chosen before saving.
+- Scanback Claims provides Programs, Verify Claims and Claims History; it never sends payments or issues Pronto credits.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Display the nine customers only as CA, CC, SC, PL, PC, UM, KS, JW and DI; keep internal matching identities.
+- `ItemForcastReport` / `ItemForecastReport` is Centrecom, not Umart. The user confirmed its sold quantities match Centrecom serials SKU-for-SKU.
+- Do not offer HDD & Memory as a category option or delete existing product/report data to achieve that.
+- Preserve the SOH dashboard, reporting status, shared Focus filters and Pronto import safeguards.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Run codegen after contract edits, then typechecks. Composite shared-library declarations must be rebuilt after library edits.
+- Financial writers share an advisory transaction lock. Canonicalize JSON keys for verification fingerprints because PostgreSQL JSONB reorders them.
+- Preserve CSV date/serial strings before explicit normalization; leading zeroes and day/month dates must not be inferred away.
+- Missing reporting metadata requires user confirmation. Never use upload time or another file to invent a reporting period or customer.
+- AI assistance defaults on, can be disabled, and only sees bounded metadata when deterministic rules cannot decide. Never send source inventory, invoice, serial or claim rows to AI or analytics.
+- Development schema push does not publish the application or update production automatically.
 
 ## Pointers
 

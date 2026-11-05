@@ -685,6 +685,8 @@ export interface Reseller {
   filename_patterns?: string[];
   expected_weekly_files?: number;
   active?: boolean;
+  sends_soh?: boolean;
+  sends_serial_reports?: boolean;
 }
 
 export interface ResellerInput {
@@ -693,6 +695,8 @@ export interface ResellerInput {
   aliases?: string[];
   filename_patterns?: string[];
   expected_weekly_files?: number;
+  sends_soh?: boolean;
+  sends_serial_reports?: boolean;
 }
 
 export interface ResellerUpdate {
@@ -702,6 +706,113 @@ export interface ResellerUpdate {
   filename_patterns?: string[];
   expected_weekly_files?: number;
   active?: boolean;
+  sends_soh?: boolean;
+  sends_serial_reports?: boolean;
+}
+
+export interface CenterFilesInput {
+  files: (Blob | File)[];
+  kind?: string;
+  accountId?: number;
+  weekIso?: string;
+  ai_assist?: boolean;
+}
+
+export type CenterUploadCorrectionKind = typeof CenterUploadCorrectionKind[keyof typeof CenterUploadCorrectionKind];
+
+
+export const CenterUploadCorrectionKind = {
+  soh: 'soh',
+  claim: 'claim',
+  evidence: 'evidence',
+  history: 'history',
+  price: 'price',
+  program: 'program',
+  unknown: 'unknown',
+} as const;
+
+export type CenterUploadCorrectionMapping = {[key: string]: string};
+
+export interface CenterUploadCorrection {
+  kind?: CenterUploadCorrectionKind;
+  /** @nullable */
+  accountId?: number | null;
+  /** @nullable */
+  weekIso?: string | null;
+  mapping?: CenterUploadCorrectionMapping;
+}
+
+export type CenterUploadKind = typeof CenterUploadKind[keyof typeof CenterUploadKind];
+
+
+export const CenterUploadKind = {
+  soh: 'soh',
+  claim: 'claim',
+  evidence: 'evidence',
+  history: 'history',
+  price: 'price',
+  program: 'program',
+  unknown: 'unknown',
+} as const;
+
+export type CenterUploadState = typeof CenterUploadState[keyof typeof CenterUploadState];
+
+
+export const CenterUploadState = {
+  preview: 'preview',
+  committed: 'committed',
+} as const;
+
+export type CenterUploadSummary = {
+  skuCount: number;
+  soh: number;
+  unitsSold: number;
+  serialCount: number;
+  from: string;
+  to: string;
+  ddRangeCount: number;
+  invoicedCount: number;
+};
+
+export type CenterUploadMapping = {[key: string]: string};
+
+export type CenterUploadPreviewItem = { [key: string]: unknown };
+
+export interface CenterUpload {
+  id: string;
+  kind: CenterUploadKind;
+  name: string;
+  /** @nullable */
+  accountId: number | null;
+  /** @nullable */
+  weekIso: string | null;
+  /** @nullable */
+  sourceId: string | null;
+  state: CenterUploadState;
+  createdAt: string;
+  rowCount: number;
+  summary: CenterUploadSummary;
+  errors: string[];
+  headers: string[];
+  mapping: CenterUploadMapping;
+  preview: CenterUploadPreviewItem[];
+}
+
+export type UploadCenterWorkspacePricesItem = {
+  sku: string;
+  description: string;
+  rrpIncCents: number;
+  ddCostExCents: number;
+  t1BuyExCents: number;
+  updatedAt: string;
+};
+
+export type UploadCenterWorkspaceProgramRowsItem = { [key: string]: unknown };
+
+export interface UploadCenterWorkspace {
+  uploads: CenterUpload[];
+  prices: UploadCenterWorkspacePricesItem[];
+  programRows: UploadCenterWorkspaceProgramRowsItem[];
 }
 
 export interface Part {
@@ -726,6 +837,20 @@ export interface PartUpdate {
   category?: string;
   active?: boolean;
 }
+
+export type StageCenterFiles200ErrorsItem = {
+  name: string;
+  error: string;
+};
+
+export type StageCenterFiles200 = {
+  uploads: CenterUpload[];
+  errors: StageCenterFiles200ErrorsItem[];
+};
+
+export type DeleteCenterUpload200 = {
+  success?: boolean;
+};
 
 export type GetDashboardKpisParams = {
 /**

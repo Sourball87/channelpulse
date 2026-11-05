@@ -15,9 +15,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { centsToInput, errorMessage, parseCents, useRefreshWorkspace } from "./shared";
+import type { PriceRow } from "@/lib/upload-center";
+import { centsToInput, formatCents, errorMessage, parseCents, useRefreshWorkspace } from "./shared";
 
-type LineDraft = { sku: string; gtm: string; caps: Record<number, string> };
+export type LineDraft = { sku: string; gtm: string; caps: Record<number, string> };
 
 export function ProgramEditor({
   open,
@@ -25,12 +26,17 @@ export function ProgramEditor({
   program,
   resellers,
   parts,
+  prices = [],
+  seedLines,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   program: ScanbackProgram | null;
   resellers: Reseller[];
   parts: Part[];
+  prices?: PriceRow[];
+  /** Editable draft lines staged from an imported program table. Never saved until the user clicks Save. */
+  seedLines?: LineDraft[] | null;
 }) {
   const { toast } = useToast();
   const refresh = useRefreshWorkspace();
@@ -51,6 +57,7 @@ export function ProgramEditor({
     setEnd(program?.end?.slice(0, 10) ?? "");
     setNotes(program?.notes ?? "");
     setCustomers(program?.customerIds ?? []);
+    if (!program && seedLines) { setLines(seedLines.map((l) => ({ ...l, caps: { ...l.caps } }))); return; }
     setLines(
       (program?.lines ?? []).map((l) => ({
         sku: l.sku ?? parts.find(p => p.id === l.partId)?.part_no ?? "",
@@ -58,7 +65,7 @@ export function ProgramEditor({
         caps: Object.fromEntries(l.caps.map((c) => [c.resellerId, c.quantity == null ? "" : String(c.quantity)])),
       })),
     );
-  }, [open, program]);
+  }, [open, program, seedLines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleCustomer = (id: number) =>
     setCustomers((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
@@ -120,7 +127,7 @@ export function ProgramEditor({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{program ? `Edit ${program.name}` : "New scanback promotion"}</DialogTitle>
+          <DialogTitle>{program ? `Edit ${program.name}` : seedLines ? "Promotion draft from program table" : "New scanback promotion"}</DialogTitle>
           <DialogDescription>
             Claim per serial = reseller invoiced unit price ex GST minus GTM Buy Ex. Your own purchase cost is never used.
           </DialogDescription>
@@ -212,6 +219,15 @@ export function ProgramEditor({
                   <Trash2 className="h-4 w-4 text-rose-600" />
                 </Button>
               </div>
+              {(() => {
+                const pr = prices.find((x) => x.sku.toUpperCase() === l.sku.trim().toUpperCase());
+                return pr ? (
+                  <p className="font-mono text-[11px] text-slate-500" data-testid={`text-line-price-${i}`}>
+                    Reference only: RRP Inc {formatCents(pr.rrpIncCents)} &middot; DD Cost Ex {formatCents(pr.ddCostExCents)} &middot; T1 Buy Ex {formatCents(pr.t1BuyExCents)}
+                    {pr.description && <span className="ml-1 font-sans">&middot; {pr.description}</span>}
+                  </p>
+                ) : l.sku.trim() ? <p className="text-[11px] text-amber-700">SKU not in the price list.</p> : null;
+              })()}
               {selectedCustomers.length > 0 && (
                 <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-4">
                   {selectedCustomers.map((c) => (

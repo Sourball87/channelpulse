@@ -18,6 +18,7 @@ import insightsRebalancingRouter from "./insights-rebalancing";
 import insightsWhitespaceRouter from "./insights-whitespace";
 import insightsResellerPerfRouter from "./insights-reseller-perf";
 import scanbackRouter from "./scanback";
+import uploadCenterRouter from "./upload-center";
 import { maskCustomerResponses } from "../lib/customer-display";
 
 const router: IRouter = Router();
@@ -43,5 +44,6 @@ router.use(insightsRebalancingRouter);
 router.use(insightsWhitespaceRouter);
 router.use(insightsResellerPerfRouter);
 router.use(scanbackRouter);
+router.use(uploadCenterRouter);
 
 export default router;

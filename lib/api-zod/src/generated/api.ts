@@ -8,6 +8,165 @@
 import * as zod from 'zod';
 
 
+export const GetUploadCenterResponse = zod.object({
+  "uploads": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
+  "name": zod.string(),
+  "accountId": zod.int().nullable(),
+  "weekIso": zod.string().nullable(),
+  "sourceId": zod.string().nullable(),
+  "state": zod.enum(['preview', 'committed']),
+  "createdAt": zod.string(),
+  "rowCount": zod.int(),
+  "summary": zod.object({
+  "skuCount": zod.int(),
+  "soh": zod.int(),
+  "unitsSold": zod.int(),
+  "serialCount": zod.int(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "ddRangeCount": zod.int(),
+  "invoicedCount": zod.int()
+}),
+  "errors": zod.array(zod.string()),
+  "headers": zod.array(zod.string()),
+  "mapping": zod.record(zod.string(), zod.string()),
+  "preview": zod.array(zod.record(zod.string(), zod.unknown()))
+})),
+  "prices": zod.array(zod.object({
+  "sku": zod.string(),
+  "description": zod.string(),
+  "rrpIncCents": zod.int(),
+  "ddCostExCents": zod.int(),
+  "t1BuyExCents": zod.int(),
+  "updatedAt": zod.string()
+})),
+  "programRows": zod.array(zod.record(zod.string(), zod.unknown()))
+})
+
+
+export const stageCenterFilesBodyAiAssistDefault = true;
+
+export const StageCenterFilesBody = zod.object({
+  "files": zod.array(zod.instanceof(Blob)),
+  "kind": zod.string().optional(),
+  "accountId": zod.int().optional(),
+  "weekIso": zod.string().optional(),
+  "ai_assist": zod.boolean().default(stageCenterFilesBodyAiAssistDefault)
+})
+
+export const StageCenterFilesResponse = zod.object({
+  "uploads": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
+  "name": zod.string(),
+  "accountId": zod.int().nullable(),
+  "weekIso": zod.string().nullable(),
+  "sourceId": zod.string().nullable(),
+  "state": zod.enum(['preview', 'committed']),
+  "createdAt": zod.string(),
+  "rowCount": zod.int(),
+  "summary": zod.object({
+  "skuCount": zod.int(),
+  "soh": zod.int(),
+  "unitsSold": zod.int(),
+  "serialCount": zod.int(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "ddRangeCount": zod.int(),
+  "invoicedCount": zod.int()
+}),
+  "errors": zod.array(zod.string()),
+  "headers": zod.array(zod.string()),
+  "mapping": zod.record(zod.string(), zod.string()),
+  "preview": zod.array(zod.record(zod.string(), zod.unknown()))
+})),
+  "errors": zod.array(zod.object({
+  "name": zod.string(),
+  "error": zod.string()
+}))
+})
+
+
+export const CorrectCenterUploadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CorrectCenterUploadBody = zod.object({
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']).optional(),
+  "accountId": zod.int().nullish(),
+  "weekIso": zod.string().nullish(),
+  "mapping": zod.record(zod.string(), zod.string()).optional()
+})
+
+export const CorrectCenterUploadResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
+  "name": zod.string(),
+  "accountId": zod.int().nullable(),
+  "weekIso": zod.string().nullable(),
+  "sourceId": zod.string().nullable(),
+  "state": zod.enum(['preview', 'committed']),
+  "createdAt": zod.string(),
+  "rowCount": zod.int(),
+  "summary": zod.object({
+  "skuCount": zod.int(),
+  "soh": zod.int(),
+  "unitsSold": zod.int(),
+  "serialCount": zod.int(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "ddRangeCount": zod.int(),
+  "invoicedCount": zod.int()
+}),
+  "errors": zod.array(zod.string()),
+  "headers": zod.array(zod.string()),
+  "mapping": zod.record(zod.string(), zod.string()),
+  "preview": zod.array(zod.record(zod.string(), zod.unknown()))
+})
+
+
+export const DeleteCenterUploadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteCenterUploadResponse = zod.object({
+  "success": zod.boolean().optional()
+})
+
+
+export const CommitCenterReferenceParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CommitCenterReferenceResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
+  "name": zod.string(),
+  "accountId": zod.int().nullable(),
+  "weekIso": zod.string().nullable(),
+  "sourceId": zod.string().nullable(),
+  "state": zod.enum(['preview', 'committed']),
+  "createdAt": zod.string(),
+  "rowCount": zod.int(),
+  "summary": zod.object({
+  "skuCount": zod.int(),
+  "soh": zod.int(),
+  "unitsSold": zod.int(),
+  "serialCount": zod.int(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "ddRangeCount": zod.int(),
+  "invoicedCount": zod.int()
+}),
+  "errors": zod.array(zod.string()),
+  "headers": zod.array(zod.string()),
+  "mapping": zod.record(zod.string(), zod.string()),
+  "preview": zod.array(zod.record(zod.string(), zod.unknown()))
+})
+
+
 export const GetAuthSessionResponse = zod.object({
   "authenticated": zod.boolean()
 })
@@ -1056,7 +1215,9 @@ export const GetResellersResponseItem = zod.object({
   "aliases": zod.array(zod.string()).optional(),
   "filename_patterns": zod.array(zod.string()).optional(),
   "expected_weekly_files": zod.int().optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sends_soh": zod.boolean().optional(),
+  "sends_serial_reports": zod.boolean().optional()
 })
 export const GetResellersResponse = zod.array(GetResellersResponseItem)
 
@@ -1069,7 +1230,9 @@ export const CreateResellerBody = zod.object({
   "code": zod.string(),
   "aliases": zod.array(zod.string()).optional(),
   "filename_patterns": zod.array(zod.string()).optional(),
-  "expected_weekly_files": zod.int().optional()
+  "expected_weekly_files": zod.int().optional(),
+  "sends_soh": zod.boolean().optional(),
+  "sends_serial_reports": zod.boolean().optional()
 })
 
 export const CreateResellerResponse = zod.object({
@@ -1079,7 +1242,9 @@ export const CreateResellerResponse = zod.object({
   "aliases": zod.array(zod.string()).optional(),
   "filename_patterns": zod.array(zod.string()).optional(),
   "expected_weekly_files": zod.int().optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sends_soh": zod.boolean().optional(),
+  "sends_serial_reports": zod.boolean().optional()
 })
 
 
@@ -1096,7 +1261,9 @@ export const UpdateResellerBody = zod.object({
   "aliases": zod.array(zod.string()).optional(),
   "filename_patterns": zod.array(zod.string()).optional(),
   "expected_weekly_files": zod.int().optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sends_soh": zod.boolean().optional(),
+  "sends_serial_reports": zod.boolean().optional()
 })
 
 export const UpdateResellerResponse = zod.object({
@@ -1106,7 +1273,9 @@ export const UpdateResellerResponse = zod.object({
   "aliases": zod.array(zod.string()).optional(),
   "filename_patterns": zod.array(zod.string()).optional(),
   "expected_weekly_files": zod.int().optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sends_soh": zod.boolean().optional(),
+  "sends_serial_reports": zod.boolean().optional()
 })
 
 

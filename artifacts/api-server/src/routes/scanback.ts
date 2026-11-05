@@ -8,6 +8,7 @@ import {
 } from "@workspace/api-zod";
 import { parseSheets, suggestMapping, detectImportKind } from "../lib/scanback-import";
 import { validDate } from "../lib/scanback-engine";
+import { dateStringToWeekIso, isValidWeekIso } from "../lib/parser";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
   total, recordApprovedSerials, statementRows, requireThat, ScanbackError, type Client,
@@ -140,6 +141,22 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
   if (base.state === "committed") return publicImport(base, true);
   const raw = (await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [base.id])).rows[0].raw_sheets;
   const value = await rebuildImport(c, base, raw, base);
+  if (value.kind === "claim") {
+    const registry = (await c.query("SELECT payload FROM center_uploads WHERE payload->>'sourceId'=$1", [base.id])).rows[0]?.payload;
+    if (registry) {
+      const ids = [...new Set(value.rows.map(r => r.accountId).filter(id => id != null))];
+      const accountId = value.accountId ?? (ids.length === 1 ? ids[0] : registry.accountId);
+      const dates = value.rows.map(r => r.date).filter(Boolean);
+      const weeks = [...new Set(dates.map(dateStringToWeekIso))];
+      const week = registry.weekIso ?? (weeks.length === 1 ? weeks[0] : null);
+      requireThat(accountId != null, "Choose this serial report's reseller in Upload Center before committing.");
+      requireThat(week && isValidWeekIso(week), "Choose this serial report's reporting week in Upload Center before committing.");
+      requireThat(ids.every(id => id === accountId), "A weekly customer report must belong to one reseller. Split reports containing several customers.");
+      value.accountId = accountId;
+      await c.query("UPDATE center_uploads SET payload=payload || $2::jsonb WHERE id=$1",
+        [registry.id, JSON.stringify({ accountId, weekIso: week })]);
+    }
+  }
   requireThat(value.errors.length === 0, "Resolve every preview error before committing.");
   // Rebuild while holding the same lock as approvals: a history import cannot
   // bypass the duplicate-serial rule, even if its preview was created earlier.

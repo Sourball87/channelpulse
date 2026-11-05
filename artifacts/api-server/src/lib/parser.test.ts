@@ -209,10 +209,10 @@ describe("detectResellerFromHeaders", () => {
     expect(r.resolutionSource).toBe("format_unique");
   });
 
-  it("Umart: unique format → resolved", () => {
+  it("Centrecom ItemForcastReport: unique format → resolved", () => {
     const r = detectResellerFromHeaders(UMART_HEADERS, "ItemForcastReport", RESELLERS);
-    expect(r.resellerId).toBe(4);
-    expect(r.formatId).toBe("umart_weekly");
+    expect(r.resellerId).toBe(6);
+    expect(r.formatId).toBe("centrecom_forecast");
   });
 
   it("JW: unique format → resolved", () => {

@@ -71,7 +71,7 @@ function ResellersTab() {
       <CardHeader className="flex flex-row items-center justify-between border-b">
         <div>
           <CardTitle>Reseller Configuration</CardTitle>
-          <CardDescription>Manage channel partners and their file patterns</CardDescription>
+          <CardDescription>Manage channel partners, their file patterns and which weekly reports the Upload Center expects. Files are uploaded only in the Upload Center.</CardDescription>
         </div>
         <ResellerDialog 
           open={isDialogOpen} 
@@ -89,12 +89,14 @@ function ResellersTab() {
               <TableHead>Name</TableHead>
               <TableHead>Expected Files/Wk</TableHead>
               <TableHead>Source Matching</TableHead>
+              <TableHead>Sends SOH</TableHead>
+              <TableHead>Sends serial reports</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
             ) : resellers?.map((r) => (
               <TableRow key={r.id} className={r.active === false ? "opacity-60" : ""}>
                 <TableCell>
@@ -110,6 +112,8 @@ function ResellersTab() {
                     </Badge>
                   </div>
                 </TableCell>
+                <TableCell><FlagSwitch reseller={r} field="sends_soh" /></TableCell>
+                <TableCell><FlagSwitch reseller={r} field="sends_serial_reports" /></TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" onClick={() => { setEditingReseller(r); setIsDialogOpen(true); }}>
                     <Edit2 className="h-4 w-4" />
@@ -121,6 +125,34 @@ function ResellersTab() {
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+type ResellerFlag = "sends_soh" | "sends_serial_reports";
+export function resellerFlag(r: unknown, field: ResellerFlag): boolean {
+  const v = (r as Record<string, unknown>)[field];
+  return typeof v === "boolean" ? v : field === "sends_soh";
+}
+
+function FlagSwitch({ reseller, field }: { reseller: { id: number; code: string }; field: ResellerFlag }) {
+  const update = useUpdateReseller();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const checked = resellerFlag(reseller, field);
+  return (
+    <Switch
+      checked={checked}
+      disabled={update.isPending}
+      aria-label={`${field === "sends_soh" ? "Sends SOH" : "Sends serial reports"} for ${customerLabel(reseller.code)}`}
+      data-testid={`switch-${field}-${reseller.id}`}
+      onCheckedChange={(c) => update.mutate(
+        { id: reseller.id, data: { [field]: c } as Record<string, boolean> },
+        {
+          onSuccess: () => { queryClient.invalidateQueries(); },
+          onError: () => toast({ title: "Could not update reseller", variant: "destructive" }),
+        },
+      )}
+    />
   );
 }
 

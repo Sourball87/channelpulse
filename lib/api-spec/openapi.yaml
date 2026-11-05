@@ -19,6 +19,83 @@ tags:
   - name: column-mappings
 
 paths:
+  /upload-center:
+    get:
+      operationId: getUploadCenter
+      tags: [uploads]
+      responses:
+        "200":
+          description: Unified upload history and committed reference data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadCenterWorkspace" }
+  /upload-center/files:
+    post:
+      operationId: stageCenterFiles
+      tags: [uploads]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/CenterFilesInput" }
+      responses:
+        "200":
+          description: Previews only, never automatically committed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uploads, errors]
+                properties:
+                  uploads: { type: array, items: { $ref: "#/components/schemas/CenterUpload" } }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, error]
+                      properties:
+                        name: { type: string }
+                        error: { type: string }
+  /upload-center/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      operationId: correctCenterUpload
+      tags: [uploads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CenterUploadCorrection" }
+      responses:
+        "200":
+          description: Corrected preview; committed sources are immutable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CenterUpload" }
+        "409": { description: Committed upload cannot be corrected }
+    delete:
+      operationId: deleteCenterUpload
+      tags: [uploads]
+      responses:
+        "200":
+          description: Pending preview removed
+          content:
+            application/json:
+              schema: { type: object, properties: { success: { type: boolean } } }
+        "409": { description: Committed upload cannot be deleted }
+  /upload-center/{id}/commit:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: commitCenterReference
+      tags: [uploads]
+      responses:
+        "200":
+          description: Validated price list or program table committed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CenterUpload" }
   /auth/session:
     get:
       operationId: getAuthSession
@@ -1485,6 +1562,10 @@ components:
           type: integer
         active:
           type: boolean
+        sends_soh:
+          type: boolean
+        sends_serial_reports:
+          type: boolean
 
     ResellerInput:
       type: object
@@ -1504,6 +1585,10 @@ components:
             type: string
         expected_weekly_files:
           type: integer
+        sends_soh:
+          type: boolean
+        sends_serial_reports:
+          type: boolean
 
     ResellerUpdate:
       type: object
@@ -1524,6 +1609,78 @@ components:
           type: integer
         active:
           type: boolean
+        sends_soh:
+          type: boolean
+        sends_serial_reports:
+          type: boolean
+
+    CenterFilesInput:
+      type: object
+      required: [files]
+      properties:
+        files: { type: array, items: { type: string, format: binary } }
+        kind: { type: string }
+        accountId: { type: integer }
+        weekIso: { type: string }
+        ai_assist: { type: boolean, default: true }
+    CenterUploadCorrection:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [soh, claim, evidence, history, price, program, unknown]
+        accountId: { type: [integer, "null"] }
+        weekIso: { type: [string, "null"] }
+        mapping:
+          type: object
+          additionalProperties: { type: string }
+    CenterUpload:
+      type: object
+      required: [id, kind, name, accountId, weekIso, sourceId, state, createdAt, rowCount, summary, errors, headers, mapping, preview]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [soh, claim, evidence, history, price, program, unknown] }
+        name: { type: string }
+        accountId: { type: [integer, "null"] }
+        weekIso: { type: [string, "null"] }
+        sourceId: { type: [string, "null"] }
+        state: { type: string, enum: [preview, committed] }
+        createdAt: { type: string }
+        rowCount: { type: integer }
+        summary:
+          type: object
+          required: [skuCount, soh, unitsSold, serialCount, from, to, ddRangeCount, invoicedCount]
+          properties:
+            skuCount: { type: integer }
+            soh: { type: integer }
+            unitsSold: { type: integer }
+            serialCount: { type: integer }
+            from: { type: string }
+            to: { type: string }
+            ddRangeCount: { type: integer }
+            invoicedCount: { type: integer }
+        errors: { type: array, items: { type: string } }
+        headers: { type: array, items: { type: string } }
+        mapping: { type: object, additionalProperties: { type: string } }
+        preview: { type: array, items: { type: object, additionalProperties: true } }
+    UploadCenterWorkspace:
+      type: object
+      required: [uploads, prices, programRows]
+      properties:
+        uploads: { type: array, items: { $ref: "#/components/schemas/CenterUpload" } }
+        prices:
+          type: array
+          items:
+            type: object
+            required: [sku, description, rrpIncCents, ddCostExCents, t1BuyExCents, updatedAt]
+            properties:
+              sku: { type: string }
+              description: { type: string }
+              rrpIncCents: { type: integer }
+              ddCostExCents: { type: integer }
+              t1BuyExCents: { type: integer }
+              updatedAt: { type: string }
+        programRows: { type: array, items: { type: object, additionalProperties: true } }
 
     Part:
       type: object

@@ -3,13 +3,13 @@ import { analyzeReportData, type ResellerProfile } from "./parser";
 import { diagnoseUpload, reanalyzeStoredUpload, selectReportingWeek, withMappings, type Recognition } from "./upload-review";
 
 const profiles: ResellerProfile[] = [
-  { id: 1, code: "umart", name: "Umart", aliases: [], filenamePatterns: [] },
+  { id: 1, code: "centrecom", name: "Centrecom", aliases: [], filenamePatterns: [] },
   { id: 2, code: "ca", name: "Computer Alliance", aliases: [], filenamePatterns: [] },
   { id: 3, code: "ks", name: "KS Computer Tech", aliases: [], filenamePatterns: [] },
 ];
 const headers = ["SapCode", "Sku", "TotalOnHand", "OtherOnHand", "DaysToSale", "OnOrderQty", "SoldQty"];
 const cells = { SapCode: 1, Sku: "MZ-V9P1T0BW", TotalOnHand: 12, OtherOnHand: 0, DaysToSale: 6, OnOrderQty: 2, SoldQty: 3 };
-function report(filename = "Umart_2026-07-05.xlsx") {
+function report(filename = "Centrecom_2026-07-05.xlsx") {
   return analyzeReportData({ filename, headers, rawRows: [cells], sheetName: "ItemForcastReport", fileHash: "test", parserUsed: "stored" }, profiles);
 }
 const metadata = (): Recognition => ({ version: 1, sheetName: "ItemForcastReport", weekSource: "filename" });

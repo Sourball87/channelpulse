@@ -12,4 +12,6 @@ export interface ResellerInput {
   aliases?: string[];
   filename_patterns?: string[];
   expected_weekly_files?: number;
+  sends_soh?: boolean;
+  sends_serial_reports?: boolean;
 }

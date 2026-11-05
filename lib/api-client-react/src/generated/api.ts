@@ -28,9 +28,13 @@ import type {
   AdminLoginInput,
   Alert,
   AuthSession,
+  CenterFilesInput,
+  CenterUpload,
+  CenterUploadCorrection,
   ColumnMapping,
   CommitUploadInput,
   DashboardKpis,
+  DeleteCenterUpload200,
   DeleteResult,
   ExplorerRow,
   GetAlertsParams,
@@ -61,9 +65,11 @@ import type {
   ScanbackUpload,
   ScanbackVerificationInput,
   ScanbackWorkspace,
+  StageCenterFiles200,
   TrendPoint,
   TrendSeries,
   Upload,
+  UploadCenterWorkspace,
   UploadFilesInput,
   UploadRecheckInput,
   UploadReviewCard,
@@ -97,6 +103,402 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetUploadCenterUrl = () => {
+
+
+
+
+  return `/api/upload-center`
+}
+
+export const getUploadCenter = async ( options?: Parameters<typeof customFetch>[1]): Promise<UploadCenterWorkspace> => {
+
+  return customFetch<UploadCenterWorkspace>(getGetUploadCenterUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUploadCenterQueryKey = () => {
+    return [
+    `/api/upload-center`
+    ] as const;
+    }
+
+
+export const getGetUploadCenterQueryOptions = <TData = Awaited<ReturnType<typeof getUploadCenter>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploadCenter>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUploadCenterQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUploadCenter>>> = ({ signal }) => getUploadCenter({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUploadCenter>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetUploadCenterQueryResult = NonNullable<Awaited<ReturnType<typeof getUploadCenter>>>
+export type GetUploadCenterQueryError = ErrorType<unknown>
+
+
+export function useGetUploadCenter<TData = Awaited<ReturnType<typeof getUploadCenter>>, TError = ErrorType<unknown>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploadCenter>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getUploadCenter>>,
+          TError,
+          Awaited<ReturnType<typeof getUploadCenter>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetUploadCenter<TData = Awaited<ReturnType<typeof getUploadCenter>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploadCenter>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getUploadCenter>>,
+          TError,
+          Awaited<ReturnType<typeof getUploadCenter>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetUploadCenter<TData = Awaited<ReturnType<typeof getUploadCenter>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploadCenter>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetUploadCenter<TData = Awaited<ReturnType<typeof getUploadCenter>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploadCenter>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetUploadCenterQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStageCenterFilesUrl = () => {
+
+
+
+
+  return `/api/upload-center/files`
+}
+
+export const stageCenterFiles = async (centerFilesInput: CenterFilesInput, options?: Parameters<typeof customFetch>[1]): Promise<StageCenterFiles200> => {
+    const formData = new FormData();
+centerFilesInput.files.forEach(value => formData.append(`files`, value));
+if(centerFilesInput.kind !== undefined) {
+ formData.append(`kind`, centerFilesInput.kind);
+ }
+if(centerFilesInput.accountId !== undefined) {
+ formData.append(`accountId`, centerFilesInput.accountId.toString())
+ }
+if(centerFilesInput.weekIso !== undefined) {
+ formData.append(`weekIso`, centerFilesInput.weekIso);
+ }
+if(centerFilesInput.ai_assist !== undefined) {
+ formData.append(`ai_assist`, centerFilesInput.ai_assist.toString())
+ }
+
+  return customFetch<StageCenterFiles200>(getStageCenterFilesUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+
+export const getStageCenterFilesMutationKey = () => ['stageCenterFiles'] as const;
+
+export const getStageCenterFilesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stageCenterFiles>>, TError,StageCenterFilesMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stageCenterFiles>>, TError,StageCenterFilesMutationVariables, TContext> => {
+
+const mutationKey = getStageCenterFilesMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stageCenterFiles>>, StageCenterFilesMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  stageCenterFiles(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StageCenterFilesMutationResult = NonNullable<Awaited<ReturnType<typeof stageCenterFiles>>>
+    export type StageCenterFilesMutationBody = BodyType<CenterFilesInput>
+    export type StageCenterFilesMutationError = ErrorType<unknown>
+    export type StageCenterFilesMutationVariables = {data: BodyType<CenterFilesInput>}
+
+    export const useStageCenterFiles = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stageCenterFiles>>, TError,StageCenterFilesMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof stageCenterFiles>>,
+        TError,
+        StageCenterFilesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStageCenterFilesMutationOptions(options), queryClient);
+    }
+
+export const getCorrectCenterUploadUrl = (id: string,) => {
+
+
+
+
+  return `/api/upload-center/${id}`
+}
+
+export const correctCenterUpload = async (id: string,
+    centerUploadCorrection: CenterUploadCorrection, options?: Parameters<typeof customFetch>[1]): Promise<CenterUpload> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<CenterUpload>(getCorrectCenterUploadUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(centerUploadCorrection)
+  }
+);}
+
+
+
+
+
+export const getCorrectCenterUploadMutationKey = () => ['correctCenterUpload'] as const;
+
+export const getCorrectCenterUploadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctCenterUpload>>, TError,CorrectCenterUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof correctCenterUpload>>, TError,CorrectCenterUploadMutationVariables, TContext> => {
+
+const mutationKey = getCorrectCenterUploadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof correctCenterUpload>>, CorrectCenterUploadMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  correctCenterUpload(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CorrectCenterUploadMutationResult = NonNullable<Awaited<ReturnType<typeof correctCenterUpload>>>
+    export type CorrectCenterUploadMutationBody = BodyType<CenterUploadCorrection>
+    export type CorrectCenterUploadMutationError = ErrorType<void>
+    export type CorrectCenterUploadMutationVariables = {id: string;data: BodyType<CenterUploadCorrection>}
+
+    export const useCorrectCenterUpload = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof correctCenterUpload>>, TError,CorrectCenterUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof correctCenterUpload>>,
+        TError,
+        CorrectCenterUploadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCorrectCenterUploadMutationOptions(options), queryClient);
+    }
+
+export const getDeleteCenterUploadUrl = (id: string,) => {
+
+
+
+
+  return `/api/upload-center/${id}`
+}
+
+export const deleteCenterUpload = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<DeleteCenterUpload200> => {
+
+  return customFetch<DeleteCenterUpload200>(getDeleteCenterUploadUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCenterUploadMutationKey = () => ['deleteCenterUpload'] as const;
+
+export const getDeleteCenterUploadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCenterUpload>>, TError,DeleteCenterUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCenterUpload>>, TError,DeleteCenterUploadMutationVariables, TContext> => {
+
+const mutationKey = getDeleteCenterUploadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCenterUpload>>, DeleteCenterUploadMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteCenterUpload(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCenterUploadMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCenterUpload>>>
+
+    export type DeleteCenterUploadMutationError = ErrorType<void>
+    export type DeleteCenterUploadMutationVariables = {id: string}
+
+    export const useDeleteCenterUpload = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCenterUpload>>, TError,DeleteCenterUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCenterUpload>>,
+        TError,
+        DeleteCenterUploadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteCenterUploadMutationOptions(options), queryClient);
+    }
+
+export const getCommitCenterReferenceUrl = (id: string,) => {
+
+
+
+
+  return `/api/upload-center/${id}/commit`
+}
+
+export const commitCenterReference = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<CenterUpload> => {
+
+  return customFetch<CenterUpload>(getCommitCenterReferenceUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCommitCenterReferenceMutationKey = () => ['commitCenterReference'] as const;
+
+export const getCommitCenterReferenceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitCenterReference>>, TError,CommitCenterReferenceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof commitCenterReference>>, TError,CommitCenterReferenceMutationVariables, TContext> => {
+
+const mutationKey = getCommitCenterReferenceMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitCenterReference>>, CommitCenterReferenceMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  commitCenterReference(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CommitCenterReferenceMutationResult = NonNullable<Awaited<ReturnType<typeof commitCenterReference>>>
+
+    export type CommitCenterReferenceMutationError = ErrorType<unknown>
+    export type CommitCenterReferenceMutationVariables = {id: string}
+
+    export const useCommitCenterReference = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitCenterReference>>, TError,CommitCenterReferenceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof commitCenterReference>>,
+        TError,
+        CommitCenterReferenceMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCommitCenterReferenceMutationOptions(options), queryClient);
+    }
 
 export const getGetAuthSessionUrl = () => {
 

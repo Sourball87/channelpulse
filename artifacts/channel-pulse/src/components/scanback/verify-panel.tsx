@@ -1,5 +1,5 @@
 import { customerLabel } from "@/lib/customer-display";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getExportScanbackBatchUrl,
   getExportScanbackDraftUrl,
@@ -26,10 +26,12 @@ import { CheckCircle2, Download, RefreshCw, ShieldCheck } from "lucide-react";
 import { SectionEmpty, StatusPill, errorMessage, formatCents, formatDate, formatDateTime, useRefreshWorkspace } from "./shared";
 
 export function VerifyPanel({
-  programs, imports, drafts, resellers, onApproved,
+  programs, imports, drafts, resellers, onApproved, preset,
 }: {
   programs: ScanbackProgram[]; imports: ScanbackImport[]; drafts: ScanbackDraft[]; resellers: Reseller[];
   onApproved: (b: ScanbackBatch) => void;
+  /** Deep-link preselection from the Upload Center: report import id, reseller, promotion and date range. */
+  preset?: { reportId?: string; resellerId?: number; promotionId?: string; from?: string; to?: string } | null;
 }) {
   const refresh = useRefreshWorkspace();
   const verify = useVerifyScanbackClaim();
@@ -53,7 +55,20 @@ export function VerifyPanel({
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const accounts = program ? resellers.filter((r) => program.customerIds.includes(r.id)) : [];
 
+  const presetKey = preset ? JSON.stringify(preset) : "";
+  const presetApplied = useRef("");
+  const presetDates = useRef<string | null>(null);
   useEffect(() => {
+    if (!preset || presetApplied.current === presetKey) return;
+    presetApplied.current = presetKey;
+    if (preset.promotionId && programs.some((p) => p.id === preset.promotionId)) setProgramId(preset.promotionId);
+    if (preset.resellerId != null) setAccountId(String(preset.resellerId));
+    if (preset.reportId && imports.some((i) => i.id === preset.reportId)) setClaimImportId(preset.reportId);
+    if (preset.from && preset.to) { setFrom(preset.from.slice(0, 10)); setTo(preset.to.slice(0, 10)); presetDates.current = preset.promotionId ?? ""; }
+  }, [presetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (presetDates.current != null && presetDates.current === programId) { presetDates.current = null; return; }
     if (program && !draft) { setFrom(program.start.slice(0, 10)); setTo(program.end.slice(0, 10)); }
   }, [programId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,7 +134,7 @@ export function VerifyPanel({
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <div className="space-y-1 xl:col-span-2">
             <Label className="text-xs">Promotion</Label>
-            <Select value={programId} onValueChange={(v) => { setProgramId(v); setAccountId(""); }}>
+            <Select value={programId} onValueChange={(v) => { setProgramId(v); const p = programs.find((x) => x.id === v); if (!p || !p.customerIds.includes(Number(accountId))) setAccountId(""); }}>
               <SelectTrigger data-testid="select-verify-program"><SelectValue placeholder="Choose promotion" /></SelectTrigger>
               <SelectContent>{activePrograms.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
             </Select>

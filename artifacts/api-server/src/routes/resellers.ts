@@ -22,6 +22,8 @@ router.get("/resellers", async (req, res) => {
         filename_patterns: r.filenamePatterns ?? [],
         expected_weekly_files: r.expectedWeeklyFiles,
         active: r.active,
+        sends_soh: r.sendsSoh,
+        sends_serial_reports: r.sendsSerialReports,
       })),
     );
   } catch (err) {
@@ -35,7 +37,7 @@ router.post("/resellers", async (req, res) => {
   if (!body.success) {
     return res.status(400).json({ error: "Invalid input", details: body.error.issues });
   }
-  const { name, code, aliases, filename_patterns, expected_weekly_files } = body.data;
+  const { name, code, aliases, filename_patterns, expected_weekly_files, sends_soh, sends_serial_reports } = body.data;
   try {
     const [row] = await db
       .insert(resellers)
@@ -45,6 +47,8 @@ router.post("/resellers", async (req, res) => {
         aliases: (aliases ?? []) as string[],
         filenamePatterns: (filename_patterns ?? []) as string[],
         expectedWeeklyFiles: expected_weekly_files ?? 1,
+        sendsSoh: sends_soh ?? true,
+        sendsSerialReports: sends_serial_reports ?? false,
       })
       .returning();
     res.status(201).json({
@@ -55,6 +59,8 @@ router.post("/resellers", async (req, res) => {
       filename_patterns: row.filenamePatterns ?? [],
       expected_weekly_files: row.expectedWeeklyFiles,
       active: row.active,
+      sends_soh: row.sendsSoh,
+      sends_serial_reports: row.sendsSerialReports,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create reseller");
@@ -69,7 +75,7 @@ router.patch("/resellers/:id", async (req, res) => {
   const body = UpdateResellerBody.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid input" });
 
-  const { name, code, aliases, filename_patterns, expected_weekly_files, active } = body.data;
+  const { name, code, aliases, filename_patterns, expected_weekly_files, active, sends_soh, sends_serial_reports } = body.data;
 
   try {
     const updates: Record<string, unknown> = {};
@@ -79,6 +85,8 @@ router.patch("/resellers/:id", async (req, res) => {
     if (filename_patterns !== undefined) updates.filenamePatterns = filename_patterns;
     if (expected_weekly_files !== undefined) updates.expectedWeeklyFiles = expected_weekly_files;
     if (active !== undefined) updates.active = active;
+    if (sends_soh !== undefined) updates.sendsSoh = sends_soh;
+    if (sends_serial_reports !== undefined) updates.sendsSerialReports = sends_serial_reports;
 
     const [row] = await db
       .update(resellers)
@@ -96,6 +104,8 @@ router.patch("/resellers/:id", async (req, res) => {
       filename_patterns: row.filenamePatterns ?? [],
       expected_weekly_files: row.expectedWeeklyFiles,
       active: row.active,
+      sends_soh: row.sendsSoh,
+      sends_serial_reports: row.sendsSerialReports,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update reseller");

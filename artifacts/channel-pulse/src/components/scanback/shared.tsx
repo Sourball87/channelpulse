@@ -58,7 +58,10 @@ export function useScanbackWorkspace() {
 
 export function useRefreshWorkspace() {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: getGetScanbackWorkspaceQueryKey() });
+  return () => Promise.all([
+    qc.invalidateQueries({ queryKey: getGetScanbackWorkspaceQueryKey() }),
+    qc.invalidateQueries({ queryKey: ["/api/upload-center"] }),
+  ]);
 }
 
 const STATUS_STYLE: Record<ScanbackResultStatus, string> = {
