@@ -162,7 +162,7 @@ export function mapImport(
     if (base.kind === "evidence" && !text("invoice")) error("Invoice / credit reference is required.");
     const quantity = value("quantity") === "" ? 1 : Number(value("quantity"));
     if (!Number.isSafeInteger(quantity) || quantity === 0) error("Quantity must be a nonzero whole number.");
-    if (base.kind === "evidence" && Math.abs(quantity) !== serials.length)
+    if (base.kind === "evidence" && !scope && Math.abs(quantity) !== serials.length)
       error("Invoice quantity must match the number of serials on the row.");
     const price = cents(value("unitPrice"));
     const cost = cents(value("cost"));

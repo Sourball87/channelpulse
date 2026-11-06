@@ -34,7 +34,7 @@ export function parseProntoSerials(value: unknown) {
 }
 export const splitSerials = (value: unknown) => parseProntoSerials(value).serials;
 export const unmatchedCreditReason = "Unmatched credit — no serial number";
-export const serialCountMismatchReason = "Serial count does not match Ship Qty";
+export const serialCountExceedsQuantityReason = "More serials than Ship Qty";
 export const unmatchedCreditKey = (accountId: number, sku: string) => `${accountId}|${sku.trim().toUpperCase()}`;
 
 export interface ProntoCreditResolution {
@@ -147,21 +147,28 @@ export function scopePronto(
     const code = String(row["Account Code"] ?? "").trim(), sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
     const id = mapping[code], serials = splitSerials(row["Serial Number"]), quantity = Number(row["Ship Qty"]);
     const validAccount = id != null && allowed.some(a => a.id === id);
-    const countMismatch = Number.isSafeInteger(quantity) && (quantity > 0 || serials.length > 0) &&
-      Math.abs(quantity) !== serials.length;
+    const countExceedsQuantity = Number.isSafeInteger(quantity) && serials.length > Math.abs(quantity);
     const reason = !validAccount ? "Account not selected"
-      : countMismatch ? serialCountMismatchReason
+      : countExceedsQuantity ? serialCountExceedsQuantityReason
       : !serials.length && quantity < 0 ? unmatchedCreditReason
       : !serials.length ? "No serial number — not serial-level evidence" : "";
     if (!reason) { include.set(i, id!); preview.includedSourceRows++; return; }
     preview.excludedSourceRows++;
     preview.excludedCounts[reason] = (preview.excludedCounts[reason] ?? 0) + 1;
-    if (reason === serialCountMismatchReason)
-      warnings.push(`Row ${i + 2} (${String(row["Invoice No"] ?? "").trim() || "no invoice"}): ${serialCountMismatchReason.toLowerCase()} (${serials.length} valid serial(s), Ship Qty ${quantity}). This row was excluded; other rows can still be committed.`);
+    if (reason === serialCountExceedsQuantityReason)
+      warnings.push(`Row ${i + 2} (${String(row["Invoice No"] ?? "").trim() || "no invoice"}): found ${serials.length} valid serials, exceeding Ship Qty ${Math.abs(quantity)}. This row was excluded.`);
     if (preview.excludedSamples.filter(sample => sample.reason === reason).length < 15) preview.excludedSamples.push({
       row: i + 2, accountCode: code, accountName: String(row["Reseller Name"] ?? ""), sku,
       invoice: String(row["Invoice No"] ?? ""), quantity: Number.isFinite(quantity) ? quantity : 0, serialCount: serials.length, reason,
     });
+  });
+  rows.forEach((row, i) => {
+    const quantity = Number(row["Ship Qty"]);
+    const serials = splitSerials(row["Serial Number"]);
+    if (mapping[String(row["Account Code"] ?? "").trim()] != null &&
+      Number.isSafeInteger(quantity) && serials.length > 0 && serials.length < Math.abs(quantity)) {
+      warnings.push(`Row ${i + 2} (${String(row["Invoice No"] ?? "").trim() || "no invoice"}): serial count shortfall — expected ${Math.abs(quantity)}, found ${serials.length}. Retained the valid serials.`);
+    }
   });
   return { preview, include, errors, warnings };
 }

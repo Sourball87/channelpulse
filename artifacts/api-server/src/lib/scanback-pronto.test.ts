@@ -52,16 +52,38 @@ describe("native Pronto POS evidence", () => {
     expect(result.rows.map(record => record.serial)).toEqual(["S7MLNS0YC02190", "ABCDEF12"]);
     expect(result.warnings.some(w => w.includes("-+08") && w.includes("000000000000"))).toBe(true);
   });
-  it("excludes a serial-count mismatch row without blocking other Pronto rows", () => {
+  it("keeps valid serials on short rows and warns with expected versus found counts", () => {
     const good = invoice({ "Invoice No": "GOOD", "Serial Number": "GOOD1234|GOOD5678" });
     const mismatch = invoice({
       "Invoice No": "BAD", "Ship Qty": 2, "Line Price Ex": 200, "Serial Number": "ONLY1234",
     });
     const result = map([good, mismatch]);
     expect(result.errors).toEqual([]);
+    expect(result.rows.map(record => record.serial)).toEqual(["GOOD1234", "GOOD5678", "ONLY1234"]);
+    expect(result.pronto?.includedSourceRows).toBe(2);
+    expect(result.pronto?.excludedCounts["More serials than Ship Qty"]).toBeUndefined();
+    expect(result.warnings.some(w => w.includes("Row 3") && w.includes("expected 2, found 1"))).toBe(true);
+  });
+  it("excludes only rows with more valid serials than Ship Qty", () => {
+    const good = invoice({ "Invoice No": "GOOD", "Serial Number": "GOOD1234|GOOD5678" });
+    const excess = invoice({
+      "Invoice No": "EXCESS", "Ship Qty": 1, "Line Price Ex": 100, "Serial Number": "EXTRA123|EXTRA456",
+    });
+    const result = map([good, excess]);
+    expect(result.errors).toEqual([]);
     expect(result.rows.map(record => record.serial)).toEqual(["GOOD1234", "GOOD5678"]);
-    expect(result.pronto?.excludedCounts["Serial count does not match Ship Qty"]).toBe(1);
-    expect(result.warnings.some(w => w.includes("Row 3") && w.includes("excluded"))).toBe(true);
+    expect(result.pronto?.excludedCounts["More serials than Ship Qty"]).toBe(1);
+    expect(result.warnings.some(w => w.includes("Row 3") && w.includes("found 2") && w.includes("Ship Qty 1"))).toBe(true);
+  });
+  it("quietly counts positive-quantity rows without serials", () => {
+    const result = map([
+      invoice({ "Invoice No": "NO-SERIAL-1", "Serial Number": "" }),
+      invoice({ "Invoice No": "NO-SERIAL-2", "Serial Number": "" }),
+    ]);
+    expect(result.pronto?.excludedCounts["No serial number — not serial-level evidence"]).toBe(2);
+    expect(result.warnings.some(w => /Row (2|3).*No serial number/i.test(w))).toBe(false);
+    expect(result.pronto?.excludedSamples.filter(sample => sample.reason === "No serial number — not serial-level evidence"))
+      .toHaveLength(2);
   });
   it("retains uncatalogued SKUs as evidence while excluding unmapped accounts and nonserial lines", () => {
     const r = map([invoice(), invoice({ "Account Code": "999", "Reseller Name": "Outside scope" }),
@@ -117,8 +139,9 @@ describe("native Pronto POS evidence", () => {
   it("validates exact extended prices, quantity/serial counts and foreign currency", () => {
     expect(map([invoice({ "Line Price Ex": 199.99 })]).errors.some(e => e.message.includes("exact cents"))).toBe(true);
     const mismatch = map([invoice({ "Ship Qty": 3, "Line Price Ex": 300 })]);
-    expect(mismatch.pronto?.excludedCounts["Serial count does not match Ship Qty"]).toBe(1);
-    expect(mismatch.warnings.some(w => w.includes("serial count does not match Ship Qty".toLowerCase()))).toBe(true);
+    expect(mismatch.pronto?.includedSourceRows).toBe(1);
+    expect(mismatch.rows).toHaveLength(2);
+    expect(mismatch.warnings.some(w => w.includes("expected 3, found 2"))).toBe(true);
     expect(map([invoice({ Currency: "USD" })]).errors.some(e => e.message.includes("Foreign-currency"))).toBe(true);
     expect(map([invoice({ Currency: "AUD" })]).errors).toEqual([]);
     expect(map([invoice({ "Item Price": 0, "Line Price Ex": 0 })]).errors).toEqual([]);
