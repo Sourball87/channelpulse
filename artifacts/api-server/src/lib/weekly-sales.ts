@@ -8,11 +8,13 @@ export function weeklySalesWeeks(endWeek: string): string[] {
 }
 
 export interface WeeklySalesCell {
-  part_id: number;
+  part_id: number | null;
   part_no: string;
   week_iso: string;
   units_sold: number;
   reported_accounts: number;
+  serials_backed?: boolean;
+  serials_reported?: number;
 }
 
 export function weeklySalesData(endWeek: string | null, cells: WeeklySalesCell[]) {

@@ -538,11 +538,14 @@ export interface HeatmapData {
 }
 
 export interface WeeklySalesCell {
-  part_id: number;
+  /** @nullable */
+  part_id: number | null;
   part_no: string;
   week_iso: string;
   units_sold: number;
   reported_accounts: number;
+  serials_backed?: boolean;
+  serials_reported?: number;
 }
 
 export interface WeeklySalesData {
@@ -551,6 +554,68 @@ export interface WeeklySalesData {
   weeks: string[];
   parts: string[];
   cells: WeeklySalesCell[];
+}
+
+export type SerialReconciliationRowSellThroughSource = typeof SerialReconciliationRowSellThroughSource[keyof typeof SerialReconciliationRowSellThroughSource];
+
+
+export const SerialReconciliationRowSellThroughSource = {
+  soh: 'soh',
+  serials: 'serials',
+  missing: 'missing',
+} as const;
+
+export type SerialReconciliationRowAlertsItemSeverity = typeof SerialReconciliationRowAlertsItemSeverity[keyof typeof SerialReconciliationRowAlertsItemSeverity];
+
+
+export const SerialReconciliationRowAlertsItemSeverity = {
+  high: 'high',
+  low: 'low',
+} as const;
+
+export type SerialReconciliationRowAlertsItem = {
+  severity: SerialReconciliationRowAlertsItemSeverity;
+  message: string;
+};
+
+export interface SerialReconciliationRow {
+  reseller_id: number;
+  code: string;
+  /** @nullable */
+  part_id: number | null;
+  part_no: string;
+  week_iso: string;
+  /** @nullable */
+  soh: number | null;
+  soh_reported: boolean;
+  /** @nullable */
+  soh_sold: number | null;
+  /** @nullable */
+  sold_column_present: boolean | null;
+  /** @nullable */
+  serials_reported: number | null;
+  serial_report_received: boolean;
+  serials_expected: boolean;
+  /** @nullable */
+  serial_match_pct: number | null;
+  /** @nullable */
+  sell_through: number | null;
+  sell_through_source: SerialReconciliationRowSellThroughSource;
+  /** @nullable */
+  dd_sell_in_week: number | null;
+  alerts: SerialReconciliationRowAlertsItem[];
+}
+
+export interface SerialReconciliation {
+  /** @nullable */
+  week_iso: string | null;
+  weeks: string[];
+  rows: SerialReconciliationRow[];
+  /** @nullable */
+  pronto_through: string | null;
+  /** @nullable */
+  pronto_note: string | null;
+  unmatched_serials: number;
 }
 
 export type ExplorerRowLevel = typeof ExplorerRowLevel[keyof typeof ExplorerRowLevel];
@@ -627,6 +692,8 @@ export const AlertType = {
   st_spike: 'st_spike',
   missing_upload: 'missing_upload',
   negative_soh: 'negative_soh',
+  serials_exceed_sold: 'serials_exceed_sold',
+  sold_not_serial_reported: 'sold_not_serial_reported',
 } as const;
 
 export type AlertSeverity = typeof AlertSeverity[keyof typeof AlertSeverity];
@@ -989,6 +1056,19 @@ export interface PartUpdate {
   category?: string;
   active?: boolean;
 }
+
+export type GetSerialReconciliationParams = {
+week_iso?: string;
+category?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+part_ids?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+reseller_ids?: string;
+};
 
 export type StageCenterFiles200ErrorsItem = {
   name: string;

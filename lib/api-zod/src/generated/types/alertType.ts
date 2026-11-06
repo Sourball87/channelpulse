@@ -15,4 +15,6 @@ export const AlertType = {
   st_spike: 'st_spike',
   missing_upload: 'missing_upload',
   negative_soh: 'negative_soh',
+  serials_exceed_sold: 'serials_exceed_sold',
+  sold_not_serial_reported: 'sold_not_serial_reported',
 } as const;

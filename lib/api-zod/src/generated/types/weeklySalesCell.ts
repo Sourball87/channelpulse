@@ -7,9 +7,12 @@
  */
 
 export interface WeeklySalesCell {
-  part_id: number;
+  /** @nullable */
+  part_id: number | null;
   part_no: string;
   week_iso: string;
   units_sold: number;
   reported_accounts: number;
+  serials_backed?: boolean;
+  serials_reported?: number;
 }

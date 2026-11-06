@@ -35,7 +35,7 @@ export interface VerificationContext {
   accounts?: { id: number; code: string }[];
 }
 
-function ownerFor(events: EvidenceRow[]) {
+export function ownerFor(events: EvidenceRow[]) {
   const grouped = new Map<string, EvidenceRow[]>();
   for (const e of events) {
     const key = `${e.accountId}|${e.sku}`;

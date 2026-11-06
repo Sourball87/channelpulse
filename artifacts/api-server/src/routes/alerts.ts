@@ -4,6 +4,7 @@ import { sql, eq, and, lt, gt, desc, inArray } from "drizzle-orm";
 import { previousWeekIso, currentWeekIso } from "../lib/parser";
 import { GetAlertsQueryParams } from "@workspace/api-zod";
 import { parseFilterParams, resolveRange, buildConditions } from "../lib/filter-params";
+import { loadSalesReconciliation } from "../lib/load-sales-reconciliation";
 
 const router: IRouter = Router();
 
@@ -230,6 +231,20 @@ router.get("/alerts", async (req, res) => {
       }
     }
 
+    if (!typeFilter || typeFilter === "serials_exceed_sold" || typeFilter === "sold_not_serial_reported") {
+      const data = await loadSalesReconciliation(weekIso, { partIds: filters.partIds, resellerIds: filters.resellerIds });
+      for (const row of data.rows.filter(r => r.week_iso === weekIso)) for (const alert of row.alerts) {
+        const type = alert.severity === "high" ? "serials_exceed_sold" : "sold_not_serial_reported";
+        if (typeFilter && type !== typeFilter) continue;
+        alerts.push({
+          id: `${type}:${row.reseller_id}:${row.part_no}:${weekIso}`, type,
+          severity: alert.severity === "high" ? "critical" : "info", week_iso: weekIso,
+          message: `${row.part_no} at ${row.code}: ${alert.message}${row.serial_report_received ? "" : " (customer serial report missing)"}`,
+          part_no: row.part_no, part_id: row.part_id, reseller_name: row.code, reseller_id: row.reseller_id,
+          soh: row.soh, st: row.sell_through, woi: null, trailing_avg_st: null,
+        });
+      }
+    }
     const severityOrder = { critical: 0, warning: 1, info: 2 };
     (alerts as Array<{ severity: string }>).sort(
       (a, b) => (severityOrder[a.severity as keyof typeof severityOrder] ?? 3) - (severityOrder[b.severity as keyof typeof severityOrder] ?? 3),

@@ -609,13 +609,13 @@ function ReviewCard({
   };
 
   const weekNotDetected = !!review.week_not_detected;
+  const hasSoldColumn = mappings.some(m => m.canonical_field === "sell_through_7d");
   const readyToCommit =
     !!resellerId &&
     !!weekIso &&
     validWeek(weekIso) &&
     mappings.some(m => m.canonical_field === "part_no") &&
     mappings.some(m => m.canonical_field === "soh") &&
-    mappings.some(m => m.canonical_field === "sell_through_7d") &&
     new Set(mappings.map(m => m.canonical_field).filter(Boolean)).size ===
       mappings.filter(m => m.canonical_field).length;
 
@@ -774,7 +774,12 @@ function ReviewCard({
           <div className="flex items-center gap-3">
             {!readyToCommit && (
               <span className="text-sm text-amber-600">
-                {!resellerId ? "Select a reseller" : !weekIso ? "Enter a week (e.g. 2026-W27)" : "Map Part No, SOH and 7-day Sales once each"}
+                {!resellerId ? "Select a reseller" : !weekIso ? "Enter a week (e.g. 2026-W27)" : "Map Part No and SOH once each"}
+              </span>
+            )}
+            {readyToCommit && !hasSoldColumn && (
+              <span className="text-sm text-sky-700" data-testid="text-no-sold-column">
+                No sold column — weekly serial reports will supply sell-through when available.
               </span>
             )}
             <Button

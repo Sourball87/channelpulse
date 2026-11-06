@@ -44,6 +44,7 @@ import type {
   GetExplorerDataParams,
   GetExplorerTrendParams,
   GetPartsParams,
+  GetSerialReconciliationParams,
   GetTrendsParams,
   GetUploadsParams,
   HealthStatus,
@@ -68,6 +69,7 @@ import type {
   ScanbackUpload,
   ScanbackVerificationInput,
   ScanbackWorkspace,
+  SerialReconciliation,
   StageCenterFiles200,
   TrendPoint,
   TrendSeries,
@@ -106,6 +108,108 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetSerialReconciliationUrl = (params?: GetSerialReconciliationParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dashboard/serial-reconciliation?${stringifiedParams}` : `/api/dashboard/serial-reconciliation`
+}
+
+export const getSerialReconciliation = async (params?: GetSerialReconciliationParams, options?: Parameters<typeof customFetch>[1]): Promise<SerialReconciliation> => {
+
+  return customFetch<SerialReconciliation>(getGetSerialReconciliationUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSerialReconciliationQueryKey = (params?: GetSerialReconciliationParams,) => {
+    return [
+    `/api/dashboard/serial-reconciliation`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSerialReconciliationQueryOptions = <TData = Awaited<ReturnType<typeof getSerialReconciliation>>, TError = ErrorType<unknown>>(params?: GetSerialReconciliationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSerialReconciliation>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSerialReconciliationQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSerialReconciliation>>> = ({ signal }) => getSerialReconciliation(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSerialReconciliation>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSerialReconciliationQueryResult = NonNullable<Awaited<ReturnType<typeof getSerialReconciliation>>>
+export type GetSerialReconciliationQueryError = ErrorType<unknown>
+
+
+export function useGetSerialReconciliation<TData = Awaited<ReturnType<typeof getSerialReconciliation>>, TError = ErrorType<unknown>>(
+ params: undefined |  GetSerialReconciliationParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSerialReconciliation>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSerialReconciliation>>,
+          TError,
+          Awaited<ReturnType<typeof getSerialReconciliation>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSerialReconciliation<TData = Awaited<ReturnType<typeof getSerialReconciliation>>, TError = ErrorType<unknown>>(
+ params?: GetSerialReconciliationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSerialReconciliation>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSerialReconciliation>>,
+          TError,
+          Awaited<ReturnType<typeof getSerialReconciliation>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSerialReconciliation<TData = Awaited<ReturnType<typeof getSerialReconciliation>>, TError = ErrorType<unknown>>(
+ params?: GetSerialReconciliationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSerialReconciliation>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetSerialReconciliation<TData = Awaited<ReturnType<typeof getSerialReconciliation>>, TError = ErrorType<unknown>>(
+ params?: GetSerialReconciliationParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSerialReconciliation>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSerialReconciliationQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetSerialTrailUrl = (serial: string,) => {
 

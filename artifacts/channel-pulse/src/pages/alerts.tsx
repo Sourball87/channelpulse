@@ -12,7 +12,9 @@ import {
   TrendingUp,
   PackageMinus,
   FileWarning,
-  ChevronRight
+  ChevronRight,
+  ScanBarcode,
+  ScanLine,
 } from "lucide-react";
 import { useFilters } from "@/context/filter-context";
 
@@ -24,6 +26,8 @@ const ALERT_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
   st_spike: TrendingUp,
   missing_upload: FileWarning,
   negative_soh: AlertCircle,
+  serials_exceed_sold: ScanBarcode,
+  sold_not_serial_reported: ScanLine,
 };
 
 const ALERT_TITLES: Record<string, string> = {
@@ -32,6 +36,8 @@ const ALERT_TITLES: Record<string, string> = {
   st_spike: "Sell-Through Spike",
   missing_upload: "Missing Upload",
   negative_soh: "Negative SOH",
+  serials_exceed_sold: "More Serials Than Sold",
+  sold_not_serial_reported: "Sold Not Serial-Reported",
 };
 
 export default function Alerts() {
@@ -90,6 +96,7 @@ export default function Alerts() {
                   {Object.entries(ALERT_TITLES).map(([type, title]) => (
                     <button
                       key={type}
+                      data-testid={`button-alert-type-${type}`}
                       onClick={() => setTypeFilter(type)}
                       className={`flex items-center justify-between px-4 py-3 text-sm border-b last:border-0 transition-colors ${typeFilter === type ? "bg-muted/50 font-medium" : "hover:bg-muted/30"}`}
                     >

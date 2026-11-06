@@ -19,6 +19,21 @@ tags:
   - name: column-mappings
 
 paths:
+  /dashboard/serial-reconciliation:
+    get:
+      operationId: getSerialReconciliation
+      tags: [dashboard]
+      parameters:
+        - { name: week_iso, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: part_ids, in: query, schema: { type: string, pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$' } }
+        - { name: reseller_ids, in: query, schema: { type: string, pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$' } }
+      responses:
+        "200":
+          description: Twelve weekly reseller/SKU reconciliations using committed sources only
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SerialReconciliation" }
   /scanback/serials/{serial}:
     get:
       operationId: getSerialTrail
@@ -1285,7 +1300,7 @@ components:
       required: [part_id, part_no, week_iso, units_sold, reported_accounts]
       properties:
         part_id:
-          type: integer
+          type: [integer, "null"]
         part_no:
           type: string
         week_iso:
@@ -1294,6 +1309,8 @@ components:
           type: integer
         reported_accounts:
           type: integer
+        serials_backed: { type: boolean }
+        serials_reported: { type: integer }
     WeeklySalesData:
       type: object
       required: [end_week, weeks, parts, cells]
@@ -1313,6 +1330,44 @@ components:
           items:
             $ref: "#/components/schemas/WeeklySalesCell"
 
+    SerialReconciliation:
+      type: object
+      required: [week_iso, weeks, rows, pronto_through, pronto_note, unmatched_serials]
+      properties:
+        week_iso: { type: [string, "null"] }
+        weeks: { type: array, items: { type: string } }
+        rows: { type: array, items: { $ref: "#/components/schemas/SerialReconciliationRow" } }
+        pronto_through: { type: [string, "null"] }
+        pronto_note: { type: [string, "null"] }
+        unmatched_serials: { type: integer }
+    SerialReconciliationRow:
+      type: object
+      required: [reseller_id, code, part_id, part_no, week_iso, soh, soh_reported, soh_sold, sold_column_present, serials_reported, serial_report_received, serials_expected, serial_match_pct, sell_through, sell_through_source, dd_sell_in_week, alerts]
+      properties:
+        reseller_id: { type: integer }
+        code: { type: string }
+        part_id: { type: [integer, "null"] }
+        part_no: { type: string }
+        week_iso: { type: string }
+        soh: { type: [integer, "null"] }
+        soh_reported: { type: boolean }
+        soh_sold: { type: [integer, "null"] }
+        sold_column_present: { type: [boolean, "null"] }
+        serials_reported: { type: [integer, "null"] }
+        serial_report_received: { type: boolean }
+        serials_expected: { type: boolean }
+        serial_match_pct: { type: [number, "null"] }
+        sell_through: { type: [integer, "null"] }
+        sell_through_source: { type: string, enum: [soh, serials, missing] }
+        dd_sell_in_week: { type: [integer, "null"] }
+        alerts:
+          type: array
+          items:
+            type: object
+            required: [severity, message]
+            properties:
+              severity: { type: string, enum: [high, low] }
+              message: { type: string }
     ExplorerRow:
       type: object
       required: [id, label, level, st, soh, woi]
@@ -1395,7 +1450,7 @@ components:
           type: string
         type:
           type: string
-          enum: [overstocked, stockout_risk, st_spike, missing_upload, negative_soh]
+          enum: [overstocked, stockout_risk, st_spike, missing_upload, negative_soh, serials_exceed_sold, sold_not_serial_reported]
         severity:
           type: string
           enum: [warning, critical, info]

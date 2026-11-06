@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useFilters } from "@/context/filter-context";
 import { useHeatmapOrder, sortByOrder } from "@/hooks/use-heatmap-order";
 import { StockOnHandHeatmap } from "@/components/stock-on-hand-heatmap";
+import { SerialReconciliation, SourceTag } from "@/components/serial-reconciliation";
 
 const CATEGORIES = ["All", "SSD", "Monitor", "Mobility"];
 
@@ -37,6 +38,9 @@ export default function Dashboard() {
   const [category, setCategory] = useState<string>("All");
   const { apiParams, insightWeek, resellerIds, focusView } = useFilters();
   const { data: accounts } = useGetResellers();
+  const [reconWeek, setReconWeek] = useState<{ base?: string; week: string } | null>(null);
+  const selectedReconWeek = reconWeek && reconWeek.base === insightWeek ? reconWeek.week : insightWeek;
+  const pickReconWeek = (week: string) => setReconWeek({ base: insightWeek, week });
 
   const queryCategory = category === "All" ? undefined : category;
 
@@ -56,7 +60,7 @@ export default function Dashboard() {
   };
   const { data: heatmapData, isLoading: isLoadingHeatmap, isError: heatmapError, refetch: refetchHeatmap } = useGetDashboardWeeklySales(
     weeklyParams,
-    { query: { enabled: focusView, queryKey: getGetDashboardWeeklySalesQueryKey(weeklyParams) } },
+    { query: { enabled: focusView, queryKey: getGetDashboardWeeklySalesQueryKey(weeklyParams), refetchOnMount: "always", refetchInterval: focusView ? 30000 : false } },
   );
 
   const {
@@ -237,6 +241,8 @@ export default function Dashboard() {
                   <p>The window ends at the selected reporting week or date-range end.</p>
                   <p>Darker blue means more units sold; 0 means reported zero sales.</p>
                   <p>A dash means no reported data for that stock/week combination.</p>
+                  <p>A "serials" tag means some accounts had no sold column, so weekly serial reports supplied their sell-through.</p>
+                  <p>Click a cell to open that week in the reconciliation table below.</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
@@ -408,11 +414,17 @@ export default function Dashboard() {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <div
-                                    className={`h-8 rounded flex items-center justify-center text-xs font-medium cursor-default shadow-xs ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    data-testid={`cell-heatmap-${part}-${week}`}
+                                    onClick={() => pickReconWeek(week)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickReconWeek(week); } }}
+                                    className={`h-8 rounded flex items-center justify-center gap-1 text-xs font-medium cursor-pointer shadow-xs ${selectedReconWeek === week ? "ring-2 ring-violet-500 ring-offset-1" : ""} ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
                                     style={{ backgroundColor }}
                                     aria-label={`${part}, ${formatWeekLabel(week)}: ${salesDisplay} units sold`}
                                   >
                                     {salesDisplay}
+                                    {cell.serials_backed && <SourceTag source="serials" title="Includes serial-report sell-through for accounts whose SOH file has no sold column" />}
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="text-xs">
@@ -436,6 +448,11 @@ export default function Dashboard() {
                                     <div>
                                       Based on {cell.reported_accounts} reported account{cell.reported_accounts !== 1 ? "s" : ""}.
                                     </div>
+                                    {cell.serials_backed && (
+                                      <div className="text-violet-700">
+                                        Some accounts use serials: sell-through from serial reports (no sold column). Serials reported: {(cell.serials_reported ?? 0).toLocaleString()}.
+                                      </div>
+                                    )}
                                   </div>
                                 </TooltipContent>
                               </Tooltip>
@@ -450,6 +467,17 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card> : <StockOnHandHeatmap category={queryCategory} />}
+        {focusView && (
+          <SerialReconciliation
+            week={selectedReconWeek}
+            windowWeeks={heatmapData?.weeks}
+            onWeekChange={pickReconWeek}
+            partIds={apiParams.part_ids}
+            resellerIds={apiParams.reseller_ids}
+            category={queryCategory}
+            enabled={focusView}
+          />
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,48 @@
 import * as zod from 'zod';
 
 
+export const getSerialReconciliationQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+export const getSerialReconciliationQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+
+
+export const GetSerialReconciliationQueryParams = zod.object({
+  "week_iso": zod.coerce.string().optional(),
+  "category": zod.coerce.string().optional(),
+  "part_ids": zod.coerce.string().regex(getSerialReconciliationQueryPartIdsRegExp).optional(),
+  "reseller_ids": zod.coerce.string().regex(getSerialReconciliationQueryResellerIdsRegExp).optional()
+})
+
+export const GetSerialReconciliationResponse = zod.object({
+  "week_iso": zod.string().nullable(),
+  "weeks": zod.array(zod.string()),
+  "rows": zod.array(zod.object({
+  "reseller_id": zod.int(),
+  "code": zod.string(),
+  "part_id": zod.int().nullable(),
+  "part_no": zod.string(),
+  "week_iso": zod.string(),
+  "soh": zod.int().nullable(),
+  "soh_reported": zod.boolean(),
+  "soh_sold": zod.int().nullable(),
+  "sold_column_present": zod.boolean().nullable(),
+  "serials_reported": zod.int().nullable(),
+  "serial_report_received": zod.boolean(),
+  "serials_expected": zod.boolean(),
+  "serial_match_pct": zod.number().nullable(),
+  "sell_through": zod.int().nullable(),
+  "sell_through_source": zod.enum(['soh', 'serials', 'missing']),
+  "dd_sell_in_week": zod.int().nullable(),
+  "alerts": zod.array(zod.object({
+  "severity": zod.enum(['high', 'low']),
+  "message": zod.string()
+}))
+})),
+  "pronto_through": zod.string().nullable(),
+  "pronto_note": zod.string().nullable(),
+  "unmatched_serials": zod.int()
+})
+
+
 export const GetSerialTrailParams = zod.object({
   "serial": zod.coerce.string()
 })
@@ -946,11 +988,13 @@ export const GetDashboardWeeklySalesResponse = zod.object({
   "weeks": zod.array(zod.string()),
   "parts": zod.array(zod.string()),
   "cells": zod.array(zod.object({
-  "part_id": zod.int(),
+  "part_id": zod.int().nullable(),
   "part_no": zod.string(),
   "week_iso": zod.string(),
   "units_sold": zod.int(),
-  "reported_accounts": zod.int()
+  "reported_accounts": zod.int(),
+  "serials_backed": zod.boolean().optional(),
+  "serials_reported": zod.int().optional()
 }))
 })
 
@@ -1059,7 +1103,7 @@ export const GetAlertsQueryParams = zod.object({
 
 export const GetAlertsResponseItem = zod.object({
   "id": zod.string(),
-  "type": zod.enum(['overstocked', 'stockout_risk', 'st_spike', 'missing_upload', 'negative_soh']),
+  "type": zod.enum(['overstocked', 'stockout_risk', 'st_spike', 'missing_upload', 'negative_soh', 'serials_exceed_sold', 'sold_not_serial_reported']),
   "severity": zod.enum(['warning', 'critical', 'info']),
   "week_iso": zod.string(),
   "message": zod.string(),

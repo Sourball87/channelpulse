@@ -599,9 +599,9 @@ router.post("/uploads/:id/commit", async (req, res) => {
     return res.status(400).json({ error: "Enter a valid ISO reporting week, for example 2026-W27." });
   }
   const fields = mappings.map(m => m.canonical_field).filter(Boolean);
-  if (!fields.includes("part_no") || !fields.includes("soh") || !fields.includes("sell_through_7d") ||
+  if (!fields.includes("part_no") || !fields.includes("soh") ||
       fields.length !== new Set(fields).size) {
-    return res.status(400).json({ error: "Map Part Number, SOH and 7-day Sales exactly once. Each standard field can only be mapped to one source column." });
+    return res.status(400).json({ error: "Map Part Number and SOH exactly once. Sales is optional; each standard field can only be mapped to one source column." });
   }
 
   try {
