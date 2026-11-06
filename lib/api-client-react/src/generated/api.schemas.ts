@@ -249,6 +249,7 @@ export interface ScanbackProntoExclusion {
   row: number;
   accountCode: string;
   accountName: string;
+  invoice: string;
   sku: string;
   quantity: number;
   serialCount: number;
@@ -287,6 +288,7 @@ export type ScanbackImportState = typeof ScanbackImportState[keyof typeof Scanba
 export const ScanbackImportState = {
   preview: 'preview',
   committed: 'committed',
+  superseded: 'superseded',
 } as const;
 
 export type ScanbackImportMapping = {[key: string]: string};
@@ -349,6 +351,7 @@ export type ScanbackResultTrackingColor = typeof ScanbackResultTrackingColor[key
 export const ScanbackResultTrackingColor = {
   red: 'red',
   orange: 'orange',
+  amber: 'amber',
   green: 'green',
   neutral: 'neutral',
 } as const;
@@ -1010,6 +1013,7 @@ export type CenterUploadState = typeof CenterUploadState[keyof typeof CenterUplo
 export const CenterUploadState = {
   preview: 'preview',
   committed: 'committed',
+  superseded: 'superseded',
 } as const;
 
 export type CenterUploadSummary = {

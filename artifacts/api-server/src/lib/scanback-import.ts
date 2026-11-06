@@ -1,13 +1,13 @@
 import * as XLSX from "xlsx";
 import type { ScanbackImport, ScanbackImportRow, ScanbackMapping } from "@workspace/api-zod";
 import { cents, serialKey, validDate } from "./scanback-engine";
-import { isPronto, prontoColumns, prontoMapping, scopePronto } from "./scanback-pronto";
+import { isPronto, prontoColumns, prontoMapping, scopePronto, unmatchedCreditReason } from "./scanback-pronto";
 
 export type Sheets = Record<string, Record<string, unknown>[]>;
 export interface Account { id: number; code: string; name: string }
 const fields: Record<string, string[]> = {
   serial: ["serial", "serials", "serialno", "serialnumber", "sn", "imei"],
-  sku: ["sku", "model", "stockcode", "part", "partnumber", "productcode"],
+  sku: ["sku", "model", "modelnumber", "stockcode", "part", "partnumber", "productcode"],
   date: ["date", "invoicedate", "selldate", "saledate", "orderdate", "approved"],
   account: ["accountcode", "customer", "customername", "account", "reseller", "prontoaccount"],
   quantity: ["qty", "quantity", "invoiceqty"],
@@ -19,9 +19,14 @@ const fields: Record<string, string[]> = {
   reference: ["batch", "reference", "claimreference"],
 };
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9$]/g, "");
+const matchesField = (field: string, heading: string) => {
+  const normalized = norm(heading);
+  return fields[field].includes(normalized) ||
+    (field === "serial" && (normalized.includes("serial") || normalized.includes("imei")));
+};
 export function detectImportKind(headers: string[]): ScanbackImport["kind"] {
   if (isPronto(headers)) return "evidence";
-  const has = (key: string) => headers.some(h => fields[key].includes(norm(h)));
+  const has = (key: string) => headers.some(h => matchesField(key, h));
   const evidence = ["invoice", "quantity", "unitPrice"].every(has);
   const history = ["amount", "program", "reference"].every(has);
   if (evidence && history)
@@ -39,7 +44,7 @@ export function suggestMapping(headers: string[]): Record<string, string> {
     return { ...prontoMapping, cost: costs.length === 1 ? costs[0] : "" };
   }
   return Object.fromEntries(Object.entries(fields).map(([f, aliases]) => {
-    const matches = headers.filter(h => aliases.includes(norm(h)));
+    const matches = headers.filter(h => matchesField(f, h));
     // Multiple candidate date/price columns require an explicit choice.
     return [f, matches.length === 1 ? matches[0] : ""];
   }));
@@ -53,7 +58,7 @@ export function parseSheets(buffer: Buffer): Sheets {
     const range = XLSX.utils.decode_range(sheet["!fullref"] ?? sheet["!ref"] ?? "A1");
     if (range.e.r > 20000 || range.e.c > 150) throw new Error("Limit each sheet to 20,000 rows and 150 columns.");
     const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "", blankrows: false });
-    const headerAt = grid.slice(0, 20).findIndex(row => row.some(v => fields.serial.includes(norm(String(v)))));
+    const headerAt = grid.slice(0, 20).findIndex(row => row.some(v => matchesField("serial", String(v))));
     if (headerAt < 0) continue;
     const headers = grid[headerAt].map((v, i) => String(v || `Column ${i + 1}`).trim());
     if (new Set(headers).size !== headers.length) throw new Error(`Duplicate column headings in sheet ${name}; rename them before uploading.`);
@@ -72,11 +77,20 @@ export function parseSheets(buffer: Buffer): Sheets {
 export function parseDate(v: unknown, mode: "dmy" | "mdy"): string {
   if (v === "" || v == null) return "";
   if (typeof v === "number") {
+    if (Number.isSafeInteger(v) && /^\d{8}$/.test(String(v))) {
+      const compact = String(v);
+      const date = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+      return validDate(date) ? date : "";
+    }
     const d = XLSX.SSF.parse_date_code(v);
     const date = d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : "";
     return validDate(date) ? date : "";
   }
   const text = String(v).trim();
+  if (/^\d{8}$/.test(text)) {
+    const date = `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+    return validDate(date) ? date : "";
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return validDate(text) ? text : "";
   const match = text.match(/^(\d{1,2})[/. -](\d{1,2})[/. -](\d{2}|\d{4})$/);
   if (!match) return "";
@@ -173,7 +187,8 @@ export function mapImport(
       sourceRow: i + 2,
     });
   });
-  if (!rows.length) errors.push({ row: 0, message: "No serial records found." });
+  const unmatchedCreditCount = scope?.preview.excludedCounts[unmatchedCreditReason] ?? 0;
+  if (!rows.length && !unmatchedCreditCount) errors.push({ row: 0, message: "No serial records found." });
   const unlistedSkus = [...new Set(rows.map(row => row.sku).filter(sku => !skuCodes.has(sku)))];
   return {
     ...base, ...options, accountId: options.accountId ?? null, headers,
@@ -186,6 +201,7 @@ export function mapImport(
         `${scope.preview.includedSourceRows} source rows included; ${scope.preview.excludedSourceRows} excluded. Excluded rows are not evidence and cannot make a serial payable.`,
         "Only explicitly mapped accounts and existing Stock Codes are included. Review every account mapping and exclusion before committing.",
         "Serials also appearing in excluded Pronto rows remain subject to ownership/return review; excluding an account cannot hide conflicting evidence.",
+        ...(unmatchedCreditCount ? [`${unmatchedCreditCount} selected Pronto credit(s) have no serial. They are listed as unmatched and claims for the same reseller/SKU require review until a later matching credit includes its serial.`] : []),
       ] : []),
       ...(unlistedSkus.length ? [`Not in the product catalogue (enter the exact code on a promotion to make these claimable): ${unlistedSkus.slice(0, 25).join(", ")}${unlistedSkus.length > 25 ? " …" : ""}. No product SKUs were created.`] : []),
     ],

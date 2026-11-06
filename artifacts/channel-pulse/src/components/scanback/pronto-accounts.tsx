@@ -34,7 +34,7 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
           {preview.sourceRows.toLocaleString()} invoice/credit rows contain {preview.sourceSerialEvents.toLocaleString()} serial events.
           {" "}Item Price is the invoiced unit price ex GST; Item Cost, Line Cost Ex and RRP are not used.
         </p>
-        <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue.</p>
+         <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue. Credits without serials are listed as unmatched and put claims for that reseller/SKU into review until a later file supplies the serial.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input className="h-8 max-w-xs" placeholder="Find Pronto code or reseller…" aria-label="Find Pronto account"
@@ -76,11 +76,12 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
         <p className="mt-2 text-slate-500">Excluded rows are not invoice evidence. A claim without matching serial evidence stays rejected. Type uncatalogued SKUs on promotion lines to make them eligible. Apply mapping to refresh these counts.</p>
       </div>
       {preview.excludedSamples.length > 0 && <details className="text-xs">
-        <summary className="cursor-pointer font-medium">Review excluded row samples (up to 15 per reason)</summary>
+         <summary className="cursor-pointer font-medium">Review excluded rows, including unmatched credits (up to 15 per reason)</summary>
         <div className="mt-2 max-h-56 overflow-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>Source row</TableHead><TableHead>Account / SKU</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+           <Table><TableHeader><TableRow><TableHead>Source row</TableHead><TableHead>Account / SKU</TableHead><TableHead>Invoice / Qty</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
             <TableBody>{preview.excludedSamples.map(a => <TableRow key={a.row}>
-              <TableCell>{a.row}</TableCell><TableCell>{maskCustomerText(a.accountCode)} · {a.sku}</TableCell><TableCell>{a.reason}</TableCell>
+               <TableCell>{a.row}</TableCell><TableCell>{maskCustomerText(a.accountCode)} · {a.sku}</TableCell>
+               <TableCell>{a.invoice || "—"} · {a.quantity}</TableCell><TableCell>{a.reason}</TableCell>
             </TableRow>)}</TableBody>
           </Table>
         </div>

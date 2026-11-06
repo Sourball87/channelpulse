@@ -12,6 +12,7 @@ export type ScanbackResultTrackingColor = typeof ScanbackResultTrackingColor[key
 export const ScanbackResultTrackingColor = {
   red: 'red',
   orange: 'orange',
+  amber: 'amber',
   green: 'green',
   neutral: 'neutral',
 } as const;

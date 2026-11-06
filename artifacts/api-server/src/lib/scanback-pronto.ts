@@ -21,6 +21,39 @@ export const prontoColumns = (headers: string[]) => headers.filter(column => col
 export const prontoAllowed = (accounts: Account[]) => accounts.filter(a => Object.hasOwn(names, a.code.toLowerCase()));
 const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 export const splitSerials = (value: unknown) => String(value ?? "").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
+export const unmatchedCreditReason = "Unmatched credit — no serial number";
+export const unmatchedCreditKey = (accountId: number, sku: string) => `${accountId}|${sku.trim().toUpperCase()}`;
+
+export interface ProntoCreditReport {
+  id: string;
+  createdAt?: string;
+  committedAt?: string;
+  prontoAccounts?: Record<string, number | null>;
+  rows: Record<string, unknown>[];
+}
+
+/** Missing-serial credits remain active until a later selected Pronto file
+ * supplies a serial for the same reseller, SKU and credit reference. */
+export function pendingProntoCreditKeys(reports: ProntoCreditReport[]): Set<string> {
+  const pending = new Map<string, string>();
+  const ordered = [...reports].sort((a, b) =>
+    (a.committedAt ?? a.createdAt ?? "").localeCompare(b.committedAt ?? b.createdAt ?? "") || a.id.localeCompare(b.id));
+  for (const report of ordered) {
+    const events = report.rows.flatMap(row => {
+      const accountId = report.prontoAccounts?.[String(row["Account Code"] ?? "").trim()];
+      const sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
+      const quantity = Number(row["Ship Qty"]);
+      const invoice = String(row["Invoice No"] ?? "").trim().toUpperCase();
+      if (accountId == null || !sku || !Number.isFinite(quantity) || quantity >= 0) return [];
+      const accountSku = unmatchedCreditKey(accountId, sku);
+      const serials = splitSerials(row["Serial Number"]);
+      return [{ key: JSON.stringify([accountId, sku, invoice]), accountSku, hasSerial: serials.length > 0 }];
+    });
+    for (const event of events) if (event.hasSerial) pending.delete(event.key);
+    for (const event of events) if (!event.hasSerial) pending.set(event.key, event.accountSku);
+  }
+  return new Set(pending.values());
+}
 
 export function scopePronto(
   rows: Record<string, unknown>[], options: ScanbackMapping, accounts: Account[],
@@ -64,18 +97,15 @@ export function scopePronto(
     const id = mapping[code], serials = splitSerials(row["Serial Number"]), quantity = Number(row["Ship Qty"]);
     const validAccount = id != null && allowed.some(a => a.id === id);
     const reason = !validAccount ? "Account not selected"
+      : !serials.length && quantity < 0 ? unmatchedCreditReason
       : !serials.length ? "No serial number — not serial-level evidence" : "";
     if (!reason) { include.set(i, id!); preview.includedSourceRows++; return; }
     preview.excludedSourceRows++;
     preview.excludedCounts[reason] = (preview.excludedCounts[reason] ?? 0) + 1;
     if (preview.excludedSamples.filter(sample => sample.reason === reason).length < 15) preview.excludedSamples.push({
       row: i + 2, accountCode: code, accountName: String(row["Reseller Name"] ?? ""), sku,
-      quantity: Number.isFinite(quantity) ? quantity : 0, serialCount: serials.length, reason,
+      invoice: String(row["Invoice No"] ?? ""), quantity: Number.isFinite(quantity) ? quantity : 0, serialCount: serials.length, reason,
     });
-    // A selected account's unidentified return could affect any manually
-    // configured SKU; do not discard it merely because the code is uncatalogued.
-    if (validAccount && sku && !serials.length && quantity < 0)
-      errors.push({ row: i + 2, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." });
   });
   return { preview, include, errors };
 }

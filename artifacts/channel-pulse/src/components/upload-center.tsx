@@ -140,9 +140,11 @@ export function KindBadge({ kind }: { kind: CenterKind }) {
 }
 
 export function StateBadge({ u }: { u: CenterUpload }) {
-  return u.state === "committed"
-    ? <Badge className="gap-1 border-emerald-500/20 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10"><Lock className="h-3 w-3" />Committed</Badge>
-    : <Badge variant="secondary" className="border-amber-500/20 bg-amber-500/10 text-amber-700">Pending</Badge>;
+  if (u.state === "committed")
+    return <Badge className="gap-1 border-emerald-500/20 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10"><Lock className="h-3 w-3" />Committed</Badge>;
+  if (u.state === "superseded")
+    return <Badge variant="secondary" className="border-slate-500/20 bg-slate-500/10 text-slate-600">Superseded</Badge>;
+  return <Badge variant="secondary" className="border-amber-500/20 bg-amber-500/10 text-amber-700">Pending</Badge>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -366,7 +368,9 @@ export function DdDataPanel({ uploads, priceCount, pricesUpdated }: { uploads: C
               {b.list.map((u) => (
                 <li key={u.id} className="flex items-center justify-between gap-2 px-4 py-1.5">
                   <span className="truncate" title={u.name}>{u.name}</span>
-                  <span className={`shrink-0 font-mono ${u.state === "committed" ? "text-emerald-700" : "text-amber-700"}`}>{shortDate(u.createdAt)} &middot; {u.state === "committed" ? "committed" : "pending"}</span>
+                  <span className={`shrink-0 font-mono ${u.state === "committed" ? "text-emerald-700" : u.state === "superseded" ? "text-slate-500" : "text-amber-700"}`}>
+                    {shortDate(u.createdAt)} &middot; {u.state === "superseded" ? "superseded" : u.state === "committed" ? "committed" : "pending"}
+                  </span>
                 </li>
               ))}
             </ul>

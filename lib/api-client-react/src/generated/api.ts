@@ -1428,6 +1428,74 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getCommitScanbackImportMutationOptions(options), queryClient);
     }
 
+export const getSupersedeScanbackImportUrl = (id: string,) => {
+
+
+
+
+  return `/api/scanback/imports/${id}/supersede`
+}
+
+export const supersedeScanbackImport = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ScanbackImport> => {
+
+  return customFetch<ScanbackImport>(getSupersedeScanbackImportUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSupersedeScanbackImportMutationKey = () => ['supersedeScanbackImport'] as const;
+
+export const getSupersedeScanbackImportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof supersedeScanbackImport>>, TError,SupersedeScanbackImportMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof supersedeScanbackImport>>, TError,SupersedeScanbackImportMutationVariables, TContext> => {
+
+const mutationKey = getSupersedeScanbackImportMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof supersedeScanbackImport>>, SupersedeScanbackImportMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  supersedeScanbackImport(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SupersedeScanbackImportMutationResult = NonNullable<Awaited<ReturnType<typeof supersedeScanbackImport>>>
+
+    export type SupersedeScanbackImportMutationError = ErrorType<unknown>
+    export type SupersedeScanbackImportMutationVariables = {id: string}
+
+    export const useSupersedeScanbackImport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof supersedeScanbackImport>>, TError,SupersedeScanbackImportMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof supersedeScanbackImport>>,
+        TError,
+        SupersedeScanbackImportMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSupersedeScanbackImportMutationOptions(options), queryClient);
+    }
+
 export const getVerifyScanbackClaimUrl = () => {
 
 

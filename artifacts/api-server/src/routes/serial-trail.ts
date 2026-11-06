@@ -61,7 +61,7 @@ router.get("/scanback/serials/:serial", async (req, res) => {
           } else {
             const earlierClaim = claimed && new Date(claimed.recordedAt).getTime() <=
               new Date(imp.committedAt ?? imp.createdAt).getTime();
-            const reason = row.reuseReason || earlierReportReason(first.get(serial), imp.id, row.rowIndex) ||
+            const reason = earlierReportReason(first.get(serial), imp.id, row.rowIndex, accountId) ||
               (earlierClaim ? `Already claimed: promotion ${claimed.promotion}, batch ${claimed.batch_id} (${claimed.reference})` : "");
             events.push({ ...base, kind: "sold", reused: !!reason,
               reason: reason || "First customer sale report. This source owns the reported sale; later reports cannot reuse it." });

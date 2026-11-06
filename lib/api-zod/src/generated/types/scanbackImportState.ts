@@ -12,4 +12,5 @@ export type ScanbackImportState = typeof ScanbackImportState[keyof typeof Scanba
 export const ScanbackImportState = {
   preview: 'preview',
   committed: 'committed',
+  superseded: 'superseded',
 } as const;

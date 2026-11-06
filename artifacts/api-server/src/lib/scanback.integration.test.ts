@@ -92,7 +92,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const later = await commit(await upload("claim",
         `Serial,SKU,Sale Date,Account\n${prefix}A,${sku},19/09/2026,${other.code}\n`, "later-customer-report"));
       expect(later.rows[0].reuseReason).toContain(claim.id);
-      expect(later.warnings.some((w: string) => w.includes("reused serial rows"))).toBe(true);
+      expect(later.warnings.some((w: string) => w.includes("red because"))).toBe(true);
       const intake = (await call("/upload-center")).data;
       expect(intake.uploads.find((u: { sourceId: string }) => u.sourceId === later.id).summary.serialCount).toBe(0);
       const laterDraft = (await call("/scanback/verify", { ...settings, claimImportId: later.id })).data;
@@ -157,6 +157,27 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const doubleHistory = await upload("history", `Serial,SKU,Date,Account,Amount,Promotion,Claim Reference\n${prefix}H,${sku},14/09/2026,${a.code},12.34,${pastName},${prefix}-old-2\n`, "history-duplicate");
       expect(doubleHistory.errors.length).toBeGreaterThan(0);
       expect((await call(`/scanback/imports/${doubleHistory.id}/commit`, {})).status).toBe(400);
+      await commit(await upload("evidence", header + inv("SAME", `${prefix}-SAME`, a.code), "same-customer-evidence"));
+      const sameOld = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}SAME,${sku},20/09/2026,${a.code}\n`, "same-customer-old-report"));
+      const sameNew = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}SAME,${sku},21/09/2026,${a.code}\n`, "same-customer-resend"));
+      expect(sameNew.rows[0].reuseReason).toContain("Also in earlier report");
+      const sameDraft = (await call("/scanback/verify", { ...settings, programId: second.id, claimImportId: sameNew.id })).data;
+      expect(sameDraft.results[0]).toMatchObject({ status: "eligible", trackingColor: "amber", include: true });
+      const superseded = await call(`/scanback/imports/${sameOld.id}/supersede`, {});
+      expect(superseded.status).toBe(200);
+      expect(superseded.data.state).toBe("superseded");
+      const refreshedSameDraft = (await call("/scanback/verify", { ...settings, programId: second.id, claimImportId: sameNew.id })).data;
+      expect(refreshedSameDraft.results[0]).toMatchObject({ status: "eligible", trackingColor: "green", include: true });
+      const reportCenter = (await call("/upload-center")).data;
+      expect(reportCenter.uploads.find((u: { sourceId: string }) => u.sourceId === sameOld.id))
+        .toMatchObject({ state: "superseded", summary: { serialCount: 0 } });
+      const approvedAgain = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}H,${sku},20/09/2026,${a.code}\n`, "approved-after-supersede"));
+      const stillBlocked = (await call("/scanback/verify", { ...settings, programId: second.id, claimImportId: approvedAgain.id })).data;
+      expect(stillBlocked.results[0]).toMatchObject({ trackingColor: "red", include: false });
+      expect(stillBlocked.results[0].reason).toContain("Already approved");
       program = (await call("/scanback/programs", { ...program, lines: [{ ...program.lines[0], gtmBuyCents: 5000 }] })).data;
       const exportResponse = await fetch(base + `/scanback/batches/${approved.id}/export/xlsx`, {
         headers: { Cookie: sessionCookie },
@@ -199,6 +220,36 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(held.totalCents).toBe(3000);
       expect(held.results[1]).toMatchObject({ status: "review", include: false });
       expect(held.results[1].reason).toContain("excluded Pronto");
+      const creditSku = `${prefix}-CREDIT`;
+      const creditProgram = (await call("/scanback/programs", {
+        name: prefix + " Unmatched credit", start: "2026-09-01", end: "2026-09-30", notes: "", customerIds: [a.id],
+        lines: [{ sku: creditSku, partId: null, gtmBuyCents: 5000, caps: [] }],
+      })).data;
+      const creditPr = (reference: string, serial: string, quantity: number) =>
+        `${prefix}-${reference},01/09/2026,SOURCE1,Computer Alliance,${creditSku},${quantity},${serial ? prefix + serial : ""},100.00,${(quantity * 100).toFixed(2)},unused@example.invalid\n`;
+      const remapPronto = async (imp: any) => (await call(`/scanback/imports/${imp.id}/remap`, {
+        ...nativeOptions, sheet: imp.sheet, mapping: imp.mapping,
+      })).data;
+      let creditSale = await upload("auto", prontoHeader + creditPr("CREDIT-SALE", "CREDITGOOD", 1), "credit-sale");
+      creditSale = await remapPronto(creditSale);
+      await commit(creditSale);
+      let missingCredit = await upload("auto", prontoHeader + creditPr("CREDIT-REF", "", -1), "missing-serial-credit");
+      expect(missingCredit.errors.length).toBeGreaterThan(0);
+      missingCredit = await remapPronto(missingCredit);
+      expect(missingCredit).toMatchObject({ recordCount: 0, errors: [] });
+      expect(missingCredit.pronto.excludedCounts["Unmatched credit — no serial number"]).toBe(1);
+      await commit(missingCredit);
+      const creditClaim = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}CREDITGOOD,${creditSku},20/09/2026,${a.code}\n`, "unmatched-credit-claim"));
+      const creditSettings = { ...settings, programId: creditProgram.id, claimImportId: creditClaim.id, basis: "invoice" };
+      const heldByCredit = (await call("/scanback/verify", creditSettings)).data;
+      expect(heldByCredit.results[0]).toMatchObject({ status: "review", trackingColor: "amber", include: false });
+      expect(heldByCredit.results[0].reason).toContain("unmatched Pronto credit");
+      let resolvedCredit = await upload("auto", prontoHeader + creditPr("CREDIT-REF", "CREDITRETURNED", -1), "resolved-credit");
+      resolvedCredit = await remapPronto(resolvedCredit);
+      await commit(resolvedCredit);
+      const afterCreditResolution = (await call("/scanback/verify", creditSettings)).data;
+      expect(afterCreditResolution.results[0]).toMatchObject({ status: "eligible", trackingColor: "green", include: true });
       const customSku = `${prefix}-CUSTOM`;
       const customProgramResponse = await call("/scanback/programs", {
         name: prefix + " Custom SKU", start: "2026-09-01", end: "2026-09-30", notes: "", customerIds: [a.id],

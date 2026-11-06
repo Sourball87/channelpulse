@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import * as XLSX from "xlsx";
 import type { ScanbackImport } from "@workspace/api-zod";
 import { parseSheets, mapImport, suggestMapping, type Sheets } from "./scanback-import";
-import { isPronto, prontoMapping } from "./scanback-pronto";
+import { isPronto, pendingProntoCreditKeys, prontoMapping, unmatchedCreditKey, unmatchedCreditReason } from "./scanback-pronto";
 import { verifyClaim } from "./scanback-engine";
 
 const accounts = [{ id: 1, code: "CA", name: "Computer Alliance" }, { id: 2, code: "umart", name: "Umart" }, { id: 3, code: "other", name: "Not in the existing nine" }];
@@ -51,9 +51,31 @@ describe("native Pronto POS evidence", () => {
     expect(map(undefined, { "123": 3 }).errors.some(e => e.message.includes("existing nine"))).toBe(true);
     expect(map(undefined, { "123": 1, "not-in-file": 1 }).errors.some(e => e.message.includes("not present"))).toBe(true);
   });
-  it("blocks missing-serial credits for selected accounts and known SKUs", () => {
-    expect(map([invoice({ "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "" })]).errors.some(e => e.message.includes("Credit") && e.message.includes("no serials"))).toBe(true);
+  it("commits serialless selected credits as listed warnings, including credit-only files", () => {
+    const result = map([invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "" })]);
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toEqual([]);
+    expect(result.warnings.some(w => w.includes("1 selected Pronto credit") && w.includes("require review"))).toBe(true);
+    expect(result.pronto?.excludedCounts[unmatchedCreditReason]).toBe(1);
+    expect(result.pronto?.excludedSamples[0]).toMatchObject({
+      row: 2, sku: "SKU", quantity: -1, serialCount: 0, reason: unmatchedCreditReason,
+    });
     expect(map([invoice({ "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "", "Account Code": "999" })]).errors.some(e => e.message.includes("Credit"))).toBe(false);
+  });
+  it("keeps missing-serial credits active until a later matching Pronto credit includes its serial", () => {
+    const missing = invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "" });
+    const resolved = invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "RETURNED-SERIAL" });
+    const original = {
+      id: "old", committedAt: "2026-09-01T00:00:00Z", prontoAccounts: { "123": 1 }, rows: [missing],
+    };
+    expect(pendingProntoCreditKeys([original])).toEqual(new Set([unmatchedCreditKey(1, "SKU")]));
+    expect(pendingProntoCreditKeys([
+      original, { id: "later", committedAt: "2026-09-02T00:00:00Z", prontoAccounts: { "123": 1 }, rows: [resolved] },
+    ])).toEqual(new Set());
+    expect(pendingProntoCreditKeys([
+      original, { id: "wrong-ref", committedAt: "2026-09-02T00:00:00Z", prontoAccounts: { "123": 1 },
+        rows: [invoice({ "Invoice No": "OTHER-CREDIT", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "RETURNED-SERIAL" })] },
+    ])).toEqual(new Set([unmatchedCreditKey(1, "SKU")]));
   });
   it("does not allow changing Item Price to cost or replacing the multi-account map with a fallback", () => {
     expect(() => mapImport(base, { Sheet1: [invoice()] }, { ...base, mapping: { ...prontoMapping, unitPrice: "Line Price Ex" } }, accounts, new Set(["SKU"]))).toThrow("fixed invoice/price");
@@ -111,12 +133,10 @@ describe.skipIf(!process.env.PRONTO_SAMPLE)("local uploaded Pronto sample — re
     expect(scoped.recordCount).toBeGreaterThan(0);
     expect(scoped.rows.every(row => cat.some(a => a.id === row.accountId))).toBe(true);
     expect(Object.keys(raw.Sheet1[0])).not.toContain("Reseller Address");
-    expect(scoped.errors).toHaveLength(4);
+    expect(scoped.errors).toHaveLength(1);
     expect(scoped.errors).toEqual(expect.arrayContaining([
-      { row: 14, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." },
-      { row: 19, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." },
-      { row: 1320, message: "Credit for a selected reseller/SKU has no serials. Resolve the return before committing evidence." },
       { row: 131, message: "Serial has unsupported characters or length." },
     ]));
+    expect(scoped.pronto?.excludedCounts[unmatchedCreditReason]).toBe(3);
   }, 30_000);
 });

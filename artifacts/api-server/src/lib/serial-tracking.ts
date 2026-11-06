@@ -22,12 +22,18 @@ export function firstReportedSales(sales: ReportedSale[]): Map<string, ReportedS
   for (const sale of sales) if (!first.has(sale.serial)) first.set(sale.serial, sale);
   return first;
 }
-export function earlierReportReason(first: ReportedSale | undefined, reportId: string, rowIndex: number): string {
+export function earlierReportReason(
+  first: ReportedSale | undefined, reportId: string, rowIndex: number, accountId?: number | null,
+): string {
   if (!first || (first.reportId === reportId && first.rowIndex === rowIndex)) return "";
-  return `Already reported sold in ${first.reportName} [${first.reportId}], row ${first.rowIndex + 2}` +
+  if (first.reportId === reportId)
+    return `Duplicate serial in customer report ${first.reportName} [${first.reportId}], row ${first.rowIndex + 2}`;
+  const sameCustomer = accountId != null && first.accountId != null && accountId === first.accountId;
+  return `${sameCustomer ? "Also in earlier report" : "Already reported sold in"} ${first.reportName} [${first.reportId}], row ${first.rowIndex + 2}` +
     (first.sellDate ? `, sell date ${first.sellDate}` : "") +
     (first.accountId != null ? `, reseller ID ${first.accountId}` : "");
 }
+export const isSameCustomerReportRepeat = (reason: string) => reason.startsWith("Also in earlier report ");
 export async function loadReportedSales(c: PoolClient): Promise<ReportedSale[]> {
   const rows = await c.query("SELECT payload FROM scanback_imports WHERE payload->>'kind'='claim' AND payload->>'state'='committed'");
   return reportedSales(rows.rows.map(r => r.payload as ScanbackImport));

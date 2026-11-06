@@ -9,7 +9,7 @@ export interface CenterUpload {
   accountId: number | null;
   weekIso: string | null;
   sourceId: string | null;
-  state: "preview" | "committed";
+  state: "preview" | "committed" | "superseded";
   createdAt: string;
   rowCount: number;
   summary: {

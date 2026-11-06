@@ -1,7 +1,7 @@
 import type {
   ScanbackProgram, ScanbackImportRow, ScanbackVerificationInput, ScanbackResult,
 } from "@workspace/api-zod";
-import type { ReportedSale } from "./serial-tracking";
+import { earlierReportReason, isSameCustomerReportRepeat, type ReportedSale } from "./serial-tracking";
 
 export const serialKey = (value: unknown) => String(value ?? "").replace(/\s/g, "").toUpperCase();
 export function cents(value: unknown): number | null {
@@ -33,6 +33,7 @@ export interface VerificationContext {
   restrictedSerials?: Set<string>;
   reportedSales?: ReportedSale[];
   accounts?: { id: number; code: string }[];
+  unmatchedCreditKeys?: Set<string>;
 }
 
 export function ownerFor(events: EvidenceRow[]) {
@@ -89,6 +90,7 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
   const running = new Map<string, number>();
   const selected = s.selectedRows ? new Set(s.selectedRows) : null;
   return ctx.claims.map(r => {
+    let reportRepeatReason = "";
     const o: ScanbackResult = {
       rowIndex: r.rowIndex, serial: r.serial, sku: r.sku, date: r.date,
       invoice: "", invoiceDate: "", unitPriceCents: null, gtmBuyCents: null,
@@ -97,7 +99,9 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       invoicedAccountId: null, invoicedTo: "", costCents: null, trackingColor: "neutral",
     };
     const reject = (reason: string, review = false) => {
-      o.reason = reason; o.status = review ? "review" : "rejected"; return o;
+      o.reason = reportRepeatReason ? `${reportRepeatReason} — ${reason}` : reason;
+      o.status = review ? "review" : "rejected";
+      return o;
     };
     // Populate source invoice data even on blocked rows, without making
     // ambiguous evidence payable or changing the existing cap calculation.
@@ -116,12 +120,21 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       return reject(`Already approved in batch ${prior.batchId}${prior.batchReference ? ` (${prior.batchReference})` : ""}${prior.programName ? `, promotion ${prior.programName}` : ""}`);
     }
     const firstSale = firstSales.get(serialKey(r.serial));
-    if (firstSale && (firstSale.reportId !== s.claimImportId || firstSale.rowIndex !== r.rowIndex)) {
+    const reportReason = earlierReportReason(firstSale, s.claimImportId, r.rowIndex, s.accountId);
+    if (reportReason && isSameCustomerReportRepeat(reportReason)) {
+      reportRepeatReason = reportReason;
+      o.trackingColor = "amber";
+    } else if (reportReason) {
       o.trackingColor = "red";
-      return reject(`Already reported sold in ${firstSale.reportName} [${firstSale.reportId}], row ${firstSale.rowIndex + 2}${firstSale.sellDate ? `, sell date ${firstSale.sellDate}` : ""}`);
+      return reject(reportReason);
     }
     if (seen.has(r.serial)) { o.trackingColor = "red"; return reject("Duplicate serial in this claim file"); }
     seen.add(r.serial);
+    const skuKey = (r.sku || inv?.sku || "").trim().toUpperCase();
+    if (ctx.unmatchedCreditKeys?.has(`${s.accountId}|${skuKey}`)) {
+      o.trackingColor = "amber";
+      return reject(`Review — unmatched Pronto credit for ${skuKey}; waiting for a later credit report with its serial.`, true);
+    }
     if (ctx.restrictedSerials?.has(r.serial))
       return reject("Serial also appears in excluded Pronto account/SKU rows — review source ownership and returns before approval", true);
     if (!events?.length) return reject("Serial not found on an invoice");
@@ -136,8 +149,10 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       if (r.date < p.start || r.date > p.end) o.trackingColor = "orange";
       return reject("Customer sell date precedes invoice date");
     }
-    if (r.date && (r.date < p.start || r.date > p.end)) {
-      o.trackingColor = "orange"; return reject("Outside promotion dates — customer sell date");
+    const sellDateOutside = !!r.date && (r.date < p.start || r.date > p.end);
+    if (sellDateOutside) {
+      o.trackingColor = "orange";
+      if (s.basis !== "invoice") return reject("Outside promotion dates — customer sell date");
     }
     const date = s.basis === "invoice" ? inv.date : r.date;
     if (!date) return reject("Customer sell date is required for this eligibility basis", true);
@@ -161,8 +176,13 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     const wants = selected ? selected.has(r.rowIndex) : true;
     const count = running.get(sku) ?? 0;
     if (wants && cap != null && prior + count >= cap) return reject(`Customer/SKU cap reached (${cap} units)`);
-    o.amountCents = amount; o.status = "eligible"; o.reason = wants ? "Eligible" : "Eligible — excluded from selection";
-    o.trackingColor = "green";
+    o.amountCents = amount; o.status = "eligible";
+    const warnings = [
+      reportRepeatReason,
+      sellDateOutside && s.basis === "invoice" ? "Customer sell date outside promotion dates (warning only; DD invoice-date basis)" : "",
+    ].filter(Boolean);
+    o.reason = [...warnings, wants ? "Eligible" : "Eligible — excluded from selection"].join(" — ");
+    if (!sellDateOutside) o.trackingColor = reportRepeatReason ? "amber" : "green";
     o.include = wants;
     if (wants) running.set(sku, count + 1);
     return o;

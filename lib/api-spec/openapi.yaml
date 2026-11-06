@@ -246,6 +246,18 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ScanbackImport" }
+  /scanback/imports/{id}/supersede:
+    post:
+      operationId: supersedeScanbackImport
+      tags: [scanback]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Committed customer report marked superseded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackImport" }
   /scanback/verify:
     post:
       operationId: verifyScanbackClaim
@@ -1039,11 +1051,12 @@ components:
         suggestedAccountId: { type: [integer, "null"] }
     ScanbackProntoExclusion:
       type: object
-      required: [row, accountCode, accountName, sku, quantity, serialCount, reason]
+      required: [row, accountCode, accountName, invoice, sku, quantity, serialCount, reason]
       properties:
         row: { type: integer }
         accountCode: { type: string }
         accountName: { type: string }
+        invoice: { type: string }
         sku: { type: string }
         quantity: { type: number }
         serialCount: { type: integer }
@@ -1074,7 +1087,7 @@ components:
         id: { type: string }
         kind: { type: string, enum: [evidence, claim, history] }
         name: { type: string }
-        state: { type: string, enum: [preview, committed] }
+        state: { type: string, enum: [preview, committed, superseded] }
         createdAt: { type: string }
         committedAt: { type: string }
         headers: { type: array, items: { type: string } }
@@ -1119,7 +1132,7 @@ components:
         invoicedAccountId: { type: [integer, "null"] }
         invoicedTo: { type: string }
         costCents: { type: [integer, "null"] }
-        trackingColor: { type: string, enum: [red, orange, green, neutral] }
+        trackingColor: { type: string, enum: [red, orange, amber, green, neutral] }
         unitPriceCents: { type: [integer, "null"] }
         gtmBuyCents: { type: [integer, "null"] }
         amountCents: { type: integer }
@@ -1849,7 +1862,7 @@ components:
         accountId: { type: [integer, "null"] }
         weekIso: { type: [string, "null"] }
         sourceId: { type: [string, "null"] }
-        state: { type: string, enum: [preview, committed] }
+        state: { type: string, enum: [preview, committed, superseded] }
         createdAt: { type: string }
         rowCount: { type: integer }
         summary:

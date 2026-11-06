@@ -6,9 +6,9 @@ import type {
 } from "@workspace/api-zod";
 import { verifyClaim, evidenceKey, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
 import { mapImport, type Sheets, type Account } from "./scanback-import";
-import { splitSerials } from "./scanback-pronto";
+import { pendingProntoCreditKeys, splitSerials, type ProntoCreditReport } from "./scanback-pronto";
 import { maskCustomerText } from "./customer-display";
-import { loadReportedSales, firstReportedSales, earlierReportReason } from "./serial-tracking";
+import { loadReportedSales, firstReportedSales, earlierReportReason, isSameCustomerReportRepeat } from "./serial-tracking";
 
 export type Client = PoolClient;
 export class ScanbackError extends Error {
@@ -106,22 +106,35 @@ export async function rebuildImport(c: Client, base: ScanbackImport, raw: Sheets
     const first = firstReportedSales(await loadReportedSales(c));
     const approved = new Map((await ledger(c)).map(row => [row.serial, row]));
     const seen = new Set<string>();
-    let repeated = 0;
+    let blockedRepeats = 0, sameCustomerRepeats = 0;
     value.rows = value.rows.map(row => {
       const claimed = approved.get(row.serial);
       const reason = claimed ? `Already approved in batch ${claimed.batchId}${claimed.programName ? `, promotion ${claimed.programName}` : ""}` :
-        earlierReportReason(first.get(row.serial), base.id, row.rowIndex) ||
-        (seen.has(row.serial) ? "Duplicate serial in this customer report" : "");
+        (seen.has(row.serial) ? "Duplicate serial in this customer report" :
+          earlierReportReason(first.get(row.serial), base.id, row.rowIndex, row.accountId ?? base.accountId));
       seen.add(row.serial);
       if (reason) {
-        repeated++;
-        if (repeated <= 20) value.warnings.push(`${row.serial}: ${reason}`);
+        if (isSameCustomerReportRepeat(reason)) sameCustomerRepeats++;
+        else blockedRepeats++;
+        if (blockedRepeats + sameCustomerRepeats <= 20) value.warnings.push(`${row.serial}: ${reason}`);
       }
       return { ...row, reuseReason: reason };
     });
-    if (repeated) value.warnings.push(`${repeated} reused serial rows are flagged and will not count as new sales or become payable. The source report is retained for the audit trail.`);
+    if (blockedRepeats) value.warnings.push(`${blockedRepeats} serial row(s) are red because they were already approved, sold by another customer, or duplicated in this report.`);
+    if (sameCustomerRepeats) value.warnings.push(`${sameCustomerRepeats} serial row(s) also appear in an earlier report for this customer. They are amber and can still be verified unless approved.`);
   }
   return value;
+}
+export async function currentClaimReport(c: Client, report: ScanbackImport): Promise<ScanbackImport> {
+  if (report.kind !== "claim" || report.state !== "committed") return report;
+  const first = firstReportedSales(await loadReportedSales(c));
+  const approved = new Map((await ledger(c)).map(row => [row.serial, row]));
+  return { ...report, rows: report.rows.map(row => {
+    const claimed = approved.get(row.serial);
+    const reuseReason = claimed ? `Already approved in batch ${claimed.batchId}${claimed.programName ? `, promotion ${claimed.programName}` : ""}` :
+      earlierReportReason(first.get(row.serial), report.id, row.rowIndex, row.accountId ?? report.accountId);
+    return { ...row, reuseReason };
+  }) };
 }
 export async function calculateDraft(c: Client, settings: ScanbackVerificationInput) {
   const p = await get<ScanbackProgram>(c, "scanback_programs", settings.programId);
@@ -138,19 +151,25 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
   // transfer/return, including when it arrived in a different committed extract.
   const restrictedSerials = new Set<string>();
   const nativeIds = imports.filter(i => i.pronto).map(i => i.id);
+  const prontoReports: ProntoCreditReport[] = [];
   if (nativeIds.length) {
     const sources = await c.query("SELECT raw_sheets,payload FROM scanback_imports WHERE id=ANY($1::text[])", [nativeIds]);
     for (const source of sources.rows) {
       const imp = source.payload as ScanbackImport;
-      for (const row of (source.raw_sheets as Sheets)[imp.sheet] ?? []) {
+      const rows = (source.raw_sheets as Sheets)[imp.sheet] ?? [];
+      prontoReports.push({ id: imp.id, createdAt: imp.createdAt, committedAt: imp.committedAt,
+        prontoAccounts: imp.prontoAccounts, rows });
+      for (const row of rows) {
         const code = String(row["Account Code"] ?? "").trim();
         if (!imp.prontoAccounts?.[code])
           for (const serial of splitSerials(row["Serial Number"])) restrictedSerials.add(serial);
       }
     }
   }
+  const unmatchedCreditKeys = pendingProntoCreditKeys(prontoReports);
   const reportedSales = await loadReportedSales(c);
-  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts, restrictedSerials, reportedSales, accounts: cat.accounts });
+  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts,
+    restrictedSerials, unmatchedCreditKeys, reportedSales, accounts: cat.accounts });
   const token = hash({ p, settings, imports: imports.map(i => i.id).sort(), approved, results });
   return { results, token, p, accounts: cat.accounts, parts: cat.parts };
 }

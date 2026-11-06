@@ -169,7 +169,8 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
       skuCount: new Set(r.rows.map(x => x.sku).filter(Boolean)).size, from: dates[0] ?? "", to: dates.at(-1) ?? "" };
     if (e.kind === "claim") {
       const first = firstReportedSales(cachedSales ?? await loadReportedSales(c));
-      const repeated = r.rows.filter(row => row.reuseReason || earlierReportReason(first.get(row.serial), r.id, row.rowIndex));
+        const repeated = r.rows.filter(row =>
+          earlierReportReason(first.get(row.serial), r.id, row.rowIndex, row.accountId ?? r.accountId));
       const reusedRows = new Set(repeated.map(row => row.rowIndex));
       e.summary.serialCount = new Set(r.rows.filter(row => !reusedRows.has(row.rowIndex)).map(row => row.serial)).size;
       const evidence = cachedEvidence ?? (await c.query("SELECT payload FROM scanback_imports WHERE payload->>'kind'='evidence' AND payload->>'state'='committed'")).rows.map(x => x.payload as ScanbackImport);

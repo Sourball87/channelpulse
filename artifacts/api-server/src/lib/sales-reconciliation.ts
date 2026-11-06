@@ -111,7 +111,7 @@ export function salesReconciliation(endWeek: string | null, data: SalesInputs, s
       const account = row.accountId ?? fixedAccount;
       if (account != null) reportReceived.add(key(account, "", week));
       const original = first.get(serialKey(row.serial));
-      if (row.reuseReason || original?.reportId !== imp.id || original?.rowIndex !== row.rowIndex) continue;
+      if (original?.reportId !== imp.id || original?.rowIndex !== row.rowIndex) continue;
       const sku = skuKey(row.sku || (owner?.accountId === account ? owner.sku : ""));
       if (account == null || !sku) {
         if (!scope.resellerIds?.length || (account != null && scope.resellerIds.includes(account))) unmatched++;

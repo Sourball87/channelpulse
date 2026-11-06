@@ -10,6 +10,7 @@ export interface ScanbackProntoExclusion {
   row: number;
   accountCode: string;
   accountName: string;
+  invoice: string;
   sku: string;
   quantity: number;
   serialCount: number;

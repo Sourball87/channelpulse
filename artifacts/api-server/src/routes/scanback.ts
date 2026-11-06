@@ -12,7 +12,7 @@ import { dateStringToWeekIso, isValidWeekIso } from "../lib/parser";
 import { validateProgramReferences } from "../lib/program-table";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
-  total, recordApprovedSerials, statementRows, requireThat, ScanbackError, type Client,
+  currentClaimReport, total, recordApprovedSerials, statementRows, requireThat, ScanbackError, type Client,
 } from "../lib/scanback-store";
 
 const router = Router();
@@ -138,13 +138,13 @@ router.post("/scanback/imports/preview", upload.single("file"), route(async (c, 
 router.post("/scanback/imports/:id/remap", route(async (c, req, res) => {
   const base = await get<ScanbackImport>(c, "scanback_imports", idParam(req));
   const options = parse(RemapScanbackImportBody, req.body);
-  if (base.state === "committed") {
+  if (base.state === "committed" || base.state === "superseded") {
     requireThat(options.sheet === base.sheet && options.dateFormat === base.dateFormat &&
       (options.accountId ?? null) === base.accountId &&
       JSON.stringify(Object.entries(options.prontoAccounts ?? {}).sort()) === JSON.stringify(Object.entries(base.prontoAccounts ?? {}).sort()) &&
       Object.entries(options.mapping).every(([key, column]) => (base.mapping[key] ?? "") === column),
     "Committed evidence is immutable.");
-    return publicImport(base, true);
+    return publicImport(await currentClaimReport(c, base), true);
   }
   const raw = (await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [base.id])).rows[0].raw_sheets;
   if (options.sheet !== base.sheet && raw[options.sheet]) {
@@ -158,8 +158,17 @@ router.post("/scanback/imports/:id/remap", route(async (c, req, res) => {
   await put(c, "scanback_imports", value.id, value);
   return publicImport(value, true);
 }));
+router.post("/scanback/imports/:id/supersede", route(async (c, req) => {
+  const value = await get<ScanbackImport>(c, "scanback_imports", idParam(req));
+  requireThat(value.kind === "claim" && value.state === "committed",
+    "Only an active committed customer report can be marked superseded.");
+  value.state = "superseded";
+  await put(c, "scanback_imports", value.id, value);
+  return publicImport(value, true);
+}));
 router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
   const base = await get<ScanbackImport>(c, "scanback_imports", idParam(req));
+  requireThat(base.state !== "superseded", "A superseded report cannot be committed.");
   if (base.state === "committed") return publicImport(base, true);
   const raw = (await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [base.id])).rows[0].raw_sheets;
   const value = await rebuildImport(c, base, raw, base);

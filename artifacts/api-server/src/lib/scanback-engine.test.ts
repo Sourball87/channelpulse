@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScanbackProgram, ScanbackImportRow, ScanbackVerificationInput } from "@workspace/api-zod";
 import { cents, validDate, verifyClaim, type EvidenceRow, type VerificationContext } from "./scanback-engine";
-import { mapImport, parseDate, parseSheets, suggestMapping, type Sheets } from "./scanback-import";
+import { detectImportKind, mapImport, parseDate, parseSheets, suggestMapping, type Sheets } from "./scanback-import";
 import * as XLSX from "xlsx";
 import type { ScanbackImport } from "@workspace/api-zod";
 
@@ -39,6 +39,9 @@ describe("scanback currency and dates", () => {
     expect(parseDate("03/04/26", "dmy")).toBe("2026-04-03");
     expect(parseDate("03/04/26", "mdy")).toBe("2026-03-04");
     expect(parseDate("31/02/2026", "dmy")).toBe("");
+    expect(parseDate("20260921", "dmy")).toBe("2026-09-21");
+    expect(parseDate(20260921, "mdy")).toBe("2026-09-21");
+    expect(parseDate("20260230", "dmy")).toBe("");
   });
 });
 describe("scanback deterministic verification", () => {
@@ -50,10 +53,20 @@ describe("scanback deterministic verification", () => {
     expect(first({ reportedSales: [sold] })).toMatchObject({ trackingColor: "green", include: true, amountCents: 3000 });
   });
   it("blocks later report reuse across customers and promotions in red with original source details", () => {
-    const result = first({ reportedSales: [sold], settings: { ...settings, claimImportId: "later", accountId: 9 } });
+    const result = first({ settings: { ...settings, claimImportId: "later", accountId: 9 }, reportedSales: [sold] });
     expect(result).toMatchObject({ trackingColor: "red", status: "rejected", include: false, selectable: false });
     expect(result.reason).toContain("First customer report [claim]");
     expect(result.reason).toContain("2026-09-20");
+  });
+  it("keeps unapproved same-customer report repeats amber and verifiable", () => {
+    const result = first({ settings: { ...settings, claimImportId: "resend" }, reportedSales: [sold] });
+    expect(result).toMatchObject({ trackingColor: "amber", status: "eligible", include: true, amountCents: 3000 });
+    expect(result.reason).toContain("Also in earlier report First customer report [claim]");
+  });
+  it("reviews the reseller/SKU while a Pronto credit has no matching serial", () => {
+    const result = first({ unmatchedCreditKeys: new Set(["1|SKU"]) });
+    expect(result).toMatchObject({ trackingColor: "amber", status: "review", include: false });
+    expect(result.reason).toContain("unmatched Pronto credit");
   });
   it("retains invoice and claim-basis details for claimed red rows", () => {
     const result = first({ accounts: [{ id: 1, code: "ca" }], approved: [{
@@ -64,10 +77,11 @@ describe("scanback deterministic verification", () => {
     expect(result.reason).toContain("Past promotion"); expect(result.reason).toContain("REF1");
   });
   it("marks sold-outside dates orange, including when invoice basis would otherwise be in range", () => {
-    for (const basis of ["sell", "invoice"] as const) {
-      expect(first({ settings: { ...settings, basis }, claims: [row("SER001", { date: "2026-10-01" })] }))
-        .toMatchObject({ trackingColor: "orange", include: false, status: "rejected" });
-    }
+    expect(first({ settings: { ...settings, basis: "sell" }, claims: [row("SER001", { date: "2026-10-01" })] }))
+      .toMatchObject({ trackingColor: "orange", include: false, status: "rejected" });
+    const invoiceBasis = first({ settings: { ...settings, basis: "invoice" }, claims: [row("SER001", { date: "2026-10-01" })] });
+    expect(invoiceBasis).toMatchObject({ trackingColor: "orange", include: true, status: "eligible" });
+    expect(invoiceBasis.reason).toContain("warning only");
   });
   it("keeps other blockers neutral and never lets reference cost change the payout", () => {
     expect(first({ evidence: [] }).trackingColor).toBe("neutral");
@@ -159,6 +173,10 @@ describe("scanback imports", () => {
     id: "i", kind: "evidence", name: "source.csv", state: "preview", createdAt: "", sheets: ["Sheet1"],
     sheet: "Sheet1", mapping: {}, dateFormat: "dmy", accountId: null, rows: [], errors: [], warnings: [], duplicate: false, headers: [], recordCount: 0,
   } as ScanbackImport;
+  const mapClaimSheet = (r: Sheets, sheet: string) => mapImport(
+    { ...base, kind: "claim" }, r, { sheet, dateFormat: "dmy", mapping: suggestMapping(Object.keys(r[sheet][0])) },
+    [{ id: 1, code: "CA", name: "Computer Alliance" }], new Set(["SKU"]),
+  );
   const map = (r = raw, kind: ScanbackImport["kind"] = "evidence", override = {}) =>
     mapImport({ ...base, kind }, r, { sheet: "Sheet1", dateFormat: "dmy", mapping: suggestMapping(Object.keys(r.Sheet1[0])), ...override }, [{ id: 1, code: "CA", name: "Computer Alliance" }], new Set(["SKU"]));
   it("normalizes account, serial, money and AU date", () => {
@@ -199,6 +217,32 @@ describe("scanback imports", () => {
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(raw.Sheet1), "Sheet1");
     expect(parseSheets(XLSX.write(wb, { type: "buffer", bookType: "xlsx" })).Sheet1).toHaveLength(1);
     expect(parseSheets(Buffer.from("Serial,SKU\nSER001,SKU")).Sheet1).toHaveLength(1);
+  });
+  it("detects Umart's combined IMEI/serial heading and Model Number SKU", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["IMEI Code/Serial No", "Model Number", "Sale Date"],
+      ["UMART-SERIAL-001", "UMART-MODEL", "21/09/2026"],
+    ]), "Umart Sales");
+    const parsed = parseSheets(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+    const headers = Object.keys(parsed["Umart Sales"][0]);
+    expect(detectImportKind(headers)).toBe("claim");
+    expect(suggestMapping(headers)).toMatchObject({ serial: "IMEI Code/Serial No", sku: "Model Number" });
+    const mapped = mapClaimSheet(parsed, "Umart Sales");
+    expect(mapped.errors).toEqual([]);
+    expect(mapped.rows[0]).toMatchObject({ serial: "UMART-SERIAL-001", sku: "UMART-MODEL" });
+  });
+  it("parses Scorptec's compact yyyymmdd text and numeric date cells", () => {
+    const csv = parseSheets(Buffer.from("Serial Number,Model Number,Sale Date\nSCORP-CSV-001,MODEL-A,20260921"));
+    expect(csv.Sheet1[0]["Sale Date"]).toBe("20260921");
+    expect(mapClaimSheet(csv, "Sheet1").rows[0].date).toBe("2026-09-21");
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["Serial Number", "Model Number", "Sale Date"], ["SCORP-XLS-001", "MODEL-B", 20260921],
+    ]), "Scorptec");
+    const xlsx = parseSheets(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+    expect(xlsx.Scorptec[0]["Sale Date"]).toBe(20260921);
+    expect(mapClaimSheet(xlsx, "Scorptec").rows[0].date).toBe("2026-09-21");
   });
   it("preserves leading zero CSV serials and rejects numeric spreadsheet serial cells", () => {
     expect(parseSheets(Buffer.from("Serial,SKU\n000123,SKU")).Sheet1[0].Serial).toBe("000123");

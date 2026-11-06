@@ -12,4 +12,5 @@ export type CenterUploadState = typeof CenterUploadState[keyof typeof CenterUplo
 export const CenterUploadState = {
   preview: 'preview',
   committed: 'committed',
+  superseded: 'superseded',
 } as const;
