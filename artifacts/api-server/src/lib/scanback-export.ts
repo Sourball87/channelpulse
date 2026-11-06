@@ -54,7 +54,7 @@ export function makeScanbackWorkbook(data: ScanbackExportData): Buffer {
     row.serial, row.reference, maskCustomerText(row.programName), resellerLabel(row.accountCode), row.sku, row.amountCents,
   ].map(spreadsheetSafe) as (string | number | boolean)[]);
   const credits = [[
-    "Import", "Source row", "Reseller", "Pronto account", "SKU", "Invoice", "Invoice date",
+    "Import", "Source row", "Reseller", "SKU", "Invoice", "Invoice date",
     "Quantity", "Resolution", "Returned serials", "Review note", "Resolved at", "Resolved by",
   ], ...data.creditResolutions].map(row => row.map(spreadsheetSafe)) as (string | number | boolean)[][];
   const resellers: (string | number | boolean)[][] = [[
@@ -102,10 +102,10 @@ export async function buildScanbackWorkbook(c: Client): Promise<Buffer> {
       const row = indexed.find(item => Number(item.sourceRow) === resolution.sourceRow);
       if (!row) continue;
       const accountCode = String(row["Account Code"] ?? "");
+      const mappedReseller = resellers.find(item => item.id === value.prontoAccounts?.[accountCode]);
       creditResolutions.push([
         maskCustomerText(value.name), resolution.sourceRow,
-        resellerLabel(resellers.find(item => item.id === value.prontoAccounts?.[accountCode])?.code ?? accountCode),
-        resellerLabel(resellers.find(item => item.id === value.prontoAccounts?.[accountCode])?.code ?? accountCode),
+        mappedReseller ? resellerLabel(mappedReseller.code) : "Unmapped",
         String(row["Stock Code"] ?? ""), String(row["Invoice No"] ?? ""),
         String(row["Invoice Date"] ?? ""), Number(row["Ship Qty"]), resolution.mode,
         resolution.serials.join(", "), maskCustomerText(resolution.note), resolution.resolvedAt, resolution.resolvedBy,

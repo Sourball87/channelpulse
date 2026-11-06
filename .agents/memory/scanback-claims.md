@@ -33,11 +33,17 @@ Keep CSV cell tokens raw until explicit date/serial normalization.
 
 **How to apply:** Preserve raw CSV strings at the reader boundary. Test both date formats using the same ambiguous input and preserve text serial identifiers; applying a date format after automatic spreadsheet inference is too late.
 
-Native Pronto POS imports cover only the existing nine ChannelPulse resellers.
+Native Pronto POS accounts may map to any active reseller configured in Settings; name-prefix suggestions are hints only.
 
-**Why:** The user chose “Use the existing nine resellers (recommended)” rather than adding other Pronto accounts.
+**Why:** The user later corrected the earlier nine-reseller restriction and asked to allow any active Settings reseller.
 
 **How to apply:** Keep source-to-reseller mapping explicit and do not create reseller accounts or product-catalogue SKUs automatically from the extract. Retain selected-account evidence with uncatalogued SKUs; those codes are usable only if manually entered on a promotion.
+
+Pronto credits are duplicates by account code, SKU, invoice number, quantity and invoice date, regardless of source file or row. A newer extract that covers an older date range supersedes it, while unique older evidence remains available. Scanback exports contain customer data and must stay private; keep weekly backups and retain the latest 12.
+
+**Why:** The user requested cross-import credit deduplication, coverage-based superseding without losing unique evidence, and private recurring workbook exports.
+
+**How to apply:** Use source identity rather than import identity for credit resolutions. Preserve older unique rows when transferring duplicate evidence to a covering extract. Keep customer names masked in workbooks and store scheduled exports only in private App Storage with 12-backup retention.
 
 The user wants imports to auto-detect the spreadsheet type and no template-download step.
 

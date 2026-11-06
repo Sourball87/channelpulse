@@ -221,6 +221,14 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       native = (await call(`/scanback/imports/${native.id}/remap`, nativeOptions)).data;
       expect(native.pronto).toMatchObject({ includedSourceRows: 3, excludedSourceRows: 1 });
       expect(native.rows[0]).toMatchObject({ unitPriceCents: 10000, accountId: a.id, sourceRow: 2 });
+      const remappedToOtherActiveReseller = await call(`/scanback/imports/${native.id}/remap`, {
+        ...nativeOptions, prontoAccounts: { SOURCE1: other.id },
+      });
+      expect(remappedToOtherActiveReseller.status).toBe(200);
+      expect(remappedToOtherActiveReseller.data.pronto.accounts).toContainEqual(
+        expect.objectContaining({ code: "SOURCE1", accountId: other.id }),
+      );
+      native = (await call(`/scanback/imports/${native.id}/remap`, nativeOptions)).data;
       await commit(native);
       expect((await call(`/scanback/imports/${native.id}/remap`, { ...nativeOptions, prontoAccounts: { SOURCE1: other.id } })).status).toBe(400);
       const retained = (await pool.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [native.id])).rows[0].raw_sheets;
@@ -287,7 +295,8 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       }]);
 
       let oldCredit = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1) +
-        creditPr("CREDIT-OLD-SALE", "OLDUNIQUE", 1), "old-unmatched-credit");
+        creditPr("CREDIT-OLD-SALE", "OLDUNIQUE", 1) +
+        creditPr("CREDIT-SHARED-SALE", "SHAREDSERIAL", 1), "old-unmatched-credit");
       oldCredit = await remapPronto(oldCredit);
       await commit(oldCredit);
       creditCenter = (await call("/upload-center")).data;
@@ -295,12 +304,16 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         importId: oldCredit.id, invoice: `${prefix}-CREDIT-OLD`, date: "2026-09-01",
       }));
       let overlapCredit = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1) +
-        creditPr("CREDIT-OVERLAP-SALE", "OVERLAPUNIQUE", 1), "old-unmatched-overlap");
+        creditPr("CREDIT-OVERLAP-SALE", "OVERLAPUNIQUE", 1) +
+        creditPr("CREDIT-SHARED-SALE", "SHAREDSERIAL", 1), "old-unmatched-overlap");
       overlapCredit = await remapPronto(overlapCredit);
       await commit(overlapCredit);
       const supersededOld = (await pool.query("SELECT payload FROM scanback_imports WHERE id=$1", [oldCredit.id])).rows[0].payload;
       expect(supersededOld.state).toBe("superseded");
       expect(supersededOld.rows.map((r: { serial: string }) => r.serial)).toContain(`${prefix}OLDUNIQUE`);
+      expect(supersededOld.rows.map((r: { serial: string }) => r.serial)).not.toContain(`${prefix}SHAREDSERIAL`);
+      const overlapPayload = (await pool.query("SELECT payload FROM scanback_imports WHERE id=$1", [overlapCredit.id])).rows[0].payload;
+      expect(overlapPayload.rows.filter((r: { serial: string }) => r.serial === `${prefix}SHAREDSERIAL`)).toHaveLength(1);
       creditCenter = (await call("/upload-center")).data;
       const overlappingCredits = creditCenter.unmatchedCredits.filter((credit: { invoice: string }) =>
         credit.invoice === `${prefix}-CREDIT-OLD`);

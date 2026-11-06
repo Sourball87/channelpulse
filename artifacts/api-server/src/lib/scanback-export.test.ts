@@ -21,7 +21,7 @@ describe("scanback exports", () => {
         accountCode: "ca", sku: "SKU-1", amountCents: 3000,
       }],
       creditResolutions: [[
-        "credit.xlsx", 12, "CA", "SOURCE1", "SKU-1", "CR-1", "2026-09-04", -1, "reviewed",
+        "credit.xlsx", 12, "CA", "SKU-1", "CR-1", "2026-09-04", -1, "reviewed",
         "", "Checked return.", "2026-09-05T00:00:00Z", "admin",
       ]],
       resellers: [{ id: 1, code: "ca", name: "Computer Alliance", active: true, expectedWeeklyFiles: 2 }],
@@ -34,7 +34,7 @@ describe("scanback exports", () => {
       "SERIAL1", "REF-1", "Spring", "CA", "SKU-1", 3000,
     ]);
     expect(XLSX.utils.sheet_to_json(workbook.Sheets["Credit resolutions"], { header: 1 })).toContainEqual([
-      "credit.xlsx", 12, "CA", "SOURCE1", "SKU-1", "CR-1", "2026-09-04", -1,
+      "credit.xlsx", 12, "CA", "SKU-1", "CR-1", "2026-09-04", -1,
       "reviewed", "", "Checked return.", "2026-09-05T00:00:00Z", "admin",
     ]);
     expect(XLSX.utils.sheet_to_json(workbook.Sheets.Resellers, { header: 1 })).toContainEqual([
