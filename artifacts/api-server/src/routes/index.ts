@@ -20,6 +20,7 @@ import insightsResellerPerfRouter from "./insights-reseller-perf";
 import scanbackRouter from "./scanback";
 import uploadCenterRouter from "./upload-center";
 import programPreviewRouter from "./program-preview";
+import serialTrailRouter from "./serial-trail";
 import { maskCustomerResponses } from "../lib/customer-display";
 
 const router: IRouter = Router();
@@ -47,5 +48,6 @@ router.use(insightsResellerPerfRouter);
 router.use(scanbackRouter);
 router.use(uploadCenterRouter);
 router.use(programPreviewRouter);
+router.use(serialTrailRouter);
 
 export default router;

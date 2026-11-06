@@ -1,4 +1,5 @@
-import { customerLabel } from "@/lib/customer-display";
+import { customerLabel, maskCustomerText } from "@/lib/customer-display";
+import { TRACKING_ROW, TrackingLegend, TrackingTag, trackingColorOf } from "./tracking";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getExportScanbackBatchUrl,
@@ -26,8 +27,9 @@ import { CheckCircle2, Download, RefreshCw, ShieldCheck } from "lucide-react";
 import { SectionEmpty, StatusPill, errorMessage, formatCents, formatDate, formatDateTime, useRefreshWorkspace } from "./shared";
 
 export function VerifyPanel({
-  programs, imports, drafts, resellers, onApproved, preset,
+  programs, imports, drafts, resellers, onApproved, preset, onOpenSerial,
 }: {
+  onOpenSerial?: (serial: string) => void;
   programs: ScanbackProgram[]; imports: ScanbackImport[]; drafts: ScanbackDraft[]; resellers: Reseller[];
   onApproved: (b: ScanbackBatch) => void;
   /** Deep-link preselection from the Upload Center: report import id, reseller, promotion and date range. */
@@ -233,33 +235,38 @@ export function VerifyPanel({
             </div>
           </div>
           {dirty && <p className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-800">Selection or settings changed. Recheck before approving{settingsDirty ? " (settings changed - this will run a fresh verification)" : ""}.</p>}
+          <TrackingLegend />
           <div className="max-h-[560px] overflow-auto">
             <Table>
               <TableHeader><TableRow>
                 <TableHead className="w-8" /><TableHead>Status</TableHead><TableHead>Serial</TableHead><TableHead>SKU</TableHead><TableHead>Sale date</TableHead>
-                <TableHead>Invoice</TableHead><TableHead className="text-right">Inv. unit ex GST</TableHead><TableHead className="text-right">GTM Buy Ex</TableHead>
+                <TableHead>Invoiced to</TableHead><TableHead>Invoice</TableHead><TableHead className="text-right">Invoiced ex GST (customer paid)</TableHead><TableHead className="text-right">GTM Buy Ex</TableHead>
                 <TableHead className="text-right">Claim</TableHead><TableHead>Reason</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {draft.results.map((r) => (
-                  <TableRow key={r.rowIndex} data-testid={`row-result-${r.rowIndex}`} className={r.status === "rejected" ? "bg-rose-50/30" : ""}>
+                {draft.results.map((r) => { const tc = trackingColorOf(r); return (
+                  <TableRow key={r.rowIndex} data-testid={`row-result-${r.rowIndex}`} data-tracking={tc} className={TRACKING_ROW[tc]}>
                     <TableCell>
                       {r.selectable && (
                         <Checkbox checked={selected.has(r.rowIndex)} data-testid={`checkbox-result-${r.rowIndex}`}
                           onCheckedChange={(c) => setSelected((s) => { const n = new Set(s); if (c) n.add(r.rowIndex); else n.delete(r.rowIndex); return n; })} />
                       )}
                     </TableCell>
-                    <TableCell><StatusPill status={r.status} /></TableCell>
-                    <TableCell className="font-mono text-xs">{r.serial}{r.quantity !== 1 && <span className="ml-1 text-amber-700">x{r.quantity}</span>}</TableCell>
+                    <TableCell><StatusPill status={r.status} /><span className="mt-0.5 block"><TrackingTag color={tc} /></span></TableCell>
+                    <TableCell className="font-mono text-xs">{onOpenSerial ? <button type="button" className="underline decoration-dotted underline-offset-2 hover:text-cyan-700" onClick={() => onOpenSerial(r.serial)} data-testid={`button-serial-trail-${r.rowIndex}`} title="Open serial trail">{r.serial}</button> : r.serial}{r.quantity !== 1 && <span className="ml-1 text-amber-700">x{r.quantity}</span>}</TableCell>
                     <TableCell className="font-mono text-xs">{r.sku}</TableCell>
                     <TableCell className="text-xs">{r.date || "-"}</TableCell>
+                    <TableCell className="text-xs">{r.invoicedAccountId != null ? customerLabel(resById.get(r.invoicedAccountId)?.code ?? r.invoicedAccountId) : r.invoicedTo ? maskCustomerText(r.invoicedTo) : "-"}</TableCell>
                     <TableCell className="text-xs"><span className="font-mono">{r.invoice || "-"}</span>{r.invoiceDate && <span className="block text-slate-500">{r.invoiceDate}</span>}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{formatCents(r.unitPriceCents)}</TableCell>
-                    <TableCell className="text-right font-mono text-xs">{formatCents(r.gtmBuyCents)}</TableCell>
-                    <TableCell className="text-right font-mono text-xs font-semibold">{formatCents(r.amountCents)}</TableCell>
-                    <TableCell className="max-w-xs text-xs text-slate-600">{r.reason}</TableCell>
+                    <TableCell className="text-right font-mono text-xs">{formatCents(r.gtmBuyCents)}{r.costCents != null && <span className="block text-[10px] font-sans text-slate-400" title="Our cost, reference only, not the claim basis">our cost (ref) {formatCents(r.costCents)}</span>}</TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold"
+                      title={r.status === "eligible" ? "Payable claim amount" : "Calculated difference only; this blocked serial is not payable"}>
+                      {formatCents(r.unitPriceCents != null && r.gtmBuyCents != null ? r.unitPriceCents - r.gtmBuyCents : r.amountCents)}
+                    </TableCell>
+                    <TableCell className="max-w-xs text-xs text-slate-600">{maskCustomerText(r.reason)}</TableCell>
                   </TableRow>
-                ))}
+                ); })}
               </TableBody>
             </Table>
           </div>

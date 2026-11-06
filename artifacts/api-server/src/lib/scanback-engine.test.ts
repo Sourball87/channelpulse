@@ -42,6 +42,38 @@ describe("scanback currency and dates", () => {
   });
 });
 describe("scanback deterministic verification", () => {
+  const sold = {
+    serial: "SER001", reportId: "claim", reportName: "First customer report", rowIndex: 0,
+    accountId: 1, sellDate: "2026-09-20", committedAt: "2026-09-21T00:00:00.000Z",
+  };
+  it("allows the first SOLD source to verify without blocking itself and marks payable green", () => {
+    expect(first({ reportedSales: [sold] })).toMatchObject({ trackingColor: "green", include: true, amountCents: 3000 });
+  });
+  it("blocks later report reuse across customers and promotions in red with original source details", () => {
+    const result = first({ reportedSales: [sold], settings: { ...settings, claimImportId: "later", accountId: 9 } });
+    expect(result).toMatchObject({ trackingColor: "red", status: "rejected", include: false, selectable: false });
+    expect(result.reason).toContain("First customer report [claim]");
+    expect(result.reason).toContain("2026-09-20");
+  });
+  it("retains invoice and claim-basis details for claimed red rows", () => {
+    const result = first({ accounts: [{ id: 1, code: "ca" }], approved: [{
+      serial: "SER001", batchId: "batch-old", programId: "old", programName: "Past promotion",
+      batchReference: "REF1", accountId: 1, partId: 2,
+    }] });
+    expect(result).toMatchObject({ trackingColor: "red", include: false, invoicedTo: "ca", invoice: "INV1", invoiceDate: "2026-09-01", unitPriceCents: 10000, gtmBuyCents: 7000 });
+    expect(result.reason).toContain("Past promotion"); expect(result.reason).toContain("REF1");
+  });
+  it("marks sold-outside dates orange, including when invoice basis would otherwise be in range", () => {
+    for (const basis of ["sell", "invoice"] as const) {
+      expect(first({ settings: { ...settings, basis }, claims: [row("SER001", { date: "2026-10-01" })] }))
+        .toMatchObject({ trackingColor: "orange", include: false, status: "rejected" });
+    }
+  });
+  it("keeps other blockers neutral and never lets reference cost change the payout", () => {
+    expect(first({ evidence: [] }).trackingColor).toBe("neutral");
+    expect(first({ evidence: [ev("SER001", { costCents: 999999 })] }))
+      .toMatchObject({ trackingColor: "green", amountCents: 3000, costCents: 999999 });
+  });
   it("pays the invoiced reseller unit price minus GTM", () => {
     expect(first()).toMatchObject({ status: "eligible", amountCents: 3000, include: true });
   });

@@ -20,6 +20,7 @@ export interface ScanbackImport {
   name: string;
   state: ScanbackImportState;
   createdAt: string;
+  committedAt?: string;
   headers: string[];
   sheets: string[];
   mapping: ScanbackImportMapping;

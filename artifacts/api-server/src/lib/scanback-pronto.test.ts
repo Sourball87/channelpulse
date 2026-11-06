@@ -24,7 +24,7 @@ describe("native Pronto POS evidence", () => {
   it("detects only the full Pronto contract and selects Invoice Date / Item Price", () => {
     expect(isPronto(Object.keys(invoice({ "Order Date": "2020-01-01", "Item Cost": 70 })))).toBe(true);
     expect(isPronto(["Serial Number", "Item Price"])).toBe(false);
-    expect(suggestMapping(Object.keys(invoice({ "Order Date": "2020-01-01", "Item Cost": 70 })))).toEqual(prontoMapping);
+    expect(suggestMapping(Object.keys(invoice({ "Order Date": "2020-01-01", "Item Cost": 70 })))).toEqual({ ...prontoMapping, cost: "Item Cost" });
   });
   it("does not automatically use even a clear company-name suggestion", () => {
     const result = map(undefined, {});
@@ -69,7 +69,7 @@ describe("native Pronto POS evidence", () => {
   it("rejects using a Pronto POS extract as a customer claim file", () => {
     expect(() => mapImport({ ...base, kind: "claim" }, { Sheet1: [invoice()] }, base, accounts, new Set(["SKU"]))).toThrow("Choose Invoice / credit evidence");
   });
-  it("retains only evidence/account/currency columns, not addresses, user IDs, RRP or purchase costs", () => {
+  it("retains evidence/account/currency and reference cost, not addresses, user IDs or RRP", () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([invoice({
       "Reseller Address": "Not needed", "EU Email": "not-needed@example.invalid", "User ID Code": "operator",
@@ -77,7 +77,7 @@ describe("native Pronto POS evidence", () => {
     })]), "Sheet1");
     const raw = parseSheets(XLSX.write(wb, { type: "buffer" }));
     expect(Object.keys(raw.Sheet1[0])).not.toEqual(expect.arrayContaining(["EU Email"]));
-    expect(Object.keys(raw.Sheet1[0]).sort()).toEqual([...Object.keys(invoice()), "Currency"].sort());
+    expect(Object.keys(raw.Sheet1[0]).sort()).toEqual([...Object.keys(invoice()), "Currency", "Item Cost"].sort());
   });
   it("holds a serial for review when excluded source evidence could hide an owner or return", () => {
     const evidence = map().rows.map(row => ({ ...row, source: "test source" }));

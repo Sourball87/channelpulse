@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ScanbackResultStatus } from './scanbackResultStatus';
+import type { ScanbackResultTrackingColor } from './scanbackResultTrackingColor';
 
 export interface ScanbackResult {
   rowIndex: number;
@@ -14,6 +15,12 @@ export interface ScanbackResult {
   date: string;
   invoice: string;
   invoiceDate: string;
+  /** @nullable */
+  invoicedAccountId?: number | null;
+  invoicedTo?: string;
+  /** @nullable */
+  costCents?: number | null;
+  trackingColor?: ScanbackResultTrackingColor;
   /** @nullable */
   unitPriceCents: number | null;
   /** @nullable */

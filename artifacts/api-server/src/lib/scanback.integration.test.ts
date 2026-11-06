@@ -69,9 +69,9 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(program.id).toBeTruthy();
       const sku = part.part_no ?? part.partNo;
       expect(sku).toBeTruthy();
-      const header = "Invoice,Invoice Date,Account,SKU,Quantity,Serial,Unit Price\n";
+      const header = "Invoice,Invoice Date,Account,SKU,Quantity,Serial,Unit Price,Our unit cost ex GST\n";
       const inv = (serial: string, reference = serial, account = a.code, qty = 1, date = "01/09/2026", price = "100.00") =>
-        `${prefix}${reference},${date},${account},${sku},${qty},${prefix}${serial},${price}\n`;
+        `${prefix}${reference},${date},${account},${sku},${qty},${prefix}${serial},${price},60.00\n`;
       const evidenceCsv = header + inv("A") + inv("E") + inv("B") + inv("B", "CREDIT-B", a.code, -1, "02/09/2026")
         + inv("C") + inv("C", "INV2-C", a.code, 1, "03/09/2026", "90.00") + inv("D", "D", other.code) + inv("H") + inv("I");
       const evidence = await commit(await upload("auto", evidenceCsv, "evidence"));
@@ -89,6 +89,21 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const claim = await commit(await upload("auto", claimCsv, "claim"));
       expect(claim.kind).toBe("claim");
       const settings = { programId: program.id, accountId: a.id, claimImportId: claim.id, basis: "sell", from: program.start, to: program.end };
+      const later = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}A,${sku},19/09/2026,${other.code}\n`, "later-customer-report"));
+      expect(later.rows[0].reuseReason).toContain(claim.id);
+      expect(later.warnings.some((w: string) => w.includes("reused serial rows"))).toBe(true);
+      const intake = (await call("/upload-center")).data;
+      expect(intake.uploads.find((u: { sourceId: string }) => u.sourceId === later.id).summary.serialCount).toBe(0);
+      const laterDraft = (await call("/scanback/verify", { ...settings, claimImportId: later.id })).data;
+      expect(laterDraft.results[0]).toMatchObject({ trackingColor: "red", include: false, selectable: false });
+      expect(laterDraft.results[0].reason).toContain(claim.id);
+      const soldTrail = (await call(`/scanback/serials/${prefix}A`)).data;
+      expect(soldTrail.status).toBe("SOLD");
+      expect(soldTrail.events.filter((e: { kind: string }) => e.kind === "sold")).toHaveLength(3);
+      expect(soldTrail.events.filter((e: { kind: string; reused: boolean }) => e.kind === "sold" && e.reused)).toHaveLength(2);
+      expect(soldTrail.events.find((e: { kind: string }) => e.kind === "invoice"))
+        .toMatchObject({ accountId: a.id, unitPriceCents: 10000, costCents: 6000 });
       let draft = (await call("/scanback/verify", settings)).data;
       expect(draft.totalCents).toBe(3000);
       expect(draft.results.map((r: { status: string }) => r.status)).toEqual(["eligible", "rejected", "rejected", "review", "rejected", "rejected", "rejected"]);
@@ -117,6 +132,12 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const race = await Promise.all([raceA, raceB].map(d => call("/scanback/approve", { draftId: d.id, token: d.token, reference: prefix + " race" })));
       expect(race.map(r => r.status).sort()).toEqual([200, 409]);
       expect(Number((await pool.query("SELECT count(*) FROM scanback_approved_serials WHERE serial=$1", [prefix + "A"])).rows[0].count)).toBe(1);
+      const claimedTrail = (await call(`/scanback/serials/${prefix}A`)).data;
+      expect(claimedTrail.status).toBe("CLAIMED");
+      expect(claimedTrail.events.find((e: { kind: string }) => e.kind === "claimed"))
+        .toMatchObject({ promotion: second.name, amountCents: 3000, accountId: a.id });
+      const unknownTrail = await call(`/scanback/serials/${prefix}UNKNOWN`);
+      expect(unknownTrail.data).toMatchObject({ status: "UNKNOWN", events: [] });
       // A different file containing identical financial events must not add units.
       const overlap = await upload("evidence", header + inv("A"), "overlap");
       expect(overlap.recordCount).toBe(0); expect(overlap.warnings.join(" ")).toContain("ignored");

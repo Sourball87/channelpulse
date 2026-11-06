@@ -195,6 +195,9 @@ export interface ScanbackImportRow {
   /** @nullable */
   unitPriceCents: number | null;
   /** @nullable */
+  costCents?: number | null;
+  reuseReason?: string;
+  /** @nullable */
   amountCents: number | null;
   program: string;
   reference: string;
@@ -274,6 +277,7 @@ export interface ScanbackImport {
   name: string;
   state: ScanbackImportState;
   createdAt: string;
+  committedAt?: string;
   headers: string[];
   sheets: string[];
   mapping: ScanbackImportMapping;
@@ -309,6 +313,16 @@ export interface ScanbackVerificationInput {
   selectedRows?: number[];
 }
 
+export type ScanbackResultTrackingColor = typeof ScanbackResultTrackingColor[keyof typeof ScanbackResultTrackingColor];
+
+
+export const ScanbackResultTrackingColor = {
+  red: 'red',
+  orange: 'orange',
+  green: 'green',
+  neutral: 'neutral',
+} as const;
+
 export type ScanbackResultStatus = typeof ScanbackResultStatus[keyof typeof ScanbackResultStatus];
 
 
@@ -325,6 +339,12 @@ export interface ScanbackResult {
   date: string;
   invoice: string;
   invoiceDate: string;
+  /** @nullable */
+  invoicedAccountId?: number | null;
+  invoicedTo?: string;
+  /** @nullable */
+  costCents?: number | null;
+  trackingColor?: ScanbackResultTrackingColor;
   /** @nullable */
   unitPriceCents: number | null;
   /** @nullable */
@@ -374,6 +394,56 @@ export interface ScanbackWorkspace {
   drafts: ScanbackDraft[];
   batches: ScanbackBatch[];
   programStats?: ScanbackProgramStat[];
+}
+
+export type ScanbackSerialTrailStatus = typeof ScanbackSerialTrailStatus[keyof typeof ScanbackSerialTrailStatus];
+
+
+export const ScanbackSerialTrailStatus = {
+  UNKNOWN: 'UNKNOWN',
+  INVOICED: 'INVOICED',
+  SOLD: 'SOLD',
+  CLAIMED: 'CLAIMED',
+} as const;
+
+export type ScanbackSerialEventKind = typeof ScanbackSerialEventKind[keyof typeof ScanbackSerialEventKind];
+
+
+export const ScanbackSerialEventKind = {
+  invoice: 'invoice',
+  credit: 'credit',
+  sold: 'sold',
+  claimed: 'claimed',
+} as const;
+
+export interface ScanbackSerialEvent {
+  kind: ScanbackSerialEventKind;
+  date: string;
+  sourceId: string;
+  sourceName: string;
+  sourceRow?: number;
+  /** @nullable */
+  accountId: number | null;
+  accountCode: string;
+  sku: string;
+  invoice?: string;
+  /** @nullable */
+  unitPriceCents?: number | null;
+  /** @nullable */
+  costCents?: number | null;
+  promotion?: string;
+  batchId?: string;
+  batchReference?: string;
+  /** @nullable */
+  amountCents?: number | null;
+  reused: boolean;
+  reason: string;
+}
+
+export interface ScanbackSerialTrail {
+  serial: string;
+  status: ScanbackSerialTrailStatus;
+  events: ScanbackSerialEvent[];
 }
 
 export interface HealthStatus {

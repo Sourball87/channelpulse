@@ -13,6 +13,7 @@ const fields: Record<string, string[]> = {
   quantity: ["qty", "quantity", "invoiceqty"],
   invoice: ["invoice", "invoiceno", "invoicenumber", "invoicereference"],
   unitPrice: ["invoicedunitpriceex", "invoicedunitpriceexgst", "unitpriceex", "unitprice", "price", "sellprice", "invoiceprice", "invoicecost"],
+  cost: ["ourcost", "ourunitcostexgst", "purchasecost", "unitcost", "costex", "costexgst", "itemcost", "ddcostex", "ddcost", "cost"],
   amount: ["claim", "claimamount", "claimvalue", "amount", "claim$"],
   program: ["promotion", "program", "promotionname"],
   reference: ["batch", "reference", "claimreference"],
@@ -33,7 +34,10 @@ export function detectImportKind(headers: string[]): ScanbackImport["kind"] {
   throw new Error("Could not detect the spreadsheet type. A serial-number heading is required.");
 }
 export function suggestMapping(headers: string[]): Record<string, string> {
-  if (isPronto(headers)) return { ...prontoMapping };
+  if (isPronto(headers)) {
+    const costs = headers.filter(h => fields.cost.includes(norm(h)));
+    return { ...prontoMapping, cost: costs.length === 1 ? costs[0] : "" };
+  }
   return Object.fromEntries(Object.entries(fields).map(([f, aliases]) => {
     const matches = headers.filter(h => aliases.includes(norm(h)));
     // Multiple candidate date/price columns require an explicit choice.
@@ -147,6 +151,9 @@ export function mapImport(
     if (base.kind === "evidence" && Math.abs(quantity) !== serials.length)
       error("Invoice quantity must match the number of serials on the row.");
     const price = cents(value("unitPrice"));
+    const cost = cents(value("cost"));
+    if (base.kind === "evidence" && String(value("cost") ?? "").trim() !== "" && cost == null)
+      error("Our cost must be blank or a valid unit amount with up to two decimal places (reference only).");
     const amount = cents(value("amount"));
     if (base.kind === "evidence" && (price == null || (quantity > 0 && price < 0)))
       error("Valid invoiced unit price excluding GST is required.");
@@ -161,6 +168,7 @@ export function mapImport(
       rowIndex: rows.length, serial, sku, date, accountId,
       quantity: base.kind === "evidence" ? Math.sign(quantity) : quantity,
       invoice: text("invoice"), unitPriceCents: price == null ? null : Math.abs(price),
+      costCents: cost == null ? null : Math.abs(cost),
       amountCents: amount, program: text("program"), reference: text("reference"),
       sourceRow: i + 2,
     });

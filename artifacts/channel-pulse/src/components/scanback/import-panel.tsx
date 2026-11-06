@@ -1,4 +1,5 @@
-import { customerLabel } from "@/lib/customer-display";
+import { Fragment } from "react";
+import { customerLabel, maskCustomerText } from "@/lib/customer-display";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useCommitScanbackImport,
@@ -197,10 +198,11 @@ export function ImportPanel({
             {(current.errors.length > 0 || current.warnings.length > 0) && (
               <div className="max-h-48 space-y-1 overflow-y-auto border-t px-4 py-3 text-xs">
                 {current.errors.map((e, i) => <p key={`e${i}`} className="text-rose-700" data-testid={`text-import-issue-${i}`}>Row {e.row}: {e.message}</p>)}
-                {current.warnings.map((w, i) => <p key={`w${i}`} className="text-amber-700">{w}</p>)}
+                {current.warnings.map((w, i) => <p key={`w${i}`} className="text-amber-700" data-testid={`text-import-warning-${i}`}>{w}</p>)}
               </div>
             )}
 
+            {current.rows.some((r) => r.reuseReason) && <p className="border-t bg-rose-50 px-4 py-2 text-xs text-rose-800" data-testid="text-import-reuse-summary">{current.rows.filter((r) => r.reuseReason).length} sample row(s) repeat serials already reported in a committed customer report. They are flagged red and excluded from the serial count.</p>}
             <div className="border-t">
               {current.rows.length === 0 ? (
                 <p className="px-4 py-6 text-center text-sm text-slate-500">No sample rows loaded. Apply the mapping to retrieve samples.</p>
@@ -212,16 +214,21 @@ export function ImportPanel({
                       <TableHead className="text-right">Qty</TableHead><TableHead>Invoice</TableHead><TableHead className="text-right">Inv. unit ex GST</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Program / ref</TableHead>
                     </TableRow></TableHeader>
                     <TableBody>
-                      {current.rows.slice(0, 50).map((r) => (
-                        <TableRow key={r.rowIndex} className="font-mono text-xs">
+                      {current.rows.slice(0, 50).map((r) => (<Fragment key={r.rowIndex}>
+                        <TableRow className={`font-mono text-xs ${r.reuseReason ? "bg-rose-50/60" : ""}`} data-testid={`row-import-${r.rowIndex}`}>
                           <TableCell>{r.rowIndex}</TableCell><TableCell>{r.serial}</TableCell><TableCell>{r.sku}</TableCell><TableCell>{r.date}</TableCell>
                           <TableCell>{r.accountId == null ? "-" : customerLabel(resById.get(r.accountId)?.code ?? r.accountId)}</TableCell>
                           <TableCell className="text-right">{r.quantity}</TableCell><TableCell>{r.invoice}</TableCell>
                           <TableCell className="text-right">{r.unitPriceCents == null ? "-" : formatCents(r.unitPriceCents)}</TableCell>
                           <TableCell className="text-right">{r.amountCents == null ? "-" : formatCents(r.amountCents)}</TableCell>
-                          <TableCell>{[r.program, r.reference].filter(Boolean).join(" / ")}</TableCell>
+                          <TableCell>{[r.program, r.reference].filter(Boolean).join(" / ")}{r.costCents != null && <span className="block text-[10px] text-slate-500">Our cost (reference only): {formatCents(r.costCents)}</span>}</TableCell>
                         </TableRow>
-                      ))}
+                        {r.reuseReason && (
+                          <TableRow className="bg-rose-50/60"><TableCell colSpan={10} className="py-1 text-[11px] text-rose-800" data-testid={`text-import-reuse-${r.rowIndex}`}>
+                            Repeated serial (not counted): {maskCustomerText(r.reuseReason)}
+                          </TableCell></TableRow>
+                        )}
+                      </Fragment>))}
                     </TableBody>
                   </Table>
                   <p className="px-4 py-2 text-[11px] text-slate-500">Showing {Math.min(50, current.rows.length)} of {current.recordCount} records.</p>

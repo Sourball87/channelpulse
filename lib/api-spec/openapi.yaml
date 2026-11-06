@@ -19,6 +19,18 @@ tags:
   - name: column-mappings
 
 paths:
+  /scanback/serials/{serial}:
+    get:
+      operationId: getSerialTrail
+      tags: [scanback]
+      parameters:
+        - { name: serial, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Invoice, reported-sale and approved-claim trail with reuse flags
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackSerialTrail" }
   /scanback/programs/preview:
     post:
       operationId: previewProgramTable
@@ -966,6 +978,8 @@ components:
         quantity: { type: number }
         invoice: { type: string }
         unitPriceCents: { type: [integer, "null"] }
+        costCents: { type: [integer, "null"] }
+        reuseReason: { type: string }
         amountCents: { type: [integer, "null"] }
         program: { type: string }
         reference: { type: string }
@@ -1019,6 +1033,7 @@ components:
         name: { type: string }
         state: { type: string, enum: [preview, committed] }
         createdAt: { type: string }
+        committedAt: { type: string }
         headers: { type: array, items: { type: string } }
         sheets: { type: array, items: { type: string } }
         mapping:
@@ -1058,6 +1073,10 @@ components:
         date: { type: string }
         invoice: { type: string }
         invoiceDate: { type: string }
+        invoicedAccountId: { type: [integer, "null"] }
+        invoicedTo: { type: string }
+        costCents: { type: [integer, "null"] }
+        trackingColor: { type: string, enum: [red, orange, green, neutral] }
         unitPriceCents: { type: [integer, "null"] }
         gtmBuyCents: { type: [integer, "null"] }
         amountCents: { type: integer }
@@ -1109,6 +1128,34 @@ components:
         drafts: { type: array, items: { $ref: "#/components/schemas/ScanbackDraft" } }
         batches: { type: array, items: { $ref: "#/components/schemas/ScanbackBatch" } }
         programStats: { type: array, items: { $ref: "#/components/schemas/ScanbackProgramStat" } }
+    ScanbackSerialTrail:
+      type: object
+      required: [serial, status, events]
+      properties:
+        serial: { type: string }
+        status: { type: string, enum: [UNKNOWN, INVOICED, SOLD, CLAIMED] }
+        events: { type: array, items: { $ref: "#/components/schemas/ScanbackSerialEvent" } }
+    ScanbackSerialEvent:
+      type: object
+      required: [kind, date, sourceId, sourceName, accountId, accountCode, sku, reused, reason]
+      properties:
+        kind: { type: string, enum: [invoice, credit, sold, claimed] }
+        date: { type: string }
+        sourceId: { type: string }
+        sourceName: { type: string }
+        sourceRow: { type: integer }
+        accountId: { type: [integer, "null"] }
+        accountCode: { type: string }
+        sku: { type: string }
+        invoice: { type: string }
+        unitPriceCents: { type: [integer, "null"] }
+        costCents: { type: [integer, "null"] }
+        promotion: { type: string }
+        batchId: { type: string }
+        batchReference: { type: string }
+        amountCents: { type: [integer, "null"] }
+        reused: { type: boolean }
+        reason: { type: string }
     HealthStatus:
       type: object
       required: [status]

@@ -1,6 +1,6 @@
 import type { ScanbackImport } from "@workspace/api-client-react";
 
-export const MAPPING_KEYS = ["serial", "sku", "date", "account", "quantity", "invoice", "unitPrice", "amount", "program", "reference"] as const;
+export const MAPPING_KEYS = ["serial", "sku", "date", "account", "quantity", "invoice", "unitPrice", "cost", "amount", "program", "reference"] as const;
 export type MappingKey = (typeof MAPPING_KEYS)[number];
 
 export const FIELD_LABEL: Record<MappingKey, string> = {
@@ -11,6 +11,7 @@ export const FIELD_LABEL: Record<MappingKey, string> = {
   quantity: "Quantity (signed)",
   invoice: "Invoice / credit reference",
   unitPrice: "Invoiced reseller unit price EX GST (not purchase cost)",
+  cost: "Our unit cost ex GST (reference only)",
   amount: "Approved claim amount",
   program: "Promotion name",
   reference: "Claim reference",

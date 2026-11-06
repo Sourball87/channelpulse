@@ -9,6 +9,7 @@ import {
 } from "../lib/parser";
 import { parseSheets, suggestMapping, type Sheets } from "../lib/scanback-import";
 import { serialKey } from "../lib/scanback-engine";
+import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
 import { isPronto } from "../lib/scanback-pronto";
 import { transaction, catalog, rebuildImport, requireThat, ScanbackError, type Client } from "../lib/scanback-store";
 import { detectCenterKind, readCenterSheets, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
@@ -137,7 +138,7 @@ async function load(c: Client, id: string): Promise<Source> {
   requireThat(row, "Source no longer exists.", 404);
   return { entry, raw: row.raw_sheets, registered: false };
 }
-async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImport[]) {
+async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImport[], cachedSales?: ReportedSale[]) {
   if (e.kind === "soh" && e.sourceId) {
     const r = (await c.query("SELECT * FROM uploads WHERE id=$1", [e.sourceId])).rows[0];
     if (!r) return;
@@ -167,11 +168,15 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
     e.summary = { ...emptySummary(), serialCount: new Set(r.rows.map(x => x.serial)).size,
       skuCount: new Set(r.rows.map(x => x.sku).filter(Boolean)).size, from: dates[0] ?? "", to: dates.at(-1) ?? "" };
     if (e.kind === "claim") {
+      const first = firstReportedSales(cachedSales ?? await loadReportedSales(c));
+      const repeated = r.rows.filter(row => row.reuseReason || earlierReportReason(first.get(row.serial), r.id, row.rowIndex));
+      const reusedRows = new Set(repeated.map(row => row.rowIndex));
+      e.summary.serialCount = new Set(r.rows.filter(row => !reusedRows.has(row.rowIndex)).map(row => row.serial)).size;
       const evidence = cachedEvidence ?? (await c.query("SELECT payload FROM scanback_imports WHERE payload->>'kind'='evidence' AND payload->>'state'='committed'")).rows.map(x => x.payload as ScanbackImport);
       const bySerial = new Map<string, ScanbackImport["rows"]>();
       for (const imp of evidence) for (const row of imp.rows)
         bySerial.set(row.serial, [...(bySerial.get(row.serial) ?? []), row]);
-      for (const serial of new Set(r.rows.map(x => serialKey(x.serial)))) {
+      for (const serial of new Set(r.rows.filter(row => !reusedRows.has(row.rowIndex)).map(x => serialKey(x.serial)))) {
         const events = bySerial.get(serial);
         if (!events) continue;
         e.summary.ddRangeCount++;
@@ -197,7 +202,8 @@ async function workspace(c: Client) {
   for (const { id, payload: r } of oldScan) if (!sources.has(`scan:${id}`))
     entries.push(base(`scan:${id}`, r.kind, r.name, id, r.createdAt));
   const evidence = oldScan.map(x => x.payload as ScanbackImport).filter(x => x.kind === "evidence" && x.state === "committed");
-  for (const e of entries) await hydrate(c, e, evidence);
+  const sales = reportedSales(oldScan.map(x => x.payload as ScanbackImport));
+  for (const e of entries) await hydrate(c, e, evidence, sales);
   const prices = (await c.query(`SELECT sku,description,rrp_inc_cents AS "rrpIncCents",dd_cost_ex_cents AS "ddCostExCents",
     t1_buy_ex_cents AS "t1BuyExCents",updated_at AS "updatedAt" FROM price_list ORDER BY sku`)).rows;
   const latestProgram = entries.filter(e => e.kind === "program" && e.state === "committed")

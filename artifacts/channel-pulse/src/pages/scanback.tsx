@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProgramStat } from "@/lib/program-draft";
-import { Link, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
+import { SerialLookup } from "@/components/scanback/serial-lookup";
 import { useGetParts, useGetResellers } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +24,12 @@ export default function ScanbackClaims() {
   const programUploadId = query.get("programUpload") ?? undefined;
   const [tab, setTab] = useState(() => query.get("tab") ?? (programUploadId ? "programs" : "verify"));
   useEffect(() => { const t = query.get("tab") ?? (programUploadId ? "programs" : null); if (t) setTab(t); }, [query, programUploadId]);
+  const [, navigate] = useLocation();
+  const serialParam = query.get("serial") ?? "";
+  const openSerial = (serial: string) => {
+    const q = new URLSearchParams(search); q.set("tab", "serials"); q.set("serial", serial);
+    setTab("serials"); navigate(`/scanback?${q.toString()}`);
+  };
   const resellers = resellersQ.data ?? [];
   const parts = partsQ.data ?? [];
   const data = ws.data;
@@ -86,9 +93,10 @@ export default function ScanbackClaims() {
               <TabsTrigger value="verify" data-testid="tab-verify">Verify Claims</TabsTrigger>
               <TabsTrigger value="programs" data-testid="tab-programs">Programs</TabsTrigger>
               <TabsTrigger value="history" data-testid="tab-history">Claims History</TabsTrigger>
+              <TabsTrigger value="serials" data-testid="tab-serials">Serial lookup</TabsTrigger>
             </TabsList>
             <TabsContent value="verify" className="mt-4">
-              <VerifyPanel programs={data.programs} imports={data.imports} drafts={data.drafts} resellers={resellers} onApproved={() => undefined} preset={preset} />
+              <VerifyPanel programs={data.programs} imports={data.imports} drafts={data.drafts} resellers={resellers} onApproved={() => undefined} preset={preset} onOpenSerial={openSerial} />
             </TabsContent>
             <TabsContent value="programs" className="mt-4 data-[state=inactive]:hidden" forceMount>
               {!partsQ.isLoading && (
@@ -100,6 +108,9 @@ export default function ScanbackClaims() {
             </TabsContent>
             <TabsContent value="history" className="mt-4">
               <HistoryPanel batches={data.batches} resellers={resellers} />
+            </TabsContent>
+            <TabsContent value="serials" className="mt-4">
+              <SerialLookup initialSerial={serialParam} onSearch={openSerial} />
             </TabsContent>
           </Tabs>
         )}

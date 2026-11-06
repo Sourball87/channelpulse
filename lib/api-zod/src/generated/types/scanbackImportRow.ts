@@ -18,6 +18,9 @@ export interface ScanbackImportRow {
   /** @nullable */
   unitPriceCents: number | null;
   /** @nullable */
+  costCents?: number | null;
+  reuseReason?: string;
+  /** @nullable */
   amountCents: number | null;
   program: string;
   reference: string;

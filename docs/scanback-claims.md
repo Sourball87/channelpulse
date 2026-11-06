@@ -83,6 +83,48 @@ muted, compact, read-only full table, with dates/status, approved units/dollars
 and **Open**. Editing current program terms never rewrites approved batch
 snapshots or their exported statements.
 
+## Automatic serial tracking and lookup
+
+Tracking is built from the durable, committed invoice/customer-report sources
+and the existing approved-serial ledger, so it also covers existing imports.
+There is no separate editable ledger to get out of sync with approvals.
+
+- **INVOICED:** the DD/Pronto evidence records the invoiced reseller, invoice
+  number/date and invoiced unit price ex GST (what the reseller paid us).
+  Optional **Our unit cost ex GST** / **Item Cost** is retained as reference
+  only. It is never used to calculate a claim.
+- **SOLD:** committing a customer serial report in Upload Center records its
+  reseller, sell date and source report for every serial. Staged previews do
+  not reserve serials. The first committed report owns each sale; backdating
+  another report or uploading it earlier without committing cannot take over.
+  Existing legacy reports without a commit timestamp use their saved creation
+  time to establish their original order.
+- **CLAIMED:** an approved serial is linked to its immutable promotion/batch.
+  Historical approved imports count too. The existing approval transaction,
+  unique-serial constraint and per-SKU/customer cap rules are unchanged.
+
+Later reports from **any** customer retain repeated rows as flagged audit
+events, but exclude them from new-sale serial counts and payable claims.
+Duplicates within one report are also excluded after its first occurrence.
+The first report remains verifiable without blocking itself until claimed;
+rechecking it does not create another sale. Returns and later reports do not
+silently reset SOLD or CLAIMED history.
+
+**Verify Claims** shows invoice recipient, invoice number/date, customer-paid
+price ex GST, GTM Buy Ex and their calculated difference, alongside the reason:
+**red** for previously claimed/reported serials (with original batch/promotion
+or report details), **orange** for sales outside promotion dates, and **green**
+for payable rows. Other blockers remain neutral. A known sell date outside
+promotion dates is blocked even when invoice-date basis is selected. Calculated
+differences on blocked rows are not payable and do not enter approved totals.
+
+Open **Serial lookup**, or click a serial in verification, for its full
+invoice/credit → reported-sale → claimed trail, including repeated reports,
+source rows and reference cost when supplied. Search matches the complete serial,
+ignoring spaces and letter case without removing leading zeroes. Unknown serials
+are shown explicitly, not fabricated. Excluded Pronto accounts remain visible as
+audit-only events and never become eligible invoice evidence.
+
 ## Evidence and claim files
 
 Upload your existing CSV, XLS or XLSX file in **Upload Center**, the sole file-intake
@@ -155,8 +197,9 @@ Name, Stock Code, Ship Qty, Serial Number, Item Price and Line Price Ex.
   review, including across committed Pronto extracts. Exclusion must not hide
   conflicting evidence and make a serial eligible.
 - Source row numbers are retained for tracing errors and invoice evidence.
-  Pronto contact/address/end-user/operator and purchase-cost columns are not
-  retained in saved previews.
+  Pronto contact/address/end-user/operator columns are not retained in saved
+  previews. Explicit unit-cost columns are retained for the serial trail as
+  reference only; they are never substituted for the invoiced unit price.
 - Limits include **100,000 expanded serial events per import**. Other existing
   file/sheet limits still apply.
 

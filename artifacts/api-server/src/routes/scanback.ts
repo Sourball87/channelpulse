@@ -211,6 +211,7 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
     }
   }
   value.state = "committed";
+  value.committedAt = new Date().toISOString();
   await put(c, "scanback_imports", value.id, value);
   return publicImport(value, true);
 }));

@@ -8,6 +8,35 @@
 import * as zod from 'zod';
 
 
+export const GetSerialTrailParams = zod.object({
+  "serial": zod.coerce.string()
+})
+
+export const GetSerialTrailResponse = zod.object({
+  "serial": zod.string(),
+  "status": zod.enum(['UNKNOWN', 'INVOICED', 'SOLD', 'CLAIMED']),
+  "events": zod.array(zod.object({
+  "kind": zod.enum(['invoice', 'credit', 'sold', 'claimed']),
+  "date": zod.string(),
+  "sourceId": zod.string(),
+  "sourceName": zod.string(),
+  "sourceRow": zod.int().optional(),
+  "accountId": zod.int().nullable(),
+  "accountCode": zod.string(),
+  "sku": zod.string(),
+  "invoice": zod.string().optional(),
+  "unitPriceCents": zod.int().nullish(),
+  "costCents": zod.int().nullish(),
+  "promotion": zod.string().optional(),
+  "batchId": zod.string().optional(),
+  "batchReference": zod.string().optional(),
+  "amountCents": zod.int().nullish(),
+  "reused": zod.boolean(),
+  "reason": zod.string()
+}))
+})
+
+
 export const previewProgramTableBodyTextMax = 1000000;
 
 export const previewProgramTableBodyAiAssistDefault = true;
@@ -292,6 +321,7 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "name": zod.string(),
   "state": zod.enum(['preview', 'committed']),
   "createdAt": zod.string(),
+  "committedAt": zod.string().optional(),
   "headers": zod.array(zod.string()),
   "sheets": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
@@ -332,6 +362,8 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "quantity": zod.number(),
   "invoice": zod.string(),
   "unitPriceCents": zod.int().nullable(),
+  "costCents": zod.int().nullish(),
+  "reuseReason": zod.string().optional(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
   "reference": zod.string(),
@@ -364,6 +396,10 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "date": zod.string(),
   "invoice": zod.string(),
   "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'green', 'neutral']).optional(),
   "unitPriceCents": zod.int().nullable(),
   "gtmBuyCents": zod.int().nullable(),
   "amountCents": zod.int(),
@@ -397,6 +433,10 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "date": zod.string(),
   "invoice": zod.string(),
   "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'green', 'neutral']).optional(),
   "unitPriceCents": zod.int().nullable(),
   "gtmBuyCents": zod.int().nullable(),
   "amountCents": zod.int(),
@@ -513,6 +553,7 @@ export const PreviewScanbackImportResponse = zod.object({
   "name": zod.string(),
   "state": zod.enum(['preview', 'committed']),
   "createdAt": zod.string(),
+  "committedAt": zod.string().optional(),
   "headers": zod.array(zod.string()),
   "sheets": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
@@ -553,6 +594,8 @@ export const PreviewScanbackImportResponse = zod.object({
   "quantity": zod.number(),
   "invoice": zod.string(),
   "unitPriceCents": zod.int().nullable(),
+  "costCents": zod.int().nullish(),
+  "reuseReason": zod.string().optional(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
   "reference": zod.string(),
@@ -586,6 +629,7 @@ export const RemapScanbackImportResponse = zod.object({
   "name": zod.string(),
   "state": zod.enum(['preview', 'committed']),
   "createdAt": zod.string(),
+  "committedAt": zod.string().optional(),
   "headers": zod.array(zod.string()),
   "sheets": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
@@ -626,6 +670,8 @@ export const RemapScanbackImportResponse = zod.object({
   "quantity": zod.number(),
   "invoice": zod.string(),
   "unitPriceCents": zod.int().nullable(),
+  "costCents": zod.int().nullish(),
+  "reuseReason": zod.string().optional(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
   "reference": zod.string(),
@@ -651,6 +697,7 @@ export const CommitScanbackImportResponse = zod.object({
   "name": zod.string(),
   "state": zod.enum(['preview', 'committed']),
   "createdAt": zod.string(),
+  "committedAt": zod.string().optional(),
   "headers": zod.array(zod.string()),
   "sheets": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
@@ -691,6 +738,8 @@ export const CommitScanbackImportResponse = zod.object({
   "quantity": zod.number(),
   "invoice": zod.string(),
   "unitPriceCents": zod.int().nullable(),
+  "costCents": zod.int().nullish(),
+  "reuseReason": zod.string().optional(),
   "amountCents": zod.int().nullable(),
   "program": zod.string(),
   "reference": zod.string(),
@@ -736,6 +785,10 @@ export const VerifyScanbackClaimResponse = zod.object({
   "date": zod.string(),
   "invoice": zod.string(),
   "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'green', 'neutral']).optional(),
   "unitPriceCents": zod.int().nullable(),
   "gtmBuyCents": zod.int().nullable(),
   "amountCents": zod.int(),
@@ -777,6 +830,10 @@ export const ApproveScanbackClaimResponse = zod.object({
   "date": zod.string(),
   "invoice": zod.string(),
   "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'green', 'neutral']).optional(),
   "unitPriceCents": zod.int().nullable(),
   "gtmBuyCents": zod.int().nullable(),
   "amountCents": zod.int(),

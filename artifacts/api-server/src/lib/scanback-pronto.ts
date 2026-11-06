@@ -16,7 +16,8 @@ export const prontoMapping: Record<string, string> = {
 };
 const columns = [...Object.values(prontoMapping).filter(Boolean), "Reseller Name", "Line Price Ex"];
 export const isPronto = (headers: string[]) => columns.every(column => headers.includes(column));
-export const prontoColumns = (headers: string[]) => headers.filter(column => columns.includes(column) || column === "Currency");
+export const prontoColumns = (headers: string[]) => headers.filter(column => columns.includes(column) || column === "Currency" ||
+  /^(ourcost|ourunitcostexgst|purchasecost|unitcost|costex|costexgst|itemcost|ddcostex|ddcost|cost)$/.test(column.toLowerCase().replace(/[^a-z0-9]/g, "")));
 export const prontoAllowed = (accounts: Account[]) => accounts.filter(a => Object.hasOwn(names, a.code.toLowerCase()));
 const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 export const splitSerials = (value: unknown) => String(value ?? "").split(/[|,;\n]+/).map(serialKey).filter(Boolean);

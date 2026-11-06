@@ -8,6 +8,7 @@ import { verifyClaim, evidenceKey, type EvidenceRow, type ApprovedSerial, type C
 import { mapImport, type Sheets, type Account } from "./scanback-import";
 import { splitSerials } from "./scanback-pronto";
 import { maskCustomerText } from "./customer-display";
+import { loadReportedSales, firstReportedSales, earlierReportReason } from "./serial-tracking";
 
 export type Client = PoolClient;
 export class ScanbackError extends Error {
@@ -59,8 +60,10 @@ export async function catalog(c: Client): Promise<{ accounts: Account[]; parts: 
 }
 export async function ledger(c: Client): Promise<ApprovedSerial[]> {
   return (await c.query(`SELECT s.serial,s.batch_id AS "batchId",s.program_id AS "programId",
-    s.account_id AS "accountId",s.part_id AS "partId",COALESCE(s.sku,p.part_no) AS sku
-    FROM scanback_approved_serials s LEFT JOIN parts p ON p.id=s.part_id ORDER BY s.serial`)).rows;
+    s.account_id AS "accountId",s.part_id AS "partId",COALESCE(s.sku,p.part_no) AS sku,
+    b.payload->>'programName' AS "programName",b.payload->>'reference' AS "batchReference"
+    FROM scanback_approved_serials s LEFT JOIN parts p ON p.id=s.part_id
+    JOIN scanback_batches b ON b.id=s.batch_id ORDER BY s.serial`)).rows;
 }
 export function publicImport(value: ScanbackImport, withRows = false): ScanbackImport {
   return { ...value, rows: withRows ? value.rows.slice(0, 200) : [], errors: value.errors.slice(0, 200) };
@@ -99,6 +102,25 @@ export async function rebuildImport(c: Client, base: ScanbackImport, raw: Sheets
       seen.add(row.serial);
     }
   }
+  if (base.kind === "claim") {
+    const first = firstReportedSales(await loadReportedSales(c));
+    const approved = new Map((await ledger(c)).map(row => [row.serial, row]));
+    const seen = new Set<string>();
+    let repeated = 0;
+    value.rows = value.rows.map(row => {
+      const claimed = approved.get(row.serial);
+      const reason = claimed ? `Already approved in batch ${claimed.batchId}${claimed.programName ? `, promotion ${claimed.programName}` : ""}` :
+        earlierReportReason(first.get(row.serial), base.id, row.rowIndex) ||
+        (seen.has(row.serial) ? "Duplicate serial in this customer report" : "");
+      seen.add(row.serial);
+      if (reason) {
+        repeated++;
+        if (repeated <= 20) value.warnings.push(`${row.serial}: ${reason}`);
+      }
+      return { ...row, reuseReason: reason };
+    });
+    if (repeated) value.warnings.push(`${repeated} reused serial rows are flagged and will not count as new sales or become payable. The source report is retained for the audit trail.`);
+  }
   return value;
 }
 export async function calculateDraft(c: Client, settings: ScanbackVerificationInput) {
@@ -127,7 +149,8 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
       }
     }
   }
-  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts, restrictedSerials });
+  const reportedSales = await loadReportedSales(c);
+  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts, restrictedSerials, reportedSales, accounts: cat.accounts });
   const token = hash({ p, settings, imports: imports.map(i => i.id).sort(), approved, results });
   return { results, token, p, accounts: cat.accounts, parts: cat.parts };
 }

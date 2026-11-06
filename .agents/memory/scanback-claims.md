@@ -62,3 +62,15 @@ Promotion caps are per SKU/customer only; never add an all-SKU customer-total ca
 **Why:** The user explicitly requested “Do NOT add a customer total cap (all SKUs) row or any total-cap rule.”
 
 **How to apply:** Keep row and footer cap sums as display totals, not extra eligibility limits. Reference prices and calculated discount/STA are informational, not substitutes for the invoiced-price claim basis. Paste/file previews must preserve missing source prices/caps, never invent or silently fill them.
+
+Reported-sale ownership is global across customers, not just claimed-serial uniqueness.
+
+**Why:** The user requested that a serial already sold or claimed cannot be reused in a later customer report, while preserving the existing approval transaction and caps.
+
+**How to apply:** The first committed customer report owns the sale; staged previews must not reserve it, and its own first row must remain verifiable until claimed. Keep later occurrences as flagged audit facts, never new sales or payable units. Use immutable source records and the approved ledger as the tracking authority, rather than adding a separately mutable claimed-state writer.
+
+Run development HTTP financial suites serially when they share the same database.
+
+**Why:** Verification fingerprints intentionally include the approved ledger. A parallel suite's unrelated historical approval can invalidate both freshly verified race-test drafts, even when each suite uses distinct serials.
+
+**How to apply:** Disable test-file parallelism for combined live-API financial suites; do not weaken approval freshness checks to make concurrent fixtures pass.
