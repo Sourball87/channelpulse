@@ -8,6 +8,57 @@
 import * as zod from 'zod';
 
 
+export const previewProgramTableBodyTextMax = 1000000;
+
+export const previewProgramTableBodyAiAssistDefault = true;
+
+export const PreviewProgramTableBody = zod.object({
+  "text": zod.string().max(previewProgramTableBodyTextMax).optional(),
+  "uploadId": zod.string().optional(),
+  "mapping": zod.object({
+  "fields": zod.record(zod.string(), zod.string()),
+  "customers": zod.record(zod.string(), zod.int().nullable()),
+  "ignored": zod.array(zod.string())
+}).optional(),
+  "ai_assist": zod.boolean().default(previewProgramTableBodyAiAssistDefault)
+})
+
+export const previewProgramTableResponseRowsItemCapsItemQuantityMin = 0;
+
+
+
+export const PreviewProgramTableResponse = zod.object({
+  "headers": zod.array(zod.string()),
+  "mapping": zod.object({
+  "fields": zod.record(zod.string(), zod.string()),
+  "customers": zod.record(zod.string(), zod.int().nullable()),
+  "ignored": zod.array(zod.string())
+}),
+  "rows": zod.array(zod.object({
+  "sourceRow": zod.int(),
+  "sku": zod.string(),
+  "rrpIncCents": zod.int().nullable(),
+  "gtmIncCents": zod.int().nullable(),
+  "ddCostExCents": zod.int().nullable(),
+  "t1ExCents": zod.int().nullable(),
+  "gtmBuyCents": zod.int().nullable(),
+  "caps": zod.array(zod.object({
+  "resellerId": zod.int(),
+  "quantity": zod.int().min(previewProgramTableResponseRowsItemCapsItemQuantityMin).nullable()
+}))
+})),
+  "customerIds": zod.array(zod.int()),
+  "issues": zod.array(zod.object({
+  "row": zod.int().nullable(),
+  "column": zod.string(),
+  "message": zod.string(),
+  "blocking": zod.boolean()
+})),
+  "sourceName": zod.string(),
+  "aiNote": zod.string().nullable()
+})
+
+
 export const GetUploadCenterResponse = zod.object({
   "uploads": zod.array(zod.object({
   "id": zod.string(),
@@ -194,6 +245,14 @@ export const LogoutAdminResponse = zod.object({
 export const getScanbackWorkspaceResponseProgramsItemOneLinesItemSkuMax = 120;
 
 
+export const getScanbackWorkspaceResponseProgramsItemOneLinesItemRrpIncCentsMin = 0;
+
+export const getScanbackWorkspaceResponseProgramsItemOneLinesItemGtmIncCentsMin = 0;
+
+export const getScanbackWorkspaceResponseProgramsItemOneLinesItemDdCostExCentsMin = 0;
+
+export const getScanbackWorkspaceResponseProgramsItemOneLinesItemT1ExCentsMin = 0;
+
 export const getScanbackWorkspaceResponseProgramsItemOneLinesItemCapsItemQuantityMin = 0;
 
 
@@ -212,6 +271,10 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "sku": zod.string().min(1).max(getScanbackWorkspaceResponseProgramsItemOneLinesItemSkuMax).optional(),
   "partId": zod.int().nullish(),
   "gtmBuyCents": zod.int().min(1),
+  "rrpIncCents": zod.int().min(getScanbackWorkspaceResponseProgramsItemOneLinesItemRrpIncCentsMin).nullish(),
+  "gtmIncCents": zod.int().min(getScanbackWorkspaceResponseProgramsItemOneLinesItemGtmIncCentsMin).nullish(),
+  "ddCostExCents": zod.int().min(getScanbackWorkspaceResponseProgramsItemOneLinesItemDdCostExCentsMin).nullish(),
+  "t1ExCents": zod.int().min(getScanbackWorkspaceResponseProgramsItemOneLinesItemT1ExCentsMin).nullish(),
   "caps": zod.array(zod.object({
   "resellerId": zod.int(),
   "quantity": zod.int().min(getScanbackWorkspaceResponseProgramsItemOneLinesItemCapsItemQuantityMin).nullable()
@@ -344,12 +407,27 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "selectable": zod.boolean(),
   "source": zod.string()
 }))
-}))
+})),
+  "programStats": zod.array(zod.object({
+  "programId": zod.string(),
+  "accountId": zod.int(),
+  "sku": zod.string(),
+  "count": zod.int(),
+  "amountCents": zod.int()
+})).optional()
 })
 
 
 export const saveScanbackProgramBodyLinesItemSkuMax = 120;
 
+
+export const saveScanbackProgramBodyLinesItemRrpIncCentsMin = 0;
+
+export const saveScanbackProgramBodyLinesItemGtmIncCentsMin = 0;
+
+export const saveScanbackProgramBodyLinesItemDdCostExCentsMin = 0;
+
+export const saveScanbackProgramBodyLinesItemT1ExCentsMin = 0;
 
 export const saveScanbackProgramBodyLinesItemCapsItemQuantityMin = 0;
 
@@ -368,6 +446,10 @@ export const SaveScanbackProgramBody = zod.object({
   "sku": zod.string().min(1).max(saveScanbackProgramBodyLinesItemSkuMax).optional(),
   "partId": zod.int().nullish(),
   "gtmBuyCents": zod.int().min(1),
+  "rrpIncCents": zod.int().min(saveScanbackProgramBodyLinesItemRrpIncCentsMin).nullish(),
+  "gtmIncCents": zod.int().min(saveScanbackProgramBodyLinesItemGtmIncCentsMin).nullish(),
+  "ddCostExCents": zod.int().min(saveScanbackProgramBodyLinesItemDdCostExCentsMin).nullish(),
+  "t1ExCents": zod.int().min(saveScanbackProgramBodyLinesItemT1ExCentsMin).nullish(),
   "caps": zod.array(zod.object({
   "resellerId": zod.int(),
   "quantity": zod.int().min(saveScanbackProgramBodyLinesItemCapsItemQuantityMin).nullable()
@@ -377,6 +459,14 @@ export const SaveScanbackProgramBody = zod.object({
 
 export const saveScanbackProgramResponseOneLinesItemSkuMax = 120;
 
+
+export const saveScanbackProgramResponseOneLinesItemRrpIncCentsMin = 0;
+
+export const saveScanbackProgramResponseOneLinesItemGtmIncCentsMin = 0;
+
+export const saveScanbackProgramResponseOneLinesItemDdCostExCentsMin = 0;
+
+export const saveScanbackProgramResponseOneLinesItemT1ExCentsMin = 0;
 
 export const saveScanbackProgramResponseOneLinesItemCapsItemQuantityMin = 0;
 
@@ -395,6 +485,10 @@ export const SaveScanbackProgramResponse = zod.object({
   "sku": zod.string().min(1).max(saveScanbackProgramResponseOneLinesItemSkuMax).optional(),
   "partId": zod.int().nullish(),
   "gtmBuyCents": zod.int().min(1),
+  "rrpIncCents": zod.int().min(saveScanbackProgramResponseOneLinesItemRrpIncCentsMin).nullish(),
+  "gtmIncCents": zod.int().min(saveScanbackProgramResponseOneLinesItemGtmIncCentsMin).nullish(),
+  "ddCostExCents": zod.int().min(saveScanbackProgramResponseOneLinesItemDdCostExCentsMin).nullish(),
+  "t1ExCents": zod.int().min(saveScanbackProgramResponseOneLinesItemT1ExCentsMin).nullish(),
   "caps": zod.array(zod.object({
   "resellerId": zod.int(),
   "quantity": zod.int().min(saveScanbackProgramResponseOneLinesItemCapsItemQuantityMin).nullable()

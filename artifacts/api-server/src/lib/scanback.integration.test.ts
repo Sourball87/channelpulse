@@ -200,6 +200,29 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(customDraft.results[1].reason).toContain("cap reached");
       const customApproval = await call("/scanback/approve", { draftId: customDraft.id, token: customDraft.token, reference: prefix + "-custom-approval" });
       expect(customApproval.status).toBe(200);
+      const approvalWorkspace = (await call("/scanback/workspace")).data;
+      const stats = approvalWorkspace.programStats;
+      const approvedSnapshot = approvalWorkspace.batches.find((b: { id: string }) => b.id === customApproval.data.id);
+      expect(stats.find((s: { programId: string }) => s.programId === customProgram.id))
+        .toMatchObject({ accountId: a.id, sku: customSku, count: 1, amountCents: 5000 });
+      const removal = await call("/scanback/programs", {
+        ...customProgram, customerIds: [other.id],
+        lines: customProgram.lines.map((line: Record<string, unknown>) => ({ ...line, caps: [{ resellerId: other.id, quantity: null }] })),
+      });
+      expect(removal.status).toBe(409);
+      expect(removal.data.error).toContain("approved claims");
+      const referenceEdit = await call("/scanback/programs", {
+        ...customProgram, lines: customProgram.lines.map((line: Record<string, unknown>) => ({
+          ...line, rrpIncCents: 11001, gtmIncCents: 9900, ddCostExCents: 6000, t1ExCents: 8500,
+        })),
+      });
+      expect(referenceEdit.status).toBe(200);
+      expect(referenceEdit.data.version).toBe(customProgram.version + 1);
+      expect(referenceEdit.data.lines[0]).toMatchObject({ rrpIncCents: 11001, gtmIncCents: 9900, ddCostExCents: 6000, t1ExCents: 8500 });
+      const staleReference = await call("/scanback/programs", customProgram);
+      expect(staleReference.status).toBe(409);
+      const unchangedBatch = (await call("/scanback/workspace")).data.batches.find((b: { id: string }) => b.id === customApproval.data.id);
+      expect(unchangedBatch).toEqual(approvedSnapshot);
       const customLedger = await pool.query("SELECT part_id,sku FROM scanback_approved_serials WHERE serial=$1", [`${prefix}CS1`]);
       expect(customLedger.rows[0]).toMatchObject({ part_id: null, sku: customSku });
       const customClaimNext = await commit(await upload("claim",

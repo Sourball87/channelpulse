@@ -44,7 +44,88 @@ export interface ScanbackProgramLine {
   partId?: number | null;
   /** @minimum 1 */
   gtmBuyCents: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  rrpIncCents?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  gtmIncCents?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  ddCostExCents?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  t1ExCents?: number | null;
   caps: ScanbackCap[];
+}
+
+export type ProgramTableMappingFields = {[key: string]: string};
+
+export type ProgramTableMappingCustomers = {[key: string]: number | null};
+
+export interface ProgramTableMapping {
+  fields: ProgramTableMappingFields;
+  customers: ProgramTableMappingCustomers;
+  ignored: string[];
+}
+
+export interface ProgramTablePreviewInput {
+  /** @maxLength 1000000 */
+  text?: string;
+  uploadId?: string;
+  mapping?: ProgramTableMapping;
+  ai_assist?: boolean;
+}
+
+export interface ProgramTableRow {
+  sourceRow: number;
+  sku: string;
+  /** @nullable */
+  rrpIncCents: number | null;
+  /** @nullable */
+  gtmIncCents: number | null;
+  /** @nullable */
+  ddCostExCents: number | null;
+  /** @nullable */
+  t1ExCents: number | null;
+  /** @nullable */
+  gtmBuyCents: number | null;
+  caps: ScanbackCap[];
+}
+
+export interface ProgramTableIssue {
+  /** @nullable */
+  row: number | null;
+  column: string;
+  message: string;
+  blocking: boolean;
+}
+
+export interface ProgramTablePreview {
+  headers: string[];
+  mapping: ProgramTableMapping;
+  rows: ProgramTableRow[];
+  customerIds: number[];
+  issues: ProgramTableIssue[];
+  sourceName: string;
+  /** @nullable */
+  aiNote: string | null;
+}
+
+export interface ScanbackProgramStat {
+  programId: string;
+  accountId: number;
+  sku: string;
+  count: number;
+  amountCents: number;
 }
 
 export interface ScanbackProgramInput {
@@ -292,6 +373,7 @@ export interface ScanbackWorkspace {
   imports: ScanbackImport[];
   drafts: ScanbackDraft[];
   batches: ScanbackBatch[];
+  programStats?: ScanbackProgramStat[];
 }
 
 export interface HealthStatus {

@@ -38,6 +38,26 @@ describe.skipIf(!base)("Upload Center development API", () => {
       cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
       const account = (await call("/resellers")).data.find((r: { active: boolean }) => r.active);
       const sku = `${prefix}-SKU`;
+      const pasted = await call("/scanback/programs/preview", "POST", {
+        text: `SKU\tRRP Inc\tGTM Inc\tDiscount\tDD Cost Ex\tT1 Ex\tGTM Buy Ex\t${account.code}\n${sku}\t110.00\t99.00\t10%\t60.00\t85.00\t70.25\t0`,
+        ai_assist: false,
+      });
+      expect(pasted.status).toBe(200);
+      expect(pasted.data.issues).toEqual([]);
+      expect(pasted.data.rows[0]).toMatchObject({ sku, rrpIncCents: 11000, gtmIncCents: 9900, ddCostExCents: 6000, t1ExCents: 8500, gtmBuyCents: 7025, caps: [{ resellerId: account.id, quantity: 0 }] });
+      const unknownPaste = await call("/scanback/programs/preview", "POST", {
+        text: `SKU\tGTM Buy Ex\tUnknown reseller\n${sku}\t70.25\t4`, ai_assist: false,
+      });
+      expect(unknownPaste.data.issues.some((i: { column: string; blocking: boolean }) => i.column === "Unknown reseller" && i.blocking)).toBe(true);
+      const remapped = await call("/scanback/programs/preview", "POST", {
+        text: `SKU\tGTM Buy Ex\tUnknown reseller\n${sku}\t70.25\t4`, ai_assist: false,
+        mapping: { fields: { sku: "SKU", gtmBuyCents: "GTM Buy Ex" }, customers: { "Unknown reseller": account.id }, ignored: [] },
+      });
+      expect(remapped.status).toBe(200);
+      expect(remapped.data.issues).toEqual([]);
+      const noPromotionSideEffect = (await call("/scanback/workspace")).data.programs
+        .filter((p: { name: string }) => p.name.includes(prefix));
+      expect(noPromotionSideEffect).toEqual([]);
       const batch = await stage([
         ["soh", `SKU,SOH,Sold Last 7 Days\nMZ-77E1T0BW,12,3\n`],
         ["claim", `Customer,Model,Serial,Date\n${account.code},${sku},${prefix}A,01/01/2026\n`],
@@ -66,6 +86,11 @@ describe.skipIf(!base)("Upload Center development API", () => {
       const claim = find("claim");
       expect((await call(`/scanback/imports/${claim.sourceId}/commit`, "POST", {})).status).toBe(200);
       const price = find("price"), program = find("program");
+      const uploadedProgram = await call("/scanback/programs/preview", "POST", { uploadId: program.id, ai_assist: false });
+      expect(uploadedProgram.status).toBe(200);
+      expect(uploadedProgram.data.issues).toEqual([]);
+      expect(uploadedProgram.data.customerIds).toEqual([account.id]);
+      expect(uploadedProgram.data.rows[0]).toMatchObject({ sku, gtmBuyCents: 7025, rrpIncCents: null, caps: [{ resellerId: account.id, quantity: 1 }] });
       expect((await call(`/upload-center/${price.id}/commit`, "POST", {})).status).toBe(200);
       expect((await call(`/upload-center/${program.id}/commit`, "POST", {})).status).toBe(200);
       const ws = (await call("/upload-center")).data;

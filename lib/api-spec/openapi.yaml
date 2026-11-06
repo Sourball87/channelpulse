@@ -19,6 +19,21 @@ tags:
   - name: column-mappings
 
 paths:
+  /scanback/programs/preview:
+    post:
+      operationId: previewProgramTable
+      tags: [scanback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProgramTablePreviewInput" }
+      responses:
+        "200":
+          description: Source-only program draft and reviewed mapping proposal; never saves a promotion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProgramTablePreview" }
   /upload-center:
     get:
       operationId: getUploadCenter
@@ -828,6 +843,10 @@ components:
         sku: { type: string, minLength: 1, maxLength: 120 }
         partId: { type: [integer, "null"] }
         gtmBuyCents: { type: integer, minimum: 1 }
+        rrpIncCents: { type: [integer, "null"], minimum: 0 }
+        gtmIncCents: { type: [integer, "null"], minimum: 0 }
+        ddCostExCents: { type: [integer, "null"], minimum: 0 }
+        t1ExCents: { type: [integer, "null"], minimum: 0 }
         caps:
           type: array
           items: { $ref: "#/components/schemas/ScanbackCap" }
@@ -837,6 +856,60 @@ components:
       properties:
         resellerId: { type: integer }
         quantity: { type: [integer, "null"], minimum: 0 }
+    ProgramTableMapping:
+      type: object
+      required: [fields, customers, ignored]
+      properties:
+        fields: { type: object, additionalProperties: { type: string } }
+        customers: { type: object, additionalProperties: { type: [integer, "null"] } }
+        ignored: { type: array, items: { type: string } }
+    ProgramTablePreviewInput:
+      type: object
+      properties:
+        text: { type: string, maxLength: 1000000 }
+        uploadId: { type: string }
+        mapping: { $ref: "#/components/schemas/ProgramTableMapping" }
+        ai_assist: { type: boolean, default: true }
+    ProgramTableRow:
+      type: object
+      required: [sourceRow, sku, rrpIncCents, gtmIncCents, ddCostExCents, t1ExCents, gtmBuyCents, caps]
+      properties:
+        sourceRow: { type: integer }
+        sku: { type: string }
+        rrpIncCents: { type: [integer, "null"] }
+        gtmIncCents: { type: [integer, "null"] }
+        ddCostExCents: { type: [integer, "null"] }
+        t1ExCents: { type: [integer, "null"] }
+        gtmBuyCents: { type: [integer, "null"] }
+        caps: { type: array, items: { $ref: "#/components/schemas/ScanbackCap" } }
+    ProgramTableIssue:
+      type: object
+      required: [row, column, message, blocking]
+      properties:
+        row: { type: [integer, "null"] }
+        column: { type: string }
+        message: { type: string }
+        blocking: { type: boolean }
+    ProgramTablePreview:
+      type: object
+      required: [headers, mapping, rows, customerIds, issues, sourceName, aiNote]
+      properties:
+        headers: { type: array, items: { type: string } }
+        mapping: { $ref: "#/components/schemas/ProgramTableMapping" }
+        rows: { type: array, items: { $ref: "#/components/schemas/ProgramTableRow" } }
+        customerIds: { type: array, items: { type: integer } }
+        issues: { type: array, items: { $ref: "#/components/schemas/ProgramTableIssue" } }
+        sourceName: { type: string }
+        aiNote: { type: [string, "null"] }
+    ScanbackProgramStat:
+      type: object
+      required: [programId, accountId, sku, count, amountCents]
+      properties:
+        programId: { type: string }
+        accountId: { type: integer }
+        sku: { type: string }
+        count: { type: integer }
+        amountCents: { type: integer }
     ScanbackProgramInput:
       type: object
       required: [name, start, end, notes, customerIds, lines]
@@ -1035,6 +1108,7 @@ components:
         imports: { type: array, items: { $ref: "#/components/schemas/ScanbackImport" } }
         drafts: { type: array, items: { $ref: "#/components/schemas/ScanbackDraft" } }
         batches: { type: array, items: { $ref: "#/components/schemas/ScanbackBatch" } }
+        programStats: { type: array, items: { $ref: "#/components/schemas/ScanbackProgramStat" } }
     HealthStatus:
       type: object
       required: [status]

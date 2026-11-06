@@ -1,140 +1,267 @@
-import { customerLabel, maskCustomerText } from "@/lib/customer-display";
-import { useMemo, useState } from "react";
-import { useSaveScanbackProgram, type Part, type Reseller, type ScanbackProgram } from "@workspace/api-client-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Archive, ArchiveRestore, Pencil, Plus, TableProperties } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { findHeading, rawCell, type PriceRow, type ProgramRow } from "@/lib/upload-center";
+import { useSaveScanbackProgram, type Part, type Reseller, type ScanbackProgram } from "@workspace/api-client-react";
+import { Archive, ArchiveRestore, ClipboardPaste, Copy, ExternalLink, FileSpreadsheet, Plus, RotateCcw, Save, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ProgramEditor, type LineDraft } from "./program-editor";
-import { centsToInput, SectionEmpty, errorMessage, formatCents, formatDate, useRefreshWorkspace } from "./shared";
+import { customerLabel } from "@/lib/customer-display";
+import type { CenterUpload, PriceRow } from "@/lib/upload-center";
+import {
+  buildInput, draftFromProgram, emptyDraft, fingerprint, money, uniqueName,
+  type ProgramDraft, type ProgramStat,
+} from "@/lib/program-draft";
+import { ProgramGrid, StatusChip } from "./program-grid";
+import { ProgramPasteDialog } from "./program-paste";
+import { errorMessage, formatDate, useRefreshWorkspace } from "./shared";
 
-export function ProgramsPanel({ programs, resellers, parts, prices = [], programRows = [] }: {
-  programs: ScanbackProgram[]; resellers: Reseller[]; parts: Part[]; prices?: PriceRow[]; programRows?: ProgramRow[];
+const NEW = "__draft";
+
+function statsFor(stats: ProgramStat[], programId: string | undefined) {
+  const bySku = new Map<string, number>();
+  const customers = new Set<number>();
+  let count = 0, cents = 0;
+  if (programId) for (const s of stats) {
+    if (s.programId !== programId) continue;
+    const k = s.sku.trim().toUpperCase();
+    bySku.set(k, (bySku.get(k) ?? 0) + s.count);
+    if (s.count > 0) customers.add(s.accountId);
+    count += s.count; cents += s.amountCents;
+  }
+  return { bySku, customers, count, cents };
+}
+
+export function ProgramsPanel({
+  programs, resellers, parts, prices = [], stats = [], uploads = [], initialProgramId, programUploadId,
+}: {
+  programs: ScanbackProgram[]; resellers: Reseller[]; parts: Part[]; prices?: PriceRow[];
+  stats?: ProgramStat[]; uploads?: CenterUpload[]; initialProgramId?: string; programUploadId?: string;
 }) {
-  const [seed, setSeed] = useState<LineDraft[] | null>(null);
-  const staged = useMemo<LineDraft[]>(() => {
-    const out: LineDraft[] = [];
-    const seen = new Set<string>();
-    for (const row of programRows) {
-      const skuKey = "sku" in row ? "sku" : findHeading(row, [/^sku$/, /partno/, /^sku/]);
-      const gtmKey = "gtmBuyCents" in row ? "gtmBuyCents" : undefined;
-      const sku = skuKey ? rawCell(row[skuKey]).toUpperCase() : "";
-      if (!sku || seen.has(sku)) continue;
-      seen.add(sku);
-      const caps: Record<number, string> = {};
-      for (const key of Object.keys(row)) {
-        if (key === skuKey || key === gtmKey || key === "description") continue;
-        const k = maskCustomerText(key).toLowerCase().replace(/[^a-z0-9]/g, "");
-        const r = resellers.find((x) => {
-          const names = [x.code, x.name, customerLabel(x.code)].map(c => String(c).toLowerCase().replace(/[^a-z0-9]/g, ""));
-          return names.some(c => c.length >= 2 && [c, `${c}cap`, `${c}qty`, `${c}cappedqty`, `${c}quantity`].includes(k));
-        });
-        const v = rawCell(row[key]);
-        if (r && /^\d+$/.test(v)) caps[r.id] = v;
-      }
-      out.push({ sku, gtm: gtmKey && /^\d+$/.test(rawCell(row[gtmKey])) ? centsToInput(Number(rawCell(row[gtmKey]))) : "", caps });
-    }
-    return out;
-  }, [programRows, resellers]);
-  const [editing, setEditing] = useState<ScanbackProgram | null>(null);
-  const [open, setOpen] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const save = useSaveScanbackProgram();
   const refresh = useRefreshWorkspace();
   const { toast } = useToast();
-  const partById = new Map(parts.map((p) => [p.id, p]));
-  const resById = new Map(resellers.map((r) => [r.id, r]));
-  const visible = programs.filter((p) => showArchived || !p.archived);
 
-  const toggleArchive = (p: ScanbackProgram) => {
-    const { createdAt: _c, ...rest } = p;
-    void _c;
-    save.mutate(
-      { data: { ...rest, archived: !p.archived } },
-      {
-        onSuccess: () => { toast({ title: p.archived ? "Promotion restored" : "Promotion archived" }); refresh(); },
-        onError: (e) => toast({ title: "Could not update promotion", description: errorMessage(e), variant: "destructive" }),
-      },
-    );
+  const sorted = useMemo(() => [...programs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [programs]);
+  const pickDefault = () => sorted.find((p) => p.id === initialProgramId) ?? sorted.find((p) => !p.archived) ?? sorted[0] ?? null;
+
+  const [selectedId, setSelectedId] = useState<string | null>(() => pickDefault()?.id ?? null);
+  const [draft, setDraft] = useState<ProgramDraft>(() => { const p = pickDefault(); return p ? draftFromProgram(p, parts) : emptyDraft(); });
+  const [baseFp, setBaseFp] = useState(() => fingerprint(draft));
+  const [conflict, setConflict] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ label: string; run: () => void } | null>(null);
+  const [paste, setPaste] = useState<{ open: boolean; uploadId: string | null }>({ open: !!programUploadId, uploadId: programUploadId ?? null });
+
+  const dirty = fingerprint(draft) !== baseFp;
+  const server = selectedId ? programs.find((p) => p.id === selectedId) ?? null : null;
+  const latestProgramUpload = useMemo(() => uploads.filter((u) => u.kind === "program" && u.state === "committed").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0], [uploads]);
+
+  const load = (p: ScanbackProgram | null, d?: ProgramDraft) => {
+    const next = d ?? (p ? draftFromProgram(p, parts) : emptyDraft());
+    setSelectedId(p?.id ?? null);
+    setDraft(next);
+    setBaseFp(p ? fingerprint(draftFromProgram(p, parts)) : fingerprint(emptyDraft()));
+    setConflict(false); setError(null);
   };
+  const loadRef = useRef(load); loadRef.current = load;
+
+  // Deep link: open upload preview when the query param changes.
+  useEffect(() => { if (programUploadId) setPaste({ open: true, uploadId: programUploadId }); }, [programUploadId]);
+
+  // Background polling: adopt server changes only when the draft is clean; otherwise flag a conflict and keep edits.
+  const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
+  const draftVersion = draft.version;
+  useEffect(() => {
+    // A deliberately opened New draft must remain new, even while workspace
+    // polling returns existing promotions.
+    if (!selectedId) return;
+    if (!server) return;
+    if (server.version !== draftVersion) {
+      if (dirtyRef.current) setConflict(true);
+      else loadRef.current(server);
+    }
+  }, [server, selectedId, draftVersion, programs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const guard = (label: string, run: () => void) => (dirty ? setPending({ label, run }) : run());
+
+  const doSave = () => {
+    setError(null);
+    const input = buildInput(draft, parts);
+    if (typeof input === "string") { setError(input); return; }
+    save.mutate({ data: input }, {
+      onSuccess: (saved) => {
+        toast({ title: draft.id ? "Changes saved" : "Promotion created" });
+        const p = saved && typeof saved === "object" && "id" in saved ? (saved as ScanbackProgram) : null;
+        if (p) load(p);
+        void refresh();
+      },
+      onError: (e) => {
+        const msg = errorMessage(e);
+        if ((e as { status?: number }).status === 409 || /version|conflict|changed by/i.test(msg)) setConflict(true);
+        setError(msg);
+      },
+    });
+  };
+
+  const toggleArchive = () => {
+    if (!server) return;
+    const { createdAt: _c, ...rest } = server;
+    void _c;
+    save.mutate({ data: { ...rest, archived: !server.archived } }, {
+      onSuccess: (saved) => {
+        toast({ title: server.archived ? "Promotion restored" : "Promotion archived" });
+        const p = saved && typeof saved === "object" && "id" in saved ? (saved as ScanbackProgram) : null;
+        if (p) load(p);
+        void refresh();
+      },
+      onError: (e) => toast({ title: "Could not update promotion", description: errorMessage(e), variant: "destructive" }),
+    });
+  };
+
+  const copy = (src: ProgramDraft = draft) => {
+    const d: ProgramDraft = {
+      ...src, id: undefined, version: undefined, archived: false,
+      name: uniqueName(src.name.trim() || "Promotion", programs.map((p) => p.name)),
+      lines: src.lines.map((l) => ({ ...l, caps: { ...l.caps } })),
+      customerIds: [...src.customerIds],
+    };
+    setSelectedId(null); setDraft(d); setBaseFp(fingerprint(emptyDraft())); setConflict(false); setError(null);
+    toast({ title: "Copy ready", description: "Unsaved draft. Caps and references were copied; claims were not." });
+  };
+
+  const current = statsFor(stats, draft.id);
+  const history = sorted.filter((p) => p.id !== selectedId);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600 max-w-2xl">
-          Promotions define who can claim, which SKUs qualify and the GTM Buy Ex deducted from the reseller's invoiced price.
-          Used promotions can be archived, never deleted.
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" data-testid="button-toggle-archived" onClick={() => setShowArchived((s) => !s)}>
-            {showArchived ? "Hide archived" : "Show archived"}
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={selectedId ?? NEW} onValueChange={(v) => {
+          if (v === NEW) return;
+          const p = programs.find((x) => x.id === v);
+          if (p) guard(`open ${p.name}`, () => load(p));
+        }}>
+          <SelectTrigger className="h-8 w-[300px] text-sm" data-testid="select-program"><SelectValue placeholder="Select promotion" /></SelectTrigger>
+          <SelectContent>
+            {!selectedId && <SelectItem value={NEW}>{draft.name.trim() || "Unsaved new promotion"} (draft)</SelectItem>}
+            {sorted.map((p) => (
+              <SelectItem key={p.id} value={p.id} data-testid={`option-program-${p.id}`}>
+                {p.name}{p.archived ? " (archived)" : ""} &middot; {formatDate(p.start)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button size="sm" variant="outline" className="h-8" data-testid="button-new-program" onClick={() => guard("start a new promotion", () => load(null))}>
+          <Plus className="mr-1 h-3.5 w-3.5" /> New
+        </Button>
+        <Button size="sm" variant="outline" className="h-8" data-testid="button-copy-program" disabled={draft.lines.length === 0 && !draft.name}
+          onClick={() => guard("copy the saved version", () => copy(server && !conflict ? draftFromProgram(server, parts) : draft))}>
+          <Copy className="mr-1 h-3.5 w-3.5" /> Copy
+        </Button>
+        <Button size="sm" variant="outline" className="h-8" data-testid={server ? `button-archive-program-${server.id}` : "button-archive-program"} disabled={!server || save.isPending}
+          onClick={() => guard(server?.archived ? "restore this promotion" : "archive this promotion", toggleArchive)}>
+          {server?.archived ? <><ArchiveRestore className="mr-1 h-3.5 w-3.5" /> Restore</> : <><Archive className="mr-1 h-3.5 w-3.5" /> Archive</>}
+        </Button>
+        <span className="mx-1 h-5 w-px bg-slate-300" />
+        <Button size="sm" variant="outline" className="h-8" data-testid="button-paste-program" onClick={() => guard("paste a new program", () => setPaste({ open: true, uploadId: null }))}>
+          <ClipboardPaste className="mr-1 h-3.5 w-3.5" /> Paste program
+        </Button>
+        {latestProgramUpload ? (
+          <Button size="sm" variant="ghost" className="h-8 text-xs" data-testid="button-preview-latest-upload"
+            onClick={() => guard("preview the latest program upload", () => setPaste({ open: true, uploadId: latestProgramUpload.id }))}>
+            <FileSpreadsheet className="mr-1 h-3.5 w-3.5" /> Preview latest upload
           </Button>
-          {staged.length > 0 ? (
-            <Button variant="outline" size="sm" data-testid="button-build-from-table" onClick={() => { setEditing(null); setSeed(staged); setOpen(true); }}>
-              <TableProperties className="mr-1 h-4 w-4" /> Build from program table ({staged.length} SKUs)
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" asChild data-testid="link-upload-program-table">
-              <Link href="/upload"><TableProperties className="mr-1 h-4 w-4" /> Upload a program table</Link>
+        ) : (
+          <Button size="sm" variant="ghost" className="h-8 text-xs" asChild data-testid="link-upload-program-table">
+            <Link href="/upload"><FileSpreadsheet className="mr-1 h-3.5 w-3.5" /> Upload a program table</Link>
+          </Button>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {dirty && <span className="text-xs font-medium text-amber-700" data-testid="text-unsaved">Unsaved changes</span>}
+          {dirty && (
+            <Button size="sm" variant="ghost" className="h-8" data-testid="button-discard-changes" onClick={() => load(server)}>
+              <RotateCcw className="mr-1 h-3.5 w-3.5" /> Discard
             </Button>
           )}
-          <Button size="sm" data-testid="button-new-program" onClick={() => { setEditing(null); setSeed(null); setOpen(true); }}>
-            <Plus className="mr-1 h-4 w-4" /> New promotion
+          <Button size="sm" className="h-8" disabled={!dirty || save.isPending || conflict} onClick={doSave} data-testid="button-save-program">
+            <Save className="mr-1 h-3.5 w-3.5" /> {save.isPending ? "Saving..." : draft.id ? "Save changes" : "Save promotion"}
           </Button>
         </div>
       </div>
 
-      {visible.length === 0 ? (
-        <SectionEmpty title="No promotions yet" body="Create a promotion with eligible customers, SKUs and GTM Buy Ex before verifying claims." />
-      ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {visible.map((p) => (
-            <article key={p.id} data-testid={`card-program-${p.id}`} className={`rounded-lg border bg-background p-4 ${p.archived ? "opacity-60" : ""}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold text-slate-800">{p.name}</h3>
-                  <p className="font-mono text-xs text-slate-500">{formatDate(p.start)} to {formatDate(p.end)} &middot; v{p.version}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  {p.archived && <Badge variant="secondary">Archived</Badge>}
-                  <Button variant="ghost" size="icon" aria-label="Edit" data-testid={`button-edit-program-${p.id}`} onClick={() => { setEditing(p); setSeed(null); setOpen(true); }}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" aria-label={p.archived ? "Restore" : "Archive"} disabled={save.isPending} data-testid={`button-archive-program-${p.id}`} onClick={() => toggleArchive(p)}>
-                    {p.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-              {p.notes && <p className="mt-2 text-sm text-slate-600">{p.notes}</p>}
-              <div className="mt-3 flex flex-wrap gap-1">
-                {p.customerIds.map((id) => (
-                  <span key={id} className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono text-[11px] text-cyan-800">{customerLabel(resById.get(id)?.code ?? `#${id}`)}</span>
-                ))}
-              </div>
-              <table className="mt-3 w-full text-sm">
-                <thead><tr className="text-left text-xs text-slate-500"><th className="font-medium">SKU</th><th className="text-right font-medium">GTM Buy Ex</th><th className="text-right font-medium">Caps</th></tr></thead>
-                <tbody>
-                  {p.lines.map((l) => (
-                    <tr key={l.sku ?? l.partId} className="border-t border-slate-100">
-                      <td className="py-1 font-mono text-xs">{l.sku ?? partById.get(l.partId ?? -1)?.part_no ?? `#${l.partId}`}</td>
-                      <td className="py-1 text-right tabular-nums">{formatCents(l.gtmBuyCents)}</td>
-                      <td className="py-1 text-right text-xs text-slate-500">
-                        {l.caps.filter((c) => c.quantity != null).length === 0
-                          ? "Unlimited"
-                          : l.caps.filter((c) => c.quantity != null).map((c) => `${customerLabel(resById.get(c.resellerId)?.code ?? c.resellerId)}: ${c.quantity}`).join(", ")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </article>
-          ))}
+      {conflict && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="banner-program-conflict">
+          <TriangleAlert className="h-4 w-4" />
+          <span className="flex-1">This promotion was changed elsewhere (now v{server?.version}). Your edits are kept here but cannot be saved over the newer version.</span>
+          <Button size="sm" variant="outline" className="h-7" data-testid="button-reload-program" onClick={() => load(server)}>Reload latest (discard mine)</Button>
+          <Button size="sm" variant="ghost" className="h-7" data-testid="button-copy-conflict" onClick={() => copy(draft)}>Save mine as a copy</Button>
         </div>
       )}
+      {error && <p data-testid="text-program-error" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
-      <ProgramEditor open={open} onOpenChange={setOpen} program={editing} resellers={resellers} parts={parts} prices={prices} seedLines={editing ? null : seed} />
+      <section data-testid="section-current-program">
+        <div className="mb-1.5 flex items-baseline gap-3 text-xs text-slate-500">
+          <span className="font-mono">{draft.id ? `v${draft.version}` : "new, not saved"}</span>
+          {draft.archived && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[11px] text-slate-700">Archived</span>}
+          {draft.id && <span className="font-mono" data-testid="text-current-claimed">{current.count} claimed &middot; {money(current.cents) || "$0.00"}</span>}
+          <span className="ml-auto">Claim per serial = invoiced unit price ex GST − GTM Buy Ex. References never change the claim.</span>
+        </div>
+        <ProgramGrid draft={draft} onChange={setDraft} resellers={resellers} parts={parts} prices={prices}
+          claimedBySku={current.bySku} approvedCustomers={current.customers}
+          onBlockedRemove={(id) => toast({
+            title: "Customer has approved claims",
+            description: `${customerLabel(resellers.find((r) => r.id === id)?.code ?? id)} cannot be removed from this promotion because approved claims exist.`,
+            variant: "destructive",
+          })} />
+      </section>
+
+      <section className="space-y-3 pt-2" data-testid="section-program-history">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Promotion history <span className="font-mono font-normal">({history.length})</span></h3>
+        {history.length === 0 && <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-slate-500">No other promotions yet. Archived and ended promotions will stack here, newest first.</p>}
+        {history.map((p) => <HistoryItem key={p.id} program={p} parts={parts} resellers={resellers} stats={stats}
+          onOpen={() => guard(`open ${p.name}`, () => load(p))} />)}
+      </section>
+
+      <ProgramPasteDialog open={paste.open} uploadId={paste.uploadId} resellers={resellers}
+        onOpenChange={(o) => setPaste((s) => ({ ...s, open: o }))}
+        onConfirm={(d) => { setSelectedId(null); setDraft(d); setBaseFp(fingerprint(emptyDraft())); setConflict(false); setError(null);
+          toast({ title: "Draft built", description: "Add a name and dates, complete any missing GTM Buy Ex, then Save promotion." }); }} />
+
+      <Dialog open={!!pending} onOpenChange={(o) => { if (!o) setPending(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard unsaved changes?</DialogTitle>
+            <DialogDescription>You have unsaved edits on {draft.name.trim() || "this draft"}. Continuing to {pending?.label} will discard them.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPending(null)} data-testid="button-keep-editing">Keep editing</Button>
+            <Button variant="destructive" data-testid="button-confirm-discard" onClick={() => { const r = pending?.run; setPending(null); r?.(); }}>Discard and continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function HistoryItem({ program, parts, resellers, stats, onOpen }: {
+  program: ScanbackProgram; parts: Part[]; resellers: Reseller[]; stats: ProgramStat[]; onOpen: () => void;
+}) {
+  const d = useMemo(() => draftFromProgram(program, parts), [program, parts]);
+  const s = statsFor(stats, program.id);
+  return (
+    <article className="opacity-60 transition-opacity hover:opacity-90" data-testid={`card-program-${program.id}`}>
+      <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="font-semibold text-slate-800">{program.name}</span>
+        <span className="font-mono text-slate-500">{formatDate(program.start)} to {formatDate(program.end)}</span>
+        <StatusChip start={program.start} end={program.end} />
+        {program.archived && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-700">Archived</span>}
+        <span className="font-mono text-slate-600" data-testid={`text-history-claimed-${program.id}`}>{s.count} units &middot; {money(s.cents) || "$0.00"}</span>
+        <Button size="sm" variant="ghost" className="ml-auto h-6 px-2 text-xs" onClick={onOpen} data-testid={`button-open-program-${program.id}`}>
+          <ExternalLink className="mr-1 h-3 w-3" /> Open
+        </Button>
+      </div>
+      <ProgramGrid draft={d} resellers={resellers} claimedBySku={s.bySku} dense idPrefix={`h${program.id}-`} />
+    </article>
   );
 }

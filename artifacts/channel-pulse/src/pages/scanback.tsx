@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ProgramStat } from "@/lib/program-draft";
 import { Link, useSearch } from "wouter";
 import { useGetParts, useGetResellers } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,7 +19,10 @@ export default function ScanbackClaims() {
   const partsQ = useGetParts();
   const center = useUploadCenter();
   const search = useSearch();
-  const [tab, setTab] = useState("verify");
+  const query = useMemo(() => new URLSearchParams(search), [search]);
+  const programUploadId = query.get("programUpload") ?? undefined;
+  const [tab, setTab] = useState(() => query.get("tab") ?? (programUploadId ? "programs" : "verify"));
+  useEffect(() => { const t = query.get("tab") ?? (programUploadId ? "programs" : null); if (t) setTab(t); }, [query, programUploadId]);
   const resellers = resellersQ.data ?? [];
   const parts = partsQ.data ?? [];
   const data = ws.data;
@@ -86,9 +90,13 @@ export default function ScanbackClaims() {
             <TabsContent value="verify" className="mt-4">
               <VerifyPanel programs={data.programs} imports={data.imports} drafts={data.drafts} resellers={resellers} onApproved={() => undefined} preset={preset} />
             </TabsContent>
-            <TabsContent value="programs" className="mt-4">
-              <ProgramsPanel programs={data.programs} resellers={resellers} parts={parts}
-                prices={center.data?.prices ?? []} programRows={center.data?.programRows ?? []} />
+            <TabsContent value="programs" className="mt-4 data-[state=inactive]:hidden" forceMount>
+              {!partsQ.isLoading && (
+                <ProgramsPanel programs={data.programs} resellers={resellers} parts={parts}
+                  prices={center.data?.prices ?? []} uploads={center.data?.uploads ?? []}
+                  stats={(data.programStats ?? []) as ProgramStat[]}
+                  initialProgramId={preset?.promotionId} programUploadId={programUploadId} />
+              )}
             </TabsContent>
             <TabsContent value="history" className="mt-4">
               <HistoryPanel batches={data.batches} resellers={resellers} />

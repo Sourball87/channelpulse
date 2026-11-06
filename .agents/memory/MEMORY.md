@@ -7,3 +7,4 @@
 - [Scanback claims rules](scanback-claims.md) — initial scope, spreadsheet sources and the global one-payment-per-serial rule.
 - [Customer masking](customer-masking.md) — show the nine customers only by their requested abbreviations; preserve internal matching identities.
 - [Category options](category-options.md) — HDD & Memory must not be offered as a category option.
+- [Private browser-test auth](browser-test-auth.md) — notebook and shell do not share secrets; authenticate runtime-side without exposing credentials or weakening app auth.

@@ -19,6 +19,7 @@ import insightsWhitespaceRouter from "./insights-whitespace";
 import insightsResellerPerfRouter from "./insights-reseller-perf";
 import scanbackRouter from "./scanback";
 import uploadCenterRouter from "./upload-center";
+import programPreviewRouter from "./program-preview";
 import { maskCustomerResponses } from "../lib/customer-display";
 
 const router: IRouter = Router();
@@ -45,5 +46,6 @@ router.use(insightsWhitespaceRouter);
 router.use(insightsResellerPerfRouter);
 router.use(scanbackRouter);
 router.use(uploadCenterRouter);
+router.use(programPreviewRouter);
 
 export default router;

@@ -17,5 +17,25 @@ export interface ScanbackProgramLine {
   partId?: number | null;
   /** @minimum 1 */
   gtmBuyCents: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  rrpIncCents?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  gtmIncCents?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  ddCostExCents?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  t1ExCents?: number | null;
   caps: ScanbackCap[];
 }

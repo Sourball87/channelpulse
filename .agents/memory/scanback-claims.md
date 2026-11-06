@@ -56,3 +56,9 @@ Promotion SKUs may be typed even when no product-catalogue row exists.
 **Why:** The user explicitly chose to allow custom SKU codes outside the catalogue.
 
 **How to apply:** Keep SKU text on promotion lines, invoice evidence, and the approved-serial ledger. Match codes exactly after uppercase/trim normalization and track caps by code; never create a catalogue product as a side effect.
+
+Promotion caps are per SKU/customer only; never add an all-SKU customer-total cap.
+
+**Why:** The user explicitly requested “Do NOT add a customer total cap (all SKUs) row or any total-cap rule.”
+
+**How to apply:** Keep row and footer cap sums as display totals, not extra eligibility limits. Reference prices and calculated discount/STA are informational, not substitutes for the invoiced-price claim basis. Paste/file previews must preserve missing source prices/caps, never invent or silently fill them.

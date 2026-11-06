@@ -9,10 +9,12 @@ import type { ScanbackBatch } from './scanbackBatch';
 import type { ScanbackDraft } from './scanbackDraft';
 import type { ScanbackImport } from './scanbackImport';
 import type { ScanbackProgram } from './scanbackProgram';
+import type { ScanbackProgramStat } from './scanbackProgramStat';
 
 export interface ScanbackWorkspace {
   programs: ScanbackProgram[];
   imports: ScanbackImport[];
   drafts: ScanbackDraft[];
   batches: ScanbackBatch[];
+  programStats?: ScanbackProgramStat[];
 }

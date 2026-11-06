@@ -9,6 +9,7 @@ import {
 import { parseSheets, suggestMapping, detectImportKind } from "../lib/scanback-import";
 import { validDate } from "../lib/scanback-engine";
 import { dateStringToWeekIso, isValidWeekIso } from "../lib/parser";
+import { validateProgramReferences } from "../lib/program-table";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
   total, recordApprovedSerials, statementRows, requireThat, ScanbackError, type Client,
@@ -47,7 +48,16 @@ router.get("/scanback/workspace", route(async (c, _req, res) => {
   const batches = await all<ScanbackBatch>(c, "scanback_batches");
   const approvedDrafts = new Set((await c.query("SELECT draft_id FROM scanback_batches WHERE draft_id IS NOT NULL")).rows.map(r => r.draft_id));
   const drafts = (await all<ScanbackDraft>(c, "scanback_drafts")).filter(d => !approvedDrafts.has(d.id));
-  return { programs, imports: imports.map(i => publicImport(i)), drafts, batches };
+  const programStats = (await c.query(`SELECT p.id AS "programId",s.account_id AS "accountId",
+    COALESCE(s.sku,part.part_no) AS sku,count(*)::int AS count,sum(s.amount_cents)::bigint AS "amountCents"
+    FROM scanback_approved_serials s
+    JOIN scanback_batches b ON b.id=s.batch_id
+    JOIN scanback_programs p ON p.id=s.program_id OR
+      (s.program_id IS NULL AND upper(p.payload->>'name')=upper(b.payload->>'programName'))
+    LEFT JOIN parts part ON part.id=s.part_id
+    GROUP BY p.id,s.account_id,COALESCE(s.sku,part.part_no)`)).rows
+    .map(row => ({ ...row, amountCents: Number(row.amountCents) }));
+  return { programs, imports: imports.map(i => publicImport(i)), drafts, batches, programStats };
 }));
 router.post("/scanback/programs", route(async (c, req, res) => {
   const input = parse(SaveScanbackProgramBody, req.body);
@@ -64,6 +74,7 @@ router.post("/scanback/programs", route(async (c, req, res) => {
       "Enter a non-empty SKU of at most 120 printable characters.");
     requireThat(!part || part.code.toUpperCase() === sku, "The entered SKU does not match its selected catalogue item.");
     requireThat(Number.isSafeInteger(line.gtmBuyCents) && line.gtmBuyCents > 0 && line.gtmBuyCents < 2_000_000_000, "Enter a valid positive GTM Buy Ex.");
+    requireThat(validateProgramReferences(line), "Reference prices must be blank or nonnegative amounts with up to two decimal places.");
     return { ...line, sku, partId: part?.id ?? null };
   });
   requireThat(new Set(normalizedLines.map(line => line.sku)).size === normalizedLines.length, "Each Stock Code may appear only once.");
@@ -75,6 +86,17 @@ router.post("/scanback/programs", route(async (c, req, res) => {
   }
   const old = input.id ? await get<ScanbackProgram>(c, "scanback_programs", input.id) : null;
   if (old) requireThat(input.version === old.version, "Promotion was edited elsewhere. Refresh before saving.", 409);
+  if (old) {
+    const removed = old.customerIds.filter(id => !input.customerIds.includes(id));
+    if (removed.length) {
+      const protectedAccounts = await c.query(`SELECT DISTINCT r.name FROM scanback_approved_serials s
+        JOIN scanback_batches b ON b.id=s.batch_id JOIN resellers r ON r.id=s.account_id
+        WHERE s.account_id=ANY($2::int[]) AND (s.program_id=$1 OR
+          (s.program_id IS NULL AND upper(b.payload->>'programName')=upper($3)))`, [old.id, removed, old.name]);
+      requireThat(!protectedAccounts.rowCount,
+        `Cannot remove ${protectedAccounts.rows.map(r => r.name).join(", ")}: this customer has approved claims on the promotion.`, 409);
+    }
+  }
   const others = await all<ScanbackProgram>(c, "scanback_programs");
   requireThat(!others.some(p => p.id !== old?.id && p.name.toUpperCase() === input.name.trim().toUpperCase()), "Use a unique promotion name so historical claims can be matched safely.");
   const value: ScanbackProgram = { ...input, id: old?.id ?? randomUUID(), name: input.name.trim(),

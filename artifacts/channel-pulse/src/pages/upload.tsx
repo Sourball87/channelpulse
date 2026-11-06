@@ -1,11 +1,12 @@
 import { formatWeekLabel } from "@/lib/week-display";
 import { useState, useRef, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useGetUploads, useGetResellers, type Reseller } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, FileText, AlertCircle, TriangleAlert, Trash2, Pencil, CheckCircle2, X, RefreshCw } from "lucide-react";
+import { UploadCloud, FileText, AlertCircle, TriangleAlert, Trash2, Pencil, CheckCircle2, X, RefreshCw, ExternalLink } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -530,7 +531,7 @@ function ReferenceCommit({ u }: { u: CenterUpload }) {
     onError: (e) => toast({ title: "Could not save mapping", description: e instanceof Error ? e.message : undefined, variant: "destructive" }),
   });
   const doCommit = () => commit.mutate(u.id, {
-    onSuccess: (r) => toast({ title: u.kind === "price" ? "Price list stored" : "Program table staged for the builder", description: `${r.rowCount.toLocaleString()} rows committed.` }),
+    onSuccess: (r) => toast({ title: u.kind === "price" ? "Price list stored" : "Program table committed. Open it in Programs to build a draft", description: `${r.rowCount.toLocaleString()} rows committed.` }),
     onError: (e) => toast({ title: "Commit failed", description: e instanceof Error ? e.message : undefined, variant: "destructive" }),
   });
   return (
@@ -552,8 +553,13 @@ function ReferenceCommit({ u }: { u: CenterUpload }) {
       <p className="text-xs text-muted-foreground">
         {u.kind === "price"
           ? "Prices are reference values (RRP Inc, DD Cost Ex, T1 Buy Ex). Purchase cost is never used to calculate claims."
-          : "Program rows feed Scanback Claims > Programs as an editable draft. No promotion is created until you name, date and save it there. Customer cap columns are optional."}
+          : "Program tables open in Scanback Claims > Programs as a mapped preview. No promotion is created until you confirm the preview, then name, date and save the draft there."}
       </p>
+      {u.kind === "program" && (
+        <Button size="sm" variant="outline" asChild data-testid="link-open-program-preview">
+          <Link href={`/scanback?programUpload=${encodeURIComponent(u.id)}&tab=programs`}><ExternalLink className="mr-1 h-3.5 w-3.5" /> {committed ? "Open in Programs" : "Preview in Programs"}</Link>
+        </Button>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox checked={reviewed} onCheckedChange={(v) => setReviewed(v === true)} disabled={committed} data-testid="checkbox-reviewed" />

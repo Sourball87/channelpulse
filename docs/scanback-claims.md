@@ -17,6 +17,72 @@ it does not send payments or issue credits in Pronto.
 Existing account and SKU records are reused. Unknown accounts/SKUs must be
 resolved, not automatically created from an unverified financial file.
 
+## Programs: inline spreadsheet
+
+Select a promotion above the grid, or use **New**, **Copy**, or **Archive**.
+Name, inclusive Start/End dates, computed status and Notes live inside its
+header band. Status is Upcoming, Live (calendar days remaining, including the
+last eligible day), or Ended. Archive retains the promotion and its history;
+Restore makes it available again. There is no delete operation.
+
+The table columns are:
+
+**SKU | RRP Inc | GTM Inc | Disc % | DD Cost Ex | T1 Ex | GTM Buy Ex |
+STA (T1 − GTM Buy) | Capped Qty | each customer | Claimed**
+
+- Type or pick a SKU to fill RRP Inc, DD Cost Ex and T1 Ex from the committed
+  price list. **Refresh from price list** updates matching rows explicitly.
+  Unknown SKUs clear those references rather than retaining another SKU's prices.
+  Description stays in the price list, not this grid.
+- Disc % is `(RRP Inc − GTM Inc) ÷ RRP Inc × 100`, with no dollar-discount
+  column. STA is `T1 Ex − GTM Buy Ex`. Missing reference values stay blank.
+  Reference prices are saved with the promotion; they never change the claim
+  formula, which remains **invoiced unit price ex GST − GTM Buy Ex**.
+- **Capped Qty** adds the numeric customer caps on that SKU. Blank means
+  unlimited and is not included in that displayed sum; zero means ineligible.
+  The **Total of SKU caps** footer sums numeric SKU caps for each customer.
+  These are display totals only: there is **no all-SKU customer-total cap**
+  and no total-cap enforcement rule.
+- **+ Add customer**, next to **Add SKU**, adds a reseller column. Its heading's
+  X removes that customer unless approved claims exist on this promotion.
+  That protection is checked again on the server, including historical approvals.
+- **Claimed** counts approved serials for the SKU, including linked historical
+  approvals. Copying terms does not copy claims.
+
+Use **Save changes** or **Save promotion** inline. Existing validation and
+version checks still apply. Background refreshes do not overwrite unsaved
+edits. A conflict offers reload/discard or copying your edits into a new draft.
+Switching promotions, New, Copy and Archive warn before discarding edits.
+Copy retains reference prices and SKU caps but receives a new name and ID only
+when saved; its claim counts start at zero.
+
+### Paste or upload a program table
+
+1. Click **Paste program** and paste a rectangular Excel/email table including
+   its headings. Tab-separated, CSV and pipe-separated tables are accepted.
+   For a file, drop CSV/XLS/XLSX in **Upload Center**, choose Program table if
+   detection is unclear, and use **Preview in Programs** / **Open in Programs**.
+   **Preview latest upload** opens the latest committed program-table source.
+2. Review heading assignments and the source-only row preview. Standard headings
+   and existing customer names/codes are matched deterministically. When needed,
+   AI proposes mappings using headings and the existing reseller list only;
+   it does not receive source rows and cannot supply prices, caps or SKU values.
+3. Highlighted unmatched columns must be mapped to a field/customer or explicitly
+   ignored. **Apply mapping** reruns the preview using your assignments, without
+   AI overriding them. Invalid prices/caps and duplicate SKUs block confirmation.
+   Missing GTM Buy Ex can be completed in the resulting draft before saving.
+4. Tick the review confirmation and **Build draft**. Enter name/dates, finish
+   required fields and save inline. Previewing or building a draft does not save
+   a promotion. Blank source prices remain blank; price-list values are not
+   silently substituted during paste/file creation.
+
+Paste limits are 1 MB, 1,000 SKU rows and 150 columns. Program-file previews use
+the original first worksheet and source headings retained by Upload Center.
+Below the active table, every other promotion is stacked newest first as a
+muted, compact, read-only full table, with dates/status, approved units/dollars
+and **Open**. Editing current program terms never rewrites approved batch
+snapshots or their exported statements.
+
 ## Evidence and claim files
 
 Upload your existing CSV, XLS or XLSX file in **Upload Center**, the sole file-intake

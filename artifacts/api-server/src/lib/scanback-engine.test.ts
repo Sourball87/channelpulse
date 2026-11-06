@@ -45,6 +45,12 @@ describe("scanback deterministic verification", () => {
   it("pays the invoiced reseller unit price minus GTM", () => {
     expect(first()).toMatchObject({ status: "eligible", amountCents: 3000, include: true });
   });
+  it("never uses program reference prices or GTM Inc as the claim basis", () => {
+    const references = { ...p, lines: p.lines.map(line => ({
+      ...line, rrpIncCents: 99999, gtmIncCents: 1, ddCostExCents: 500, t1ExCents: 20000,
+    })) };
+    expect(first({ program: references })).toMatchObject({ status: "eligible", amountCents: 3000, include: true });
+  });
   it("blocks serial reuse across other promotions", () => {
     expect(first({ approved: [{ serial: "SER001", batchId: "old", programId: "different", accountId: 9, partId: 2 }] }).reason).toContain("Already approved");
   });

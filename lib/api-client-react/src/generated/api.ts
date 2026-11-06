@@ -51,6 +51,8 @@ import type {
   Part,
   PartInput,
   PartUpdate,
+  ProgramTablePreview,
+  ProgramTablePreviewInput,
   Reseller,
   ResellerInput,
   ResellerUpdate,
@@ -103,6 +105,88 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getPreviewProgramTableUrl = () => {
+
+
+
+
+  return `/api/scanback/programs/preview`
+}
+
+export const previewProgramTable = async (programTablePreviewInput: ProgramTablePreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<ProgramTablePreview> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ProgramTablePreview>(getPreviewProgramTableUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(programTablePreviewInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewProgramTableMutationKey = () => ['previewProgramTable'] as const;
+
+export const getPreviewProgramTableMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewProgramTable>>, TError,PreviewProgramTableMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewProgramTable>>, TError,PreviewProgramTableMutationVariables, TContext> => {
+
+const mutationKey = getPreviewProgramTableMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewProgramTable>>, PreviewProgramTableMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewProgramTable(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewProgramTableMutationResult = NonNullable<Awaited<ReturnType<typeof previewProgramTable>>>
+    export type PreviewProgramTableMutationBody = BodyType<ProgramTablePreviewInput>
+    export type PreviewProgramTableMutationError = ErrorType<unknown>
+    export type PreviewProgramTableMutationVariables = {data: BodyType<ProgramTablePreviewInput>}
+
+    export const usePreviewProgramTable = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewProgramTable>>, TError,PreviewProgramTableMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof previewProgramTable>>,
+        TError,
+        PreviewProgramTableMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPreviewProgramTableMutationOptions(options), queryClient);
+    }
 
 export const getGetUploadCenterUrl = () => {
 
