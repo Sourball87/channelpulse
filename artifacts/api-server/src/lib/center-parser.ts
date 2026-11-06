@@ -1,6 +1,8 @@
 import * as XLSX from "xlsx";
 import { detectImportKind, type Sheets } from "./scanback-import";
 import { cents } from "./scanback-engine";
+import { readProgramGrid, readProgramText } from "./program-source";
+import type { ProgramTableSource } from "@workspace/api-zod";
 
 export const centerKinds = ["soh", "claim", "evidence", "history", "price", "program", "unknown"] as const;
 export type CenterKind = typeof centerKinds[number];
@@ -9,14 +11,15 @@ const aliases: Record<string, string[]> = {
   sku: ["sku", "stockcode", "partno", "partnumber", "model", "modelcode"],
   description: ["description", "stockdescription", "productdescription"],
   rrpIncCents: ["rrpinc", "rrpincgst", "rrpinclgst", "rrp"],
-  ddCostExCents: ["ddcostex", "ddcostexgst", "cost", "costex"],
+  ddCostExCents: ["ddstdcostex", "ddcostex", "ddcostexgst", "cost", "costex"],
   t1BuyExCents: ["t1buyex", "t1ex", "t1buyexgst"],
   gtmBuyCents: ["gtmbuyex", "gtmbuyexgst"],
 };
 export function referenceMapping(headers: string[]) {
+  const program = headers.some(h => aliases.gtmBuyCents.includes(normalizeHeading(h)));
   return Object.fromEntries(Object.entries(aliases).map(([key, names]) => {
     const matches = headers.filter(h => names.includes(normalizeHeading(h)));
-    return [key, matches.length === 1 ? matches[0] : ""];
+    return [key, matches.length === 1 || (program && matches.length) ? matches[0] : ""];
   }));
 }
 export function detectCenterKind(headers: string[], sheetName = "", filename = ""): CenterKind {
@@ -33,6 +36,17 @@ export function detectCenterKind(headers: string[], sheetName = "", filename = "
   return "unknown";
 }
 export function readCenterSheets(buffer: Buffer): Sheets {
+  return readCenterWorkbook(buffer).sheets;
+}
+export function readCenterWorkbook(buffer: Buffer): { sheets: Sheets; programSources: Record<string, ProgramTableSource> } {
+  const programSources: Record<string, ProgramTableSource> = {};
+  if (buffer[0] !== 0x50 && buffer[0] !== 0xD0) {
+    const text = buffer.toString("utf8");
+    if (!text.includes("\0") && /gtm\s*buy\s*ex/i.test(text)) {
+      const source = readProgramText(text);
+      return { sheets: { Sheet1: source.rows }, programSources: { Sheet1: source.meta } };
+    }
+  }
   const wb = XLSX.read(buffer, { type: "buffer", raw: true, cellDates: false, sheetRows: 20002 });
   if (wb.SheetNames.length > 30) throw new Error("Limit each workbook to 30 worksheets.");
   const result: Sheets = {};
@@ -42,12 +56,19 @@ export function readCenterSheets(buffer: Buffer): Sheets {
     const range = XLSX.utils.decode_range(sheet["!fullref"] ?? sheet["!ref"] ?? "A1");
     if (range.e.r > 20000 || range.e.c > 150) throw new Error("Limit sheets to 20,000 rows and 150 columns.");
     const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "", blankrows: false });
-    const candidates = grid.slice(0, 20).map((r, index) => ({
+    const candidates = grid.map((r, index) => ({
       index, kind: detectCenterKind(r.map(String), name),
       fields: r.filter(v => /sku|serial|model|stock|part|rrp/i.test(String(v))).length,
     }));
     const best = candidates.find(r => r.kind !== "unknown") ?? candidates.sort((a, b) => b.fields - a.fields)[0];
     if (!best || !grid[best.index]?.length) continue;
+    if (best.kind === "program") {
+      const source = readProgramGrid(grid);
+      result[name] = source.rows; programSources[name] = source.meta;
+      total += source.rows.length;
+      if (total > 50000) throw new Error("Limit each workbook to 50,000 rows.");
+      continue;
+    }
     const headers = grid[best.index].map((v, i) => String(v || `Column ${i + 1}`).trim());
     if (new Set(headers).size !== headers.length) throw new Error(`Duplicate headings in ${name}. Rename them before uploading.`);
     const rows = grid.slice(best.index + 1).map(row => Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""])))
@@ -57,7 +78,7 @@ export function readCenterSheets(buffer: Buffer): Sheets {
     result[name] = rows;
   }
   if (!Object.keys(result).length) throw new Error("No tabular data found.");
-  return result;
+  return { sheets: result, programSources };
 }
 export function sheetsBuffer(raw: Sheets): Buffer {
   const wb = XLSX.utils.book_new();

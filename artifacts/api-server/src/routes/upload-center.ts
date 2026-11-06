@@ -12,7 +12,7 @@ import { serialKey } from "../lib/scanback-engine";
 import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
 import { isPronto } from "../lib/scanback-pronto";
 import { transaction, catalog, rebuildImport, requireThat, ScanbackError, type Client } from "../lib/scanback-store";
-import { detectCenterKind, readCenterSheets, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
+import { detectCenterKind, readCenterWorkbook, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
 import { aiAssistEnabled, suggestFileType, suggestRecognition } from "../lib/upload-ai";
 import type { AiNote } from "../lib/upload-review";
 
@@ -232,7 +232,8 @@ router.post("/upload-center/files", intake.array("files"), async (req, res) => {
       const result = await transaction(async c => {
         await validateMeta(c, options.data);
         requireThat(/\.(csv|xlsx|xls)$/i.test(file.originalname), "Use CSV, XLS or XLSX.");
-        let raw = readCenterSheets(file.buffer);
+        const workbook = readCenterWorkbook(file.buffer);
+        let raw = workbook.sheets;
         const sheets = Object.keys(raw);
         const detected = sheets.map(sheet => ({ sheet, kind: detectCenterKind(Object.keys(raw[sheet][0] ?? {}), sheet, file.originalname) }));
         const selected = detected.find(d => d.kind !== "unknown") ?? detected[0];
@@ -246,6 +247,7 @@ router.post("/upload-center/files", intake.array("files"), async (req, res) => {
           weekIso: options.data.kind ? options.data.weekIso ?? detectWeekFromFilename(file.originalname).weekIso
             : detectWeekFromFilename(file.originalname).weekIso ?? options.data.weekIso ?? null,
           summary: emptySummary(), headers: [], mapping: {}, errors: [], preview: [], rowCount: 0,
+          ...(kind === "program" && workbook.programSources[selected.sheet] ? { programSource: workbook.programSources[selected.sheet] } : {}),
         };
         raw = await createSource(c, entry, raw, file.buffer, aiAssistEnabled(req.body.ai_assist));
         await hydrate(c, entry);

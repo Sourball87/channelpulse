@@ -126,12 +126,31 @@ export const PreviewProgramTableResponse = zod.object({
   "blocking": zod.boolean()
 })),
   "sourceName": zod.string(),
-  "aiNote": zod.string().nullable()
+  "aiNote": zod.string().nullable(),
+  "startDate": zod.string().nullish(),
+  "endDate": zod.string().nullish(),
+  "dateNote": zod.string().nullish(),
+  "ignoredColumns": zod.array(zod.object({
+  "heading": zod.string(),
+  "reason": zod.string()
+})).optional()
 })
 
 
 export const GetUploadCenterResponse = zod.object({
   "uploads": zod.array(zod.object({
+  "programSource": zod.object({
+  "startDate": zod.string().nullable(),
+  "endDate": zod.string().nullable(),
+  "dateNote": zod.string().nullable(),
+  "issues": zod.array(zod.object({
+  "row": zod.int().nullable(),
+  "column": zod.string(),
+  "message": zod.string(),
+  "blocking": zod.boolean()
+})),
+  "rowNumbers": zod.array(zod.int())
+}).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
   "name": zod.string(),
@@ -180,6 +199,18 @@ export const StageCenterFilesBody = zod.object({
 
 export const StageCenterFilesResponse = zod.object({
   "uploads": zod.array(zod.object({
+  "programSource": zod.object({
+  "startDate": zod.string().nullable(),
+  "endDate": zod.string().nullable(),
+  "dateNote": zod.string().nullable(),
+  "issues": zod.array(zod.object({
+  "row": zod.int().nullable(),
+  "column": zod.string(),
+  "message": zod.string(),
+  "blocking": zod.boolean()
+})),
+  "rowNumbers": zod.array(zod.int())
+}).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
   "name": zod.string(),
@@ -223,6 +254,18 @@ export const CorrectCenterUploadBody = zod.object({
 })
 
 export const CorrectCenterUploadResponse = zod.object({
+  "programSource": zod.object({
+  "startDate": zod.string().nullable(),
+  "endDate": zod.string().nullable(),
+  "dateNote": zod.string().nullable(),
+  "issues": zod.array(zod.object({
+  "row": zod.int().nullable(),
+  "column": zod.string(),
+  "message": zod.string(),
+  "blocking": zod.boolean()
+})),
+  "rowNumbers": zod.array(zod.int())
+}).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
   "name": zod.string(),
@@ -263,6 +306,18 @@ export const CommitCenterReferenceParams = zod.object({
 })
 
 export const CommitCenterReferenceResponse = zod.object({
+  "programSource": zod.object({
+  "startDate": zod.string().nullable(),
+  "endDate": zod.string().nullable(),
+  "dateNote": zod.string().nullable(),
+  "issues": zod.array(zod.object({
+  "row": zod.int().nullable(),
+  "column": zod.string(),
+  "message": zod.string(),
+  "blocking": zod.boolean()
+})),
+  "rowNumbers": zod.array(zod.int())
+}).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
   "name": zod.string(),

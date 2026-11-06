@@ -928,6 +928,26 @@ components:
         issues: { type: array, items: { $ref: "#/components/schemas/ProgramTableIssue" } }
         sourceName: { type: string }
         aiNote: { type: [string, "null"] }
+        startDate: { type: [string, "null"] }
+        endDate: { type: [string, "null"] }
+        dateNote: { type: [string, "null"] }
+        ignoredColumns:
+          type: array
+          items:
+            type: object
+            required: [heading, reason]
+            properties:
+              heading: { type: string }
+              reason: { type: string }
+    ProgramTableSource:
+      type: object
+      required: [startDate, endDate, dateNote, issues, rowNumbers]
+      properties:
+        startDate: { type: [string, "null"] }
+        endDate: { type: [string, "null"] }
+        dateNote: { type: [string, "null"] }
+        issues: { type: array, items: { $ref: "#/components/schemas/ProgramTableIssue" } }
+        rowNumbers: { type: array, items: { type: integer } }
     ScanbackProgramStat:
       type: object
       required: [programId, accountId, sku, count, amountCents]
@@ -1814,6 +1834,7 @@ components:
       type: object
       required: [id, kind, name, accountId, weekIso, sourceId, state, createdAt, rowCount, summary, errors, headers, mapping, preview]
       properties:
+        programSource: { $ref: "#/components/schemas/ProgramTableSource" }
         id: { type: string }
         kind: { type: string, enum: [soh, claim, evidence, history, price, program, unknown] }
         name: { type: string }

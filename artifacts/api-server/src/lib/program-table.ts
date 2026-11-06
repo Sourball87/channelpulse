@@ -1,7 +1,7 @@
-import Papa from "papaparse";
-import type { ProgramTableMapping, ProgramTablePreview, ProgramTableRow, ScanbackProgramLine } from "@workspace/api-zod";
+import type { ProgramTableMapping, ProgramTablePreview, ProgramTableRow, ProgramTableSource, ScanbackProgramLine } from "@workspace/api-zod";
 import { cents } from "./scanback-engine";
 import { maskCustomerText } from "./customer-display";
+import { readProgramText } from "./program-source";
 
 export const programFields = ["sku", "rrpIncCents", "gtmIncCents", "ddCostExCents", "t1ExCents", "gtmBuyCents"] as const;
 export type ProgramField = typeof programFields[number];
@@ -11,11 +11,11 @@ const aliases: Record<ProgramField, string[]> = {
   sku: ["sku", "model", "stockcode", "partno", "partnumber", "modelcode", "productcode"],
   rrpIncCents: ["rrpinc", "rrpincgst", "rrpinclgst", "rrp"],
   gtmIncCents: ["gtminc", "gtmincgst", "gtminclgst", "gtmretailinc"],
-  ddCostExCents: ["ddcostex", "ddcostexgst", "ddcost", "costex", "cost"],
+  ddCostExCents: ["ddstdcostex", "ddcostex", "ddcostexgst", "ddcost", "costex", "cost"],
   t1ExCents: ["t1ex", "t1buyex", "t1buyexgst", "t1exgst"],
   gtmBuyCents: ["gtmbuyex", "gtmbuyexgst"],
 };
-const computed = new Set(["discount", "disc", "discpercent", "discountpercent", "sta", "stat1gtmbuy", "cappedqty", "claimed"]);
+const computed = new Set(["discount", "disc", "discpercent", "discountpercent", "sta", "staqty", "stacost", "revtotal", "total", "stat1gtmbuy", "cappedqty", "claimed"]);
 export function matchProgramAccount(heading: string, accounts: ProgramAccount[]): number | null {
   const value = norm(maskCustomerText(heading));
   const candidates = accounts.filter(a => [a.code, a.name, ...(a.aliases ?? []), maskCustomerText(a.name), maskCustomerText(a.code)]
@@ -25,19 +25,28 @@ export function matchProgramAccount(heading: string, accounts: ProgramAccount[])
     }));
   return candidates.length === 1 ? candidates[0].id : null;
 }
-export function mapProgramHeadings(headers: string[], accounts: ProgramAccount[]): ProgramTableMapping {
+export function mapProgramHeadings(headers: string[], accounts: ProgramAccount[], rows?: Record<string, unknown>[]): ProgramTableMapping {
   const fields: Record<string, string> = {};
   const customers: Record<string, number | null> = {};
   const ignored: string[] = [];
   for (const field of programFields) {
     const found = headers.filter(h => aliases[field].includes(norm(h)));
-    if (found.length === 1) fields[field] = found[0];
+    if (found.length) fields[field] = found[0];
   }
   for (const header of headers) {
     if (Object.values(fields).includes(header)) continue;
     const accountId = matchProgramAccount(header, accounts);
-    if (accountId != null) customers[header] = accountId;
-    else if (computed.has(norm(header))) ignored.push(header);
+    if (accountId != null) {
+      if (Object.values(customers).includes(accountId)) ignored.push(header);
+      else customers[header] = accountId;
+    }
+    else if (computed.has(norm(header)) || /\[duplicate \d+\]$/.test(header) ||
+      programFields.some(f => f !== "sku" && aliases[f].includes(norm(header)))) ignored.push(header);
+  }
+  if (rows?.length) for (const header of headers) {
+    if (header !== fields.sku && aliases.sku.includes(norm(header)) &&
+      rows.every(r => String(r[header] ?? "").trim().toUpperCase() === String(r[fields.sku] ?? "").trim().toUpperCase()))
+      ignored.push(header);
   }
   return { fields, customers, ignored };
 }
@@ -66,32 +75,19 @@ export function applyProgramSuggestions(
   }
   return out;
 }
-export function readPastedProgram(text: string): { headers: string[]; rows: Record<string, unknown>[] } {
-  if (!text.trim() || text.length > 1_000_000) throw new Error("Paste a table with headings, up to 1 MB.");
-  // Excel clipboard is TSV. CSV and pipe-separated email tables are also
-  // supported; repeated spaces are a last resort, not inferred cell values.
-  const cleaned = text.replace(/^\uFEFF/, "").replace(/^[\r\n]+|[\r\n]+$/g, "");
-  const first = cleaned.split(/\r?\n/)[0];
-  const delimiter = first.includes("\t") ? "\t" : first.includes(",") ? "," : first.includes("|") ? "|" : "\t";
-  const input = delimiter === "\t" && !first.includes("\t") ? cleaned.replace(/ {2,}/g, "\t") : cleaned;
-  const parsed = Papa.parse<string[]>(input, { delimiter, skipEmptyLines: "greedy" });
-  if (parsed.errors.length) throw new Error("Could not read the pasted table. Use tab-separated Excel cells or CSV with matching quotes.");
-  const grid = parsed.data;
-  const headers = (grid.shift() ?? []).map(h => h.trim());
-  if (!headers.length || headers.some(h => !h) || new Set(headers.map(norm)).size !== headers.length)
-    throw new Error("Every pasted column needs a distinct, nonempty heading.");
-  if (headers.length > 150 || grid.length > 1000) throw new Error("Limit programs to 1,000 SKU rows and 150 columns.");
-  if (grid.some(row => row.length !== headers.length))
-    throw new Error("Pasted rows have different column counts. Copy the full rectangular table including blank cells.");
-  return { headers, rows: grid.map(row => Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""]))) };
-}
+export const readPastedProgram = readProgramText;
 export function previewProgramRows(
   headers: string[], raw: Record<string, unknown>[], accounts: ProgramAccount[],
   provided?: ProgramTableMapping, sourceName = "Pasted program",
+  sourceMeta?: ProgramTableSource,
 ): ProgramTablePreview {
-  const mapping = provided ?? mapProgramHeadings(headers, accounts);
+  const mapping = provided ?? mapProgramHeadings(headers, accounts, raw);
   const result: ProgramTablePreview = {
-    headers, mapping, rows: [], customerIds: [], issues: [], sourceName, aiNote: null,
+    headers, mapping, rows: [], customerIds: [], issues: [...(sourceMeta?.issues ?? [])], sourceName, aiNote: null,
+    startDate: sourceMeta?.startDate ?? null, endDate: sourceMeta?.endDate ?? null, dateNote: sourceMeta?.dateNote ?? null,
+    ignoredColumns: mapping.ignored.map(heading => ({ heading, reason:
+      computed.has(norm(heading)) ? (norm(heading) === "total" ? "Calculated Total: cross-check only, never an eligibility cap." : "Calculated column; not a source price or customer cap.") :
+      aliases.sku.includes(norm(heading)) ? "Repeats the primary SKU values." : /\[duplicate \d+\]$/.test(heading) ? "Repeated heading; kept the first column." : "Ignored source column." })),
   };
   const issue = (row: number | null, column: string, message: string, blocking = true) =>
     result.issues.push({ row, column, message, blocking });
@@ -125,9 +121,10 @@ export function previewProgramRows(
   if (raw.length > 1000) issue(null, "", "Limit a promotion to 1,000 SKU rows.");
   const seenSkus = new Set<string>();
   for (const [i, source] of raw.slice(0, 1000).entries()) {
+    const sourceRow = sourceMeta?.rowNumbers[i] ?? i + 2;
     const sku = String(source[mapping.fields.sku] ?? "").trim().toUpperCase();
-    if (!sku || sku.length > 120 || /[\x00-\x1F\x7F]/.test(sku)) issue(i + 2, mapping.fields.sku ?? "", "Enter a valid SKU.");
-    if (seenSkus.has(sku)) issue(i + 2, mapping.fields.sku, "Duplicate SKU. Combine or correct the source rows.");
+    if (!sku || sku.length > 120 || /[\x00-\x1F\x7F]/.test(sku)) issue(sourceRow, mapping.fields.sku ?? "", "Enter a valid SKU.");
+    if (seenSkus.has(sku)) issue(sourceRow, mapping.fields.sku, "Duplicate SKU. Combine or correct the source rows.");
     seenSkus.add(sku);
     const money = (field: Exclude<ProgramField, "sku">) => {
       const heading = mapping.fields[field];
@@ -135,26 +132,34 @@ export function previewProgramRows(
       if (value == null || String(value).trim() === "") return null;
       const amount = cents(value);
       if (amount == null || amount < 0 || amount >= 2_000_000_000 || (field === "gtmBuyCents" && amount === 0)) {
-        issue(i + 2, heading, "Use a valid source amount with up to two decimal places.");
+        issue(sourceRow, heading, "Use a valid source amount with up to two decimal places.");
         return null;
       }
       return amount;
     };
     const row: ProgramTableRow = {
-      sourceRow: i + 2, sku, rrpIncCents: money("rrpIncCents"), gtmIncCents: money("gtmIncCents"),
+      sourceRow, sku, rrpIncCents: money("rrpIncCents"), gtmIncCents: money("gtmIncCents"),
       ddCostExCents: money("ddCostExCents"), t1ExCents: money("t1ExCents"), gtmBuyCents: money("gtmBuyCents"), caps: [],
     };
-    if (row.gtmBuyCents == null) issue(i + 2, mapping.fields.gtmBuyCents ?? "", "GTM Buy Ex is blank; complete it before saving the draft.", false);
+    if (row.gtmBuyCents == null) issue(sourceRow, mapping.fields.gtmBuyCents ?? "", "GTM Buy Ex is blank; complete it before saving the draft.", false);
     for (const [heading, id] of Object.entries(mapping.customers)) {
       if (id == null || !seenCustomers.has(id)) continue;
-      const text = String(source[heading] ?? "").trim();
+      const text = String(source[heading] ?? "").trim().replace(/[,\s]/g, "");
       let quantity: number | null = null;
       if (text !== "") {
         if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) > 1_000_000)
-          issue(i + 2, heading, "Caps must be whole numbers from 0 to 1,000,000; blank means unlimited.");
+          issue(sourceRow, heading, "Caps must be whole numbers from 0 to 1,000,000; blank means unlimited.");
         else quantity = Number(text);
       }
       row.caps.push({ resellerId: id, quantity });
+    }
+    const totalHeading = headers.find(h => norm(h) === "total");
+    if (totalHeading) {
+      const totalText = String(source[totalHeading] ?? "").replace(/[,\s]/g, "");
+      if (totalText && /^\d+$/.test(totalText) && row.caps.every(c => c.quantity != null)) {
+        const sum = row.caps.reduce((s, c) => s + c.quantity!, 0);
+        if (sum !== Number(totalText)) issue(sourceRow, totalHeading, `Total ${totalText} does not match customer caps ${sum}. Review the allocations.`, false);
+      } else if (totalText) issue(sourceRow, totalHeading, "Total could not be cross-checked: a cap/customer or Total is missing or invalid.", false);
     }
     result.rows.push(row);
   }

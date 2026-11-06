@@ -7,6 +7,7 @@
  */
 import type { ProgramTableIssue } from './programTableIssue';
 import type { ProgramTableMapping } from './programTableMapping';
+import type { ProgramTablePreviewIgnoredColumnsItem } from './programTablePreviewIgnoredColumnsItem';
 import type { ProgramTableRow } from './programTableRow';
 
 export interface ProgramTablePreview {
@@ -18,4 +19,11 @@ export interface ProgramTablePreview {
   sourceName: string;
   /** @nullable */
   aiNote: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** @nullable */
+  dateNote?: string | null;
+  ignoredColumns?: ProgramTablePreviewIgnoredColumnsItem[];
 }

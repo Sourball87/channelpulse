@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
-import { PreviewProgramTableBody } from "@workspace/api-zod";
+import { PreviewProgramTableBody, type ProgramTableSource } from "@workspace/api-zod";
 import { requireThat, ScanbackError } from "../lib/scanback-store";
 import {
   readPastedProgram, previewProgramRows, mapProgramHeadings, applyProgramSuggestions, programFields, type ProgramAccount,
@@ -19,6 +19,7 @@ router.post("/scanback/programs/preview", async (req, res) => {
     const accounts = (await pool.query("SELECT id,name,code,aliases FROM resellers ORDER BY code")).rows as ProgramAccount[];
     let headers: string[], rows: Record<string, unknown>[], sourceName: string;
     let storedMapping: Record<string, string> = {};
+    let sourceMeta: ProgramTableSource | undefined;
     if (input.uploadId) {
       const stored = (await pool.query("SELECT payload,raw_sheets FROM center_uploads WHERE id=$1", [input.uploadId])).rows[0];
       requireThat(stored && stored.payload.kind === "program", "Choose a program-table file in Upload Center.", 404);
@@ -26,20 +27,21 @@ router.post("/scanback/programs/preview", async (req, res) => {
       headers = Object.keys(rows[0] ?? {});
       sourceName = stored.payload.name;
       storedMapping = stored.payload.mapping ?? {};
+      sourceMeta = stored.payload.programSource;
     } else {
-      try { ({ headers, rows } = readPastedProgram(input.text!)); }
+      try { ({ headers, rows, meta: sourceMeta } = readPastedProgram(input.text!)); }
       catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not parse the pasted table."); }
       sourceName = "Pasted program";
     }
     requireThat(rows.length <= 1000 && headers.length <= 150, "Limit programs to 1,000 SKU rows and 150 columns.");
-    let mapping = input.mapping ?? mapProgramHeadings(headers, accounts);
+    let mapping = input.mapping ?? mapProgramHeadings(headers, accounts, rows);
     if (!input.mapping) {
       for (const key of programFields) {
         const heading = storedMapping[key === "t1ExCents" ? "t1BuyExCents" : key] ?? storedMapping[key];
         if (heading && headers.includes(heading)) mapping.fields[key] = heading;
       }
     }
-    let preview = previewProgramRows(headers, rows, accounts, mapping, sourceName);
+    let preview = previewProgramRows(headers, rows, accounts, mapping, sourceName, sourceMeta);
     const used = new Set([...Object.values(mapping.fields).filter(Boolean), ...Object.keys(mapping.customers), ...mapping.ignored]);
     const unresolvedHeadings = headers.filter(h => !used.has(h));
     // Explicit mappings are authoritative. The model sees no table rows or
@@ -53,7 +55,7 @@ router.post("/scanback/programs/preview", async (req, res) => {
         const proposed = applyProgramSuggestions(mapping, headers, accounts, suggestion);
         const changed = JSON.stringify(proposed) !== JSON.stringify(mapping);
         mapping = proposed;
-        preview = previewProgramRows(headers, rows, accounts, mapping, sourceName);
+        preview = previewProgramRows(headers, rows, accounts, mapping, sourceName, sourceMeta);
         preview.aiNote = changed ? "AI proposed mappings for unclear headings/customer names. Confirm every assignment before creating the draft; all values still come from the source."
           : "AI found no supported additional mapping. Resolve or explicitly ignore highlighted columns.";
       } catch {

@@ -75,9 +75,11 @@ describe("program table ingestion", () => {
     expect(proposal.customers).toEqual({ Ctrcm: 2 });
     expect((proposal as unknown as { rows?: unknown }).rows).toBeUndefined();
   });
-  it("rejects malformed or ambiguous pasted rectangles", () => {
-    expect(() => readPastedProgram("SKU\tSKU\nA\tB")).toThrow("distinct");
-    expect(() => readPastedProgram("SKU\tCA\nA\t1\t2")).toThrow("column counts");
+  it("previews duplicate headings and irregular rows instead of rejecting the entire paste", () => {
+    const duplicate = readPastedProgram("SKU\tSKU\nA\tB");
+    expect(duplicate.headers).toEqual(["SKU", "SKU [duplicate 2]"]);
+    expect(duplicate.meta.issues[0].message).toContain("kept the first");
+    expect(readPastedProgram("SKU\tCA\nA\t1\t2").meta.issues[0].message).toContain("Extra cells");
     expect(() => readPastedProgram("")).toThrow("Paste a table");
   });
   it("allows old programs with absent reference fields but rejects unsafe money", () => {

@@ -109,6 +109,11 @@ export interface ProgramTableIssue {
   blocking: boolean;
 }
 
+export type ProgramTablePreviewIgnoredColumnsItem = {
+  heading: string;
+  reason: string;
+};
+
 export interface ProgramTablePreview {
   headers: string[];
   mapping: ProgramTableMapping;
@@ -118,6 +123,24 @@ export interface ProgramTablePreview {
   sourceName: string;
   /** @nullable */
   aiNote: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** @nullable */
+  dateNote?: string | null;
+  ignoredColumns?: ProgramTablePreviewIgnoredColumnsItem[];
+}
+
+export interface ProgramTableSource {
+  /** @nullable */
+  startDate: string | null;
+  /** @nullable */
+  endDate: string | null;
+  /** @nullable */
+  dateNote: string | null;
+  issues: ProgramTableIssue[];
+  rowNumbers: number[];
 }
 
 export interface ScanbackProgramStat {
@@ -998,6 +1021,7 @@ export type CenterUploadMapping = {[key: string]: string};
 export type CenterUploadPreviewItem = { [key: string]: unknown };
 
 export interface CenterUpload {
+  programSource?: ProgramTableSource;
   id: string;
   kind: CenterUploadKind;
   name: string;

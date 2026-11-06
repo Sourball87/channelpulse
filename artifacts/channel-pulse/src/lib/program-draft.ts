@@ -184,11 +184,13 @@ export interface PreviewIssue { row: number | null; column: string; message: str
 export interface ProgramTablePreview {
   headers: string[]; mapping: PreviewMapping; rows: PreviewRow[]; customerIds: number[];
   issues: PreviewIssue[]; sourceName: string; aiNote: string | null;
+  startDate?: string | null; endDate?: string | null; dateNote?: string | null;
+  ignoredColumns?: { heading: string; reason: string }[];
 }
 /** Build an unsaved draft from preview rows. Source data only: no price-list autofill, no invented values. */
 export function draftFromPreview(p: ProgramTablePreview): ProgramDraft {
   return {
-    archived: false, name: p.sourceName.replace(/\.[a-z0-9]+$/i, ""), start: "", end: "", notes: `Built from ${p.sourceName}`,
+    archived: false, name: p.sourceName.replace(/\.[a-z0-9]+$/i, ""), start: p.startDate ?? "", end: p.endDate ?? "", notes: `Built from ${p.sourceName}`,
     customerIds: [...p.customerIds],
     lines: p.rows.map((r) => ({
       key: lineKey(), sku: r.sku,

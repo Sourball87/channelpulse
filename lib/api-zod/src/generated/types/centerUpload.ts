@@ -10,8 +10,10 @@ import type { CenterUploadMapping } from './centerUploadMapping';
 import type { CenterUploadPreviewItem } from './centerUploadPreviewItem';
 import type { CenterUploadState } from './centerUploadState';
 import type { CenterUploadSummary } from './centerUploadSummary';
+import type { ProgramTableSource } from './programTableSource';
 
 export interface CenterUpload {
+  programSource?: ProgramTableSource;
   id: string;
   kind: CenterUploadKind;
   name: string;

@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, ClipboardPaste, RefreshCw, Sparkles } from
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,7 +64,8 @@ export function ProgramPasteDialog({
       const src = uploadId ? { uploadId } : { text };
       const data = (opts.mapping ? { ...src, mapping: opts.mapping, ai_assist: false } : { ...src, ai_assist: true }) as ProgramTablePreviewInput;
       const r = (await previewMut.mutateAsync({ data })) as unknown as ProgramTablePreview;
-      setPreview(r); setMapping(r.mapping);
+      setPreview(prev => opts.mapping ? { ...r, startDate: prev?.startDate ?? r.startDate, endDate: prev?.endDate ?? r.endDate } : r);
+      setMapping(r.mapping);
     } catch (e) {
       setError(errorMessage(e));
     } finally { setBusy(false); }
@@ -85,7 +87,8 @@ export function ProgramPasteDialog({
   const issueRows = useMemo(() => new Map((preview?.issues ?? []).filter((i) => i.row != null).map((i) => [i.row as number, i])), [preview]);
   const issueCols = useMemo(() => new Set((preview?.issues ?? []).map((i) => i.column).filter(Boolean)), [preview]);
   const unresolved = preview && mapping ? preview.headers.filter((h) => h && roleOf(mapping, h) === UNMAPPED) : [];
-  const canConfirm = !!preview && !mappingDirty && blocking.length === 0 && unresolved.length === 0 && reviewed && preview.rows.length > 0 && !busy;
+  const invalidDates = !!(preview?.startDate && preview.endDate && preview.startDate > preview.endDate);
+  const canConfirm = !!preview && !invalidDates && !mappingDirty && blocking.length === 0 && unresolved.length === 0 && reviewed && preview.rows.length > 0 && !busy;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) reset(); }}>
@@ -125,6 +128,22 @@ export function ProgramPasteDialog({
               {!uploadId && <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={reset} data-testid="button-paste-again">Paste different table</Button>}
             </div>
             {preview.aiNote && <p className="rounded-md bg-violet-50 px-3 py-1.5 text-xs text-violet-800" data-testid="text-ai-note"><Sparkles className="mr-1 inline h-3 w-3" />{preview.aiNote}</p>}
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="flex flex-wrap gap-3">
+                <label className="space-y-1 text-xs">Start
+                  <Input type="date" value={preview.startDate ?? ""} onChange={e => { setReviewed(false); setPreview({ ...preview, startDate: e.target.value }); }} data-testid="input-preview-start" />
+                </label>
+                <label className="space-y-1 text-xs">End
+                  <Input type="date" value={preview.endDate ?? ""} onChange={e => { setReviewed(false); setPreview({ ...preview, endDate: e.target.value }); }} data-testid="input-preview-end" />
+                </label>
+              </div>
+              {preview.dateNote && <p className="text-xs text-amber-800" data-testid="text-inferred-program-dates">{preview.dateNote}</p>}
+              {invalidDates && <p className="text-xs text-rose-700">End must be on or after Start.</p>}
+            </div>
+            {!!preview.ignoredColumns?.length && <details className="rounded-md border px-3 py-2 text-xs" data-testid="list-ignored-program-columns">
+              <summary className="cursor-pointer font-medium">{preview.ignoredColumns.length} ignored columns</summary>
+              <ul className="mt-2 space-y-1">{preview.ignoredColumns.map(c => <li key={c.heading}><span className="font-mono">{c.heading}</span>: {c.reason}</li>)}</ul>
+            </details>}
 
             <div className="rounded-md border">
               <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-1.5">
@@ -160,7 +179,7 @@ export function ProgramPasteDialog({
                 {preview.issues.map((i, k) => (
                   <p key={k} className={i.blocking ? "text-rose-700" : "text-amber-800"}>
                     <AlertTriangle className="mr-1 inline h-3 w-3" />
-                    {i.row != null ? `Row ${i.row}` : "Column"}{i.column ? ` \u00b7 ${i.column}` : ""}: {i.message}{i.blocking ? "" : " (complete in the draft)"}
+                    {i.row != null ? `Row ${i.row}` : "Column"}{i.column ? ` \u00b7 ${i.column}` : ""}: {i.message}
                   </p>
                 ))}
               </div>
