@@ -16,15 +16,20 @@ function iso(p: DateParts, year: number): string | null {
 export function programDates(preamble: unknown[][], now = new Date()) {
   let start: DateParts | null = null, end: DateParts | null = null;
   const warnings: string[] = [];
+  const dateCell = (value: unknown): DateParts | null => {
+    if (typeof value === "number" && Number.isInteger(value) && value > 20000 && value < 100000) {
+      const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString().slice(0, 10);
+      return parts(date);
+    }
+    return parts(String(value ?? "").trim());
+  };
   for (const row of preamble) {
     const label = String(row[0] ?? "").trim();
     const m = label.match(/^(start|end)(?:\s*date)?\s*[:=-]?\s*(.*)$/i);
     if (!m) continue;
-    let value = [m[2], ...row.slice(1)].filter(v => String(v).trim()).join(" ").trim();
-    if (/^\d{5}$/.test(value) && +value > 20000 && +value < 100000)
-      value = new Date(Date.UTC(1899, 11, 30) + +value * 86400000).toISOString().slice(0, 10);
-    const parsed = parts(value);
-    if (!parsed) warnings.push(`Could not read ${m[1]} date "${value}"; enter it in the draft.`);
+    const candidates = [m[2], ...row.slice(1)].filter(v => String(v).trim());
+    const parsed = candidates.map(dateCell).find((candidate): candidate is DateParts => candidate != null);
+    if (!parsed) warnings.push(`Could not read ${m[1]} date "${candidates[0] ?? ""}"; enter it in the draft.`);
     else if (m[1].toLowerCase() === "start") start = parsed;
     else end = parsed;
   }

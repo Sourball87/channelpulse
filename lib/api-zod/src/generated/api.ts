@@ -130,6 +130,10 @@ export const PreviewProgramTableResponse = zod.object({
   "startDate": zod.string().nullish(),
   "endDate": zod.string().nullish(),
   "dateNote": zod.string().nullish(),
+  "ignoredRows": zod.array(zod.object({
+  "row": zod.int(),
+  "reason": zod.string()
+})).optional(),
   "ignoredColumns": zod.array(zod.object({
   "heading": zod.string(),
   "reason": zod.string()
@@ -149,7 +153,11 @@ export const GetUploadCenterResponse = zod.object({
   "message": zod.string(),
   "blocking": zod.boolean()
 })),
-  "rowNumbers": zod.array(zod.int())
+  "rowNumbers": zod.array(zod.int()),
+  "ignoredRows": zod.array(zod.object({
+  "row": zod.int(),
+  "reason": zod.string()
+}))
 }).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
@@ -209,7 +217,11 @@ export const StageCenterFilesResponse = zod.object({
   "message": zod.string(),
   "blocking": zod.boolean()
 })),
-  "rowNumbers": zod.array(zod.int())
+  "rowNumbers": zod.array(zod.int()),
+  "ignoredRows": zod.array(zod.object({
+  "row": zod.int(),
+  "reason": zod.string()
+}))
 }).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
@@ -264,7 +276,11 @@ export const CorrectCenterUploadResponse = zod.object({
   "message": zod.string(),
   "blocking": zod.boolean()
 })),
-  "rowNumbers": zod.array(zod.int())
+  "rowNumbers": zod.array(zod.int()),
+  "ignoredRows": zod.array(zod.object({
+  "row": zod.int(),
+  "reason": zod.string()
+}))
 }).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),
@@ -316,7 +332,11 @@ export const CommitCenterReferenceResponse = zod.object({
   "message": zod.string(),
   "blocking": zod.boolean()
 })),
-  "rowNumbers": zod.array(zod.int())
+  "rowNumbers": zod.array(zod.int()),
+  "ignoredRows": zod.array(zod.object({
+  "row": zod.int(),
+  "reason": zod.string()
+}))
 }).optional(),
   "id": zod.string(),
   "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']),

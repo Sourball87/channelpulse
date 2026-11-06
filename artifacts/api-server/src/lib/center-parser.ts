@@ -55,7 +55,7 @@ export function readCenterWorkbook(buffer: Buffer): { sheets: Sheets; programSou
     const sheet = wb.Sheets[name];
     const range = XLSX.utils.decode_range(sheet["!fullref"] ?? sheet["!ref"] ?? "A1");
     if (range.e.r > 20000 || range.e.c > 150) throw new Error("Limit sheets to 20,000 rows and 150 columns.");
-    const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "", blankrows: false });
+    const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "", blankrows: true });
     const candidates = grid.map((r, index) => ({
       index, kind: detectCenterKind(r.map(String), name),
       fields: r.filter(v => /sku|serial|model|stock|part|rrp/i.test(String(v))).length,

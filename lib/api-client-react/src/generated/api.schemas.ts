@@ -109,6 +109,11 @@ export interface ProgramTableIssue {
   blocking: boolean;
 }
 
+export interface ProgramTableIgnoredRow {
+  row: number;
+  reason: string;
+}
+
 export type ProgramTablePreviewIgnoredColumnsItem = {
   heading: string;
   reason: string;
@@ -129,6 +134,7 @@ export interface ProgramTablePreview {
   endDate?: string | null;
   /** @nullable */
   dateNote?: string | null;
+  ignoredRows?: ProgramTableIgnoredRow[];
   ignoredColumns?: ProgramTablePreviewIgnoredColumnsItem[];
 }
 
@@ -141,6 +147,7 @@ export interface ProgramTableSource {
   dateNote: string | null;
   issues: ProgramTableIssue[];
   rowNumbers: number[];
+  ignoredRows: ProgramTableIgnoredRow[];
 }
 
 export interface ScanbackProgramStat {

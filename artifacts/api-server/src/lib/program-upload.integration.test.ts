@@ -24,8 +24,10 @@ describe.skipIf(!base)("Upload Center program-table preview", () => {
       expect(login.status).toBe(200); cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
       const headers = ["SKU","RRP Inc","GTM Inc","Discount","DD Std Cost Ex","T1 EX","GTM Buy Ex","STA Qty","STA Cost","REV TOTAL","Part No.","",account.code,"Total"];
       const values = [`${prefix}-SKU`, "$449", "$269", "-40%", "$307", "$323", "$232", "$9", "$81,462", "$276,017", `${prefix}-SKU`, "", "7", "7"];
+      const totals = Array(headers.length).fill(""); totals[12] = "7"; totals[13] = "7";
       const csv = [
-        ["Start", "28-Sep"], ["End", "31-Oct"], ["Allocation"], headers, values,
+        ["Start", "28-Sep"], ["End", "31-Oct", "", "", "Allocation"], ["Allocation"], headers,
+        Array(headers.length).fill(""), values, totals, Array(headers.length).fill(""),
       ].map(csvRow).join("\n");
       const form = new FormData(); form.append("files", new Blob([csv]), `${prefix}.csv`);
       form.append("accountId", String(account.id)); form.append("weekIso", "2026-W40"); form.append("ai_assist", "false");
@@ -33,9 +35,15 @@ describe.skipIf(!base)("Upload Center program-table preview", () => {
       expect(staged.status, JSON.stringify(staged.data)).toBe(200);
       const upload = (staged.data.uploads as CenterUpload[]).find(u => u.name === `${prefix}.csv`)!;
       expect(upload).toMatchObject({ kind:"program", state:"preview", programSource:{startDate:expect.stringMatching(/-09-28$/),endDate:expect.stringMatching(/-10-31$/)} });
+      expect(upload.programSource?.ignoredRows).toEqual(expect.arrayContaining([
+        { row: 5, reason: "Blank row." }, { row: 7, reason: "Numeric totals row." },
+      ]));
       uploadIds.add(upload.id);
       const preview = await call("/scanback/programs/preview", { uploadId: upload.id, ai_assist:false });
       expect(preview.status, JSON.stringify(preview.data)).toBe(200);
+      expect(preview.data.ignoredRows).toEqual(expect.arrayContaining([
+        { row: 5, reason: "Blank row." }, { row: 7, reason: "Numeric totals row." },
+      ]));
       expect(preview.data.rows[0]).toMatchObject({ sku: values[0], rrpIncCents:44900, gtmIncCents:26900, ddCostExCents:30700, t1ExCents:32300, gtmBuyCents:23200 });
       expect(preview.data.rows[0].caps).toEqual([{resellerId:account.id,quantity:7}]);
       expect(preview.data.mapping.ignored).toEqual(expect.arrayContaining(["Discount","STA Qty","STA Cost","REV TOTAL","Part No.","Total"]));

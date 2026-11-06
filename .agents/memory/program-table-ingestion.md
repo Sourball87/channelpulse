@@ -14,3 +14,9 @@ Display only explicit source price fields. Discount, STA, calculated totals, and
 **Why:** The user explicitly separated calculated/source reference data from customer-specific eligibility and claim-price inputs.
 
 **How to apply:** Retain preview and manual correction before building a draft. Keep immutable financial verification and approval safeguards unchanged.
+
+Blank SKU rows and numeric-only totals rows are excluded from SKU records and listed separately as ignored rows. Check populated numeric totals against sums of available source columns; warn only when a comparable sum differs. Start/End preambles use the first cell that parses as a date and ignore trailing notes/cells.
+
+**Why:** Real pasted and uploaded tables contain spacer rows, footer totals and trailing labels in date lines; none should become blocking SKU errors or corrupt inferred dates.
+
+**How to apply:** Preserve this behavior in both paste and Upload Center parsing, while retaining the existing wrapped-row continuation handling.

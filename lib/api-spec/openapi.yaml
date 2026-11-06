@@ -917,6 +917,12 @@ components:
         column: { type: string }
         message: { type: string }
         blocking: { type: boolean }
+    ProgramTableIgnoredRow:
+      type: object
+      required: [row, reason]
+      properties:
+        row: { type: integer }
+        reason: { type: string }
     ProgramTablePreview:
       type: object
       required: [headers, mapping, rows, customerIds, issues, sourceName, aiNote]
@@ -931,6 +937,7 @@ components:
         startDate: { type: [string, "null"] }
         endDate: { type: [string, "null"] }
         dateNote: { type: [string, "null"] }
+        ignoredRows: { type: array, items: { $ref: "#/components/schemas/ProgramTableIgnoredRow" } }
         ignoredColumns:
           type: array
           items:
@@ -941,13 +948,14 @@ components:
               reason: { type: string }
     ProgramTableSource:
       type: object
-      required: [startDate, endDate, dateNote, issues, rowNumbers]
+      required: [startDate, endDate, dateNote, issues, rowNumbers, ignoredRows]
       properties:
         startDate: { type: [string, "null"] }
         endDate: { type: [string, "null"] }
         dateNote: { type: [string, "null"] }
         issues: { type: array, items: { $ref: "#/components/schemas/ProgramTableIssue" } }
         rowNumbers: { type: array, items: { type: integer } }
+        ignoredRows: { type: array, items: { $ref: "#/components/schemas/ProgramTableIgnoredRow" } }
     ScanbackProgramStat:
       type: object
       required: [programId, accountId, sku, count, amountCents]

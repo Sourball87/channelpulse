@@ -144,6 +144,10 @@ export function ProgramPasteDialog({
               <summary className="cursor-pointer font-medium">{preview.ignoredColumns.length} ignored columns</summary>
               <ul className="mt-2 space-y-1">{preview.ignoredColumns.map(c => <li key={c.heading}><span className="font-mono">{c.heading}</span>: {c.reason}</li>)}</ul>
             </details>}
+            {!!preview.ignoredRows?.length && <details className="rounded-md border px-3 py-2 text-xs" data-testid="list-ignored-program-rows">
+              <summary className="cursor-pointer font-medium">{preview.ignoredRows.length} ignored rows</summary>
+              <ul className="mt-2 space-y-1">{preview.ignoredRows.map((r, i) => <li key={`${r.row}:${i}`}>Row {r.row}: {r.reason}</li>)}</ul>
+            </details>}
 
             <div className="rounded-md border">
               <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-1.5">

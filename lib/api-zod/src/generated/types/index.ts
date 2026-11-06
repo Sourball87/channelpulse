@@ -52,6 +52,7 @@ export * from './mappingField';
 export * from './part';
 export * from './partInput';
 export * from './partUpdate';
+export * from './programTableIgnoredRow';
 export * from './programTableIssue';
 export * from './programTableMapping';
 export * from './programTableMappingCustomers';

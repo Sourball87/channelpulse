@@ -181,10 +181,12 @@ export interface PreviewRow {
   caps: { resellerId: number; quantity: number | null }[];
 }
 export interface PreviewIssue { row: number | null; column: string; message: string; blocking: boolean }
+export interface IgnoredPreviewRow { row: number; reason: string }
 export interface ProgramTablePreview {
   headers: string[]; mapping: PreviewMapping; rows: PreviewRow[]; customerIds: number[];
   issues: PreviewIssue[]; sourceName: string; aiNote: string | null;
   startDate?: string | null; endDate?: string | null; dateNote?: string | null;
+  ignoredRows?: IgnoredPreviewRow[];
   ignoredColumns?: { heading: string; reason: string }[];
 }
 /** Build an unsaved draft from preview rows. Source data only: no price-list autofill, no invented values. */

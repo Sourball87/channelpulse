@@ -5,6 +5,7 @@
  * ChannelPulse - Reseller SOH & Sell-Through Monitoring API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProgramTableIgnoredRow } from './programTableIgnoredRow';
 import type { ProgramTableIssue } from './programTableIssue';
 import type { ProgramTableMapping } from './programTableMapping';
 import type { ProgramTablePreviewIgnoredColumnsItem } from './programTablePreviewIgnoredColumnsItem';
@@ -25,5 +26,6 @@ export interface ProgramTablePreview {
   endDate?: string | null;
   /** @nullable */
   dateNote?: string | null;
+  ignoredRows?: ProgramTableIgnoredRow[];
   ignoredColumns?: ProgramTablePreviewIgnoredColumnsItem[];
 }

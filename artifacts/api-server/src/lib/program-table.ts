@@ -85,6 +85,7 @@ export function previewProgramRows(
   const result: ProgramTablePreview = {
     headers, mapping, rows: [], customerIds: [], issues: [...(sourceMeta?.issues ?? [])], sourceName, aiNote: null,
     startDate: sourceMeta?.startDate ?? null, endDate: sourceMeta?.endDate ?? null, dateNote: sourceMeta?.dateNote ?? null,
+    ignoredRows: sourceMeta?.ignoredRows ?? [],
     ignoredColumns: mapping.ignored.map(heading => ({ heading, reason:
       computed.has(norm(heading)) ? (norm(heading) === "total" ? "Calculated Total: cross-check only, never an eligibility cap." : "Calculated column; not a source price or customer cap.") :
       aliases.sku.includes(norm(heading)) ? "Repeats the primary SKU values." : /\[duplicate \d+\]$/.test(heading) ? "Repeated heading; kept the first column." :

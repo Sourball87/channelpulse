@@ -16,7 +16,18 @@ const headers = ["SKU", "RRP Inc", "GTM Inc", "Discount", "DD Std Cost Ex", "T1 
   "CA", "Centrecom", "Scorptec", "PLE", "PCCG", "Umart", "KS", "DigiDirect", "Total"];
 const values = ["MZ-77E500BW", "$449", "$269", "-40%", "$307", "$323", "$232", "$9", "1900", "$81,462", "$276,017", "", "MZ-77E500BW",
   "0", "200", "100", "100", "100", "200", "100", "100", "900"];
-const grid = () => [["Start", "28-Sep"], ["End", "31-Oct"], ["Allocation"], headers, values];
+const totalsRow = () => {
+  const row = Array(headers.length).fill("");
+  for (const heading of [...accounts.map(a => a.name), "Total"]) {
+    const index = headers.indexOf(heading);
+    row[index] = values[index];
+  }
+  return row;
+};
+const grid = () => [
+  ["Start", "28-Sep"], ["End", "31-Oct", "", "", "Allocation"], ["Allocation"], headers,
+  Array(headers.length).fill(""), values, totalsRow(), Array(headers.length).fill(""),
+];
 const preview = (source: ReturnType<typeof readProgramText>) =>
   previewProgramRows(source.headers, source.rows, accounts, undefined, "Test program", source.meta);
 describe("real program source layouts", () => {
@@ -35,11 +46,33 @@ describe("real program source layouts", () => {
   it("reads the same Excel table with preamble, Allocation, blank column and duplicate Part No.", () => {
     const p = preview(readProgramText(grid().map(r => r.join("\t")).join("\n"), now));
     expect(p.issues.filter(i => i.blocking)).toEqual([]);
-    expect(p.rows[0].sourceRow).toBe(5);
+    expect(p.rows[0].sourceRow).toBe(6);
     expect(p.rows[0].caps.map(c => c.quantity)).toEqual([0, 200, 100, 100, 100, 200, 100, 100]);
     expect(p.mapping.ignored).toEqual(expect.arrayContaining(["Discount", "STA", "STA Qty", "STA Cost", "REV TOTAL", "Part No.", "Total"]));
     expect(p.ignoredColumns?.find(c => c.heading === "Part No.")?.reason).toContain("Repeats");
     expect(p.issues.some(i => i.message.includes("blank spacer"))).toBe(true);
+  });
+  it("takes the first date cell and lists blank and numeric-total rows without blocking", () => {
+    const rows = grid();
+    const p = preview(readProgramText(rows.map(r => r.join("\t")).join("\n"), now));
+    expect([p.startDate, p.endDate]).toEqual(["2026-09-28", "2026-10-31"]);
+    expect(p.rows).toHaveLength(1);
+    expect(p.rows[0].sourceRow).toBe(6);
+    expect(p.ignoredRows).toEqual(expect.arrayContaining([
+      { row: 5, reason: "Blank row." },
+      { row: 7, reason: "Numeric totals row." },
+      { row: 8, reason: "Blank row." },
+    ]));
+    expect(p.issues.filter(i => i.blocking)).toEqual([]);
+    expect(p.issues.some(i => i.message.includes("Totals row does not match"))).toBe(false);
+
+    rows[6][headers.indexOf("CA")] = "1";
+    const mismatch = preview(readProgramText(rows.map(r => r.join("\t")).join("\n"), now));
+    expect(mismatch.rows).toHaveLength(1);
+    expect(mismatch.issues).toContainEqual(expect.objectContaining({
+      row: 7, column: "Totals", blocking: false, message: expect.stringContaining("Totals row does not match column sums"),
+    }));
+    expect(mismatch.issues.some(i => i.blocking && /valid SKU|GTM Buy Ex is blank/.test(i.message))).toBe(false);
   });
   it("keeps first repeated headings and lists later columns as ignored", () => {
     const p = preview(readProgramText("SKU\tGTM Buy Ex\tCA\tCA\nCUSTOM\t$232\t2\t99", now));
@@ -104,6 +137,8 @@ describe("real program source layouts", () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(grid()), "Offer");
     const file = readCenterWorkbook(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+    expect(file.programSources.Offer.ignoredRows).toContainEqual({ row: 5, reason: "Blank row." });
+    expect(file.programSources.Offer.ignoredRows).toContainEqual({ row: 7, reason: "Numeric totals row." });
     const p = previewProgramRows(Object.keys(file.sheets.Offer[0]), file.sheets.Offer, accounts, undefined, "Offer", file.programSources.Offer);
     expect(p.rows[0].caps.map(c => c.quantity)).toEqual([0, 200, 100, 100, 100, 200, 100, 100]);
     expect(p.mapping.ignored).toContain("Part No.");

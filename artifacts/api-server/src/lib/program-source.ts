@@ -15,8 +15,9 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
   const flat = grid[headerAt].length === 1;
   const original = flat ? collapsedHeadings(String(grid[headerAt][0])) : grid[headerAt].map(v => String(v ?? "").trim());
   if (original.length > 150 || grid.length > 5000) throw new Error("Limit programs to 1,000 SKU rows and 150 columns.");
-  const meta: ProgramTableSource = { ...programDates(grid.slice(0, headerAt), now), issues: [], rowNumbers: [] };
+  const meta: ProgramTableSource = { ...programDates(grid.slice(0, headerAt), now), issues: [], rowNumbers: [], ignoredRows: [] };
   const note = (row: number | null, column: string, message: string, blocking = false) => meta.issues.push({ row, column, message, blocking });
+  const ignoreRow = (row: number, reason: string) => meta.ignoredRows.push({ row, reason });
   for (let i = 0; i < headerAt; i++)
     if (group(grid[i])) note(i + 1, "", "Ignored group-heading row.");
   const counts = new Map<string, number>(), columns: { index: number; heading: string }[] = [], blankColumns: number[] = [];
@@ -28,9 +29,36 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
     columns.push({ index, heading: unique });
   });
   const headers = columns.map(c => c.heading), sourceRows: { cells: unknown[]; line: number }[] = [];
+  const skuIndex = Math.max(0, original.findIndex(skuHeading));
+  const numericValue = (value: unknown): number | null => {
+    let text = String(value ?? "").trim().replace(/,/g, "").replace(/\$/g, "").replace(/%$/, "").trim();
+    if (!text) return null;
+    const parenthesized = /^\(.*\)$/.test(text);
+    if (parenthesized) text = text.slice(1, -1).trim();
+    if (!/^[+-]?\d+(?:\.\d+)?$/.test(text)) return null;
+    const number = Number(text) * (parenthesized ? -1 : 1);
+    return Number.isFinite(number) ? number : null;
+  };
+  const checkTotals = (cells: unknown[], line: number) => {
+    const mismatches: string[] = [];
+    for (let index = 0; index < original.length; index++) {
+      if (index === skuIndex) continue;
+      const expected = numericValue(cells[index]);
+      if (expected == null) continue;
+      const values = sourceRows.map(row => numericValue(row.cells[index]));
+      if (!values.length || values.some(value => value == null)) continue;
+      const actual = values.reduce<number>((sum, value) => sum + (value as number), 0);
+      if (Math.abs(actual - expected) > 0.005)
+        mismatches.push(`${original[index]} (column sum ${actual}, totals row ${expected})`);
+    }
+    if (mismatches.length)
+      note(line, "Totals", `Totals row does not match column sums: ${mismatches.join("; ")}.`, false);
+    return mismatches.length;
+  };
   for (let i = headerAt + 1; i < grid.length; i++) {
     let cells = grid[i].map(v => v ?? "");
-    if (cells.every(v => String(v).trim() === "")) continue;
+    const line = i + 1;
+    if (cells.every(v => String(v).trim() === "")) { ignoreRow(line, "Blank row."); continue; }
     if (group(cells)) { note(i + 1, "", "Ignored group-heading row."); continue; }
     if (cells.some(skuHeading) && cells.some(v => /gtm|rrp/i.test(String(v)))) {
       note(i + 1, "", "Ignored a repeated table header."); continue;
@@ -40,22 +68,30 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
       cells = recovered.cells;
       if (recovered.warning) note(i + 1, "", recovered.warning, !recovered.recovered);
     }
-    const first = String(cells[Math.max(0, original.findIndex(skuHeading))] ?? "").trim();
+    const first = String(cells[skuIndex] ?? "").trim();
     const startsSku = /^(?=.*[a-z])[a-z0-9][a-z0-9._/-]{0,119}$/i.test(first);
     const previous = sourceRows.at(-1);
     let used = previous?.cells.length ?? 0;
     while (used > 0 && String(previous!.cells[used - 1]).trim() === "") used--;
-    if (!startsSku && previous && used < original.length) {
+    const totalLabel = cells.some(value => /^(grand\s+)?total$/i.test(String(value ?? "").trim()));
+    const numericCells = cells.filter(value => String(value ?? "").trim() !== "");
+    const numericTotals = !startsSku && !first && numericCells.length >= 2 && numericCells.every(value => numericValue(value) != null);
+    if (!startsSku && previous && used < original.length && !totalLabel && !numericTotals) {
       const remaining = [...cells];
       while (remaining.length && String(remaining[0]).trim() === "") remaining.shift();
       previous.cells = [...previous.cells.slice(0, used), ...remaining];
-      note(previous.line, "", `Joined wrapped continuation from source line ${i + 1}.`);
+      note(previous.line, "", `Joined wrapped continuation from source line ${line}.`);
       continue;
     }
-    if (/^(total|grand total)$/i.test(first)) { note(i + 1, "", "Ignored calculated total/footer row."); continue; }
+    if (totalLabel || !startsSku) {
+      const isTotals = totalLabel || numericTotals;
+      if (isTotals) checkTotals(cells, line);
+      ignoreRow(line, totalLabel ? "Totals/footer row." : numericTotals ? "Numeric totals row." : "No SKU; row skipped.");
+      continue;
+    }
     for (const index of blankColumns) if (String(cells[index] ?? "").trim())
-      note(i + 1, `Column ${index + 1}`, "Unheaded column contains data; restore its heading or assign it before building a draft.", true);
-    sourceRows.push({ cells, line: i + 1 });
+      note(line, `Column ${index + 1}`, "Unheaded column contains data; restore its heading or assign it before building a draft.", true);
+    sourceRows.push({ cells, line });
   }
   if (sourceRows.length > 1000) throw new Error("Limit programs to 1,000 SKU rows and 150 columns.");
   const rows = sourceRows.map(({ cells, line }) => {
