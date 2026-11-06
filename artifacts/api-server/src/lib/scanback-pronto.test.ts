@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import * as XLSX from "xlsx";
 import type { ScanbackImport } from "@workspace/api-zod";
-import { parseSheets, mapImport, suggestMapping, type Sheets } from "./scanback-import";
-import { isPronto, parseProntoSerials, pendingProntoCredits, prontoMapping, unmatchedCreditKey, unmatchedCreditReason } from "./scanback-pronto";
+import { parseSheets, mapImport, suggestMapping, prontoRangeCovers, type Sheets } from "./scanback-import";
+import { indexProntoSource, isPronto, parseProntoSerials, pendingProntoCredits, prontoCreditIdentity, prontoMapping, unmatchedCreditKey, unmatchedCreditReason } from "./scanback-pronto";
 import { verifyClaim } from "./scanback-engine";
 
 const accounts = [{ id: 1, code: "CA", name: "Computer Alliance" }, { id: 2, code: "umart", name: "Umart" }, { id: 3, code: "other", name: "Not in the existing nine" }];
@@ -93,8 +93,11 @@ describe("native Pronto POS evidence", () => {
     expect(r.rows.every(row => row.accountId === 1)).toBe(true);
     expect(r.warnings.some(w => w.includes("UNKNOWN"))).toBe(true);
   });
-  it("rejects mappings outside the nine resellers and non-existent source account codes", () => {
-    expect(map(undefined, { "123": 3 }).errors.some(e => e.message.includes("existing nine"))).toBe(true);
+  it("allows any active reseller but rejects inactive resellers and unknown source account codes", () => {
+    expect(map(undefined, { "123": 3 }).errors).toEqual([]);
+    const inactive = mapImport(base, { Sheet1: [invoice()] }, { ...base, prontoAccounts: { "123": 4 } },
+      [{ id: 4, code: "new", name: "New Reseller", active: false }], new Set(["SKU"]));
+    expect(inactive.errors.some(e => e.message.includes("active ChannelPulse reseller"))).toBe(true);
     expect(map(undefined, { "123": 1, "not-in-file": 1 }).errors.some(e => e.message.includes("not present"))).toBe(true);
   });
   it("commits serialless selected credits as listed warnings, including credit-only files", () => {
@@ -131,6 +134,53 @@ describe("native Pronto POS evidence", () => {
         resolvedAt: "2026-09-03T00:00:00.000Z", resolvedBy: "admin",
       }],
     }])).toEqual([]);
+  });
+  it("deduplicates overlapping Pronto extracts and carries resolutions across files", () => {
+    const credit = invoice({
+      "Invoice No": "CREDIT-OVERLAP", "Ship Qty": -1, "Line Price Ex": -100,
+      "Serial Number": "", "Invoice Date": "2026-09-04",
+    });
+    const key = prontoCreditIdentity("123", "SKU", "CREDIT-OVERLAP", -1, "2026-09-04");
+    const first = {
+      id: "first-file", committedAt: "2026-09-05T00:00:00Z", prontoAccounts: { "123": 1 }, rows: [credit],
+      prontoCreditResolutions: [{
+        sourceRow: 2, creditKey: key, mode: "reviewed" as const, serials: [], note: "Reviewed return.",
+        resolvedAt: "2026-09-06T00:00:00Z", resolvedBy: "admin",
+      }],
+    };
+    const overlap = {
+      id: "overlap-file", committedAt: "2026-09-07T00:00:00Z", prontoAccounts: { "123": 1 }, rows: [credit],
+    };
+    expect(pendingProntoCredits([first, overlap])).toEqual([]);
+    expect(pendingProntoCredits([
+      { ...first, prontoCreditResolutions: [] }, overlap,
+    ])).toMatchObject([{ id: "overlap-file:2", invoice: "CREDIT-OVERLAP" }]);
+    expect(pendingProntoCredits([
+      { ...first, prontoCreditResolutions: [] },
+      { ...overlap, rows: [{ ...credit, "Serial Number": "RETURNED1" }] },
+    ])).toEqual([]);
+    expect(pendingProntoCredits([
+      { ...first, rows: [{ ...credit, "Serial Number": "RETURNED1" }], prontoCreditResolutions: [] },
+      overlap,
+    ])).toEqual([]);
+  });
+  it("identifies Pronto source rows and detects date-range coverage", () => {
+    const indexed = indexProntoSource([
+      invoice({ "Invoice No": "CREDIT", "Ship Qty": -1, "Serial Number": "" }),
+      invoice({ "Account Code": "999", "Serial Number": "OTHER123" }),
+    ], { "123": 1 });
+    expect(indexed.creditRows).toMatchObject([{ sourceRow: 2, "Invoice No": "CREDIT" }]);
+    expect(indexed.restrictedSerials).toEqual(["OTHER123"]);
+    expect(prontoRangeCovers(
+      [{ "Invoice Date": "2026-09-01" }, { "Invoice Date": "2026-09-30" }], "dmy",
+      [{ "Invoice Date": "2026-09-04" }, { "Invoice Date": "2026-09-25" }], "dmy",
+    )).toBe(true);
+    expect(prontoRangeCovers(
+      [{ "Invoice Date": "2026-09-04" }, { "Invoice Date": "2026-09-25" }], "dmy",
+      [{ "Invoice Date": "2026-09-01" }, { "Invoice Date": "2026-09-30" }], "dmy",
+    )).toBe(false);
+    expect(prontoCreditIdentity("123", "sku", "cr-1", -1, "04/03/2026", "dmy"))
+      .not.toBe(prontoCreditIdentity("123", "sku", "cr-1", -1, "04/03/2026", "mdy"));
   });
   it("does not allow changing Item Price to cost or replacing the multi-account map with a fallback", () => {
     expect(() => mapImport(base, { Sheet1: [invoice()] }, { ...base, mapping: { ...prontoMapping, unitPrice: "Line Price Ex" } }, accounts, new Set(["SKU"]))).toThrow("fixed invoice/price");

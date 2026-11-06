@@ -9,6 +9,7 @@ import type { ProntoCreditResolutionMode } from './prontoCreditResolutionMode';
 
 export interface ProntoCreditResolution {
   sourceRow: number;
+  creditKey?: string;
   mode: ProntoCreditResolutionMode;
   serials: string[];
   note: string;

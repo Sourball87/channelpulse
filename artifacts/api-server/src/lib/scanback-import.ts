@@ -4,7 +4,7 @@ import { cents, serialKey, validDate } from "./scanback-engine";
 import { isPronto, prontoColumns, prontoMapping, scopePronto, splitSerials, unmatchedCreditReason } from "./scanback-pronto";
 
 export type Sheets = Record<string, Record<string, unknown>[]>;
-export interface Account { id: number; code: string; name: string }
+export interface Account { id: number; code: string; name: string; active?: boolean }
 const fields: Record<string, string[]> = {
   serial: ["serial", "serials", "serialno", "serialnumber", "sn", "imei"],
   sku: ["sku", "model", "modelnumber", "stockcode", "part", "partnumber", "productcode"],
@@ -99,6 +99,18 @@ export function parseDate(v: unknown, mode: "dmy" | "mdy"): string {
   const day = mode === "dmy" ? match[1] : match[2];
   const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   return validDate(date) ? date : "";
+}
+
+export function prontoDateRange(rows: Record<string, unknown>[], mode: "dmy" | "mdy") {
+  const dates = rows.map(row => parseDate(row["Invoice Date"], mode)).filter(Boolean).sort();
+  return dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null;
+}
+export function prontoRangeCovers(
+  newerRows: Record<string, unknown>[], newerMode: "dmy" | "mdy",
+  olderRows: Record<string, unknown>[], olderMode: "dmy" | "mdy",
+) {
+  const newer = prontoDateRange(newerRows, newerMode), older = prontoDateRange(olderRows, olderMode);
+  return !!newer && !!older && newer.from <= older.from && newer.to >= older.to;
 }
 
 export function mapImport(

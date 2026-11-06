@@ -10,7 +10,7 @@ import {
 import { parseDate, parseSheets, suggestMapping, type Sheets } from "../lib/scanback-import";
 import { serialKey } from "../lib/scanback-engine";
 import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
-import { isPronto, pendingProntoCredits } from "../lib/scanback-pronto";
+import { indexProntoSource, isPronto, pendingProntoCredits } from "../lib/scanback-pronto";
 import { transaction, catalog, rebuildImport, requireThat, ScanbackError, type Client } from "../lib/scanback-store";
 import { detectCenterKind, readCenterWorkbook, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
 import { aiAssistEnabled, suggestFileType, suggestRecognition } from "../lib/upload-ai";
@@ -205,14 +205,19 @@ async function workspace(c: Client) {
   const evidence = oldScan.map(x => x.payload as ScanbackImport).filter(x => x.kind === "evidence" && x.state === "committed");
   const sales = reportedSales(oldScan.map(x => x.payload as ScanbackImport));
   for (const e of entries) await hydrate(c, e, evidence, sales);
-  const prontoSources = await c.query(`SELECT id,payload,raw_sheets FROM scanback_imports
-    WHERE payload->>'kind'='evidence' AND payload->>'state'='committed' AND payload ? 'pronto'`);
+  const prontoSources = await c.query(`SELECT id,
+      CASE WHEN payload ? 'prontoCreditRows' THEN payload - 'rows' ELSE payload END AS payload,
+      CASE WHEN payload ? 'prontoCreditRows' THEN NULL ELSE raw_sheets END AS raw_sheets
+    FROM scanback_imports
+    WHERE payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded') AND payload ? 'pronto'`);
   const unmatchedCredits = pendingProntoCredits(prontoSources.rows.map(source => {
-    const imp = source.payload as ScanbackImport;
+    const imp = source.payload as ScanbackImport & { prontoCreditRows?: Record<string, unknown>[] };
+    const raw = source.raw_sheets as Sheets | null;
     return {
       id: imp.id, createdAt: imp.createdAt, committedAt: imp.committedAt,
       prontoAccounts: imp.prontoAccounts, prontoCreditResolutions: imp.prontoCreditResolutions,
-      rows: ((source.raw_sheets as Sheets)[imp.sheet] ?? []),
+      dateFormat: imp.dateFormat,
+      rows: imp.prontoCreditRows ?? indexProntoSource(raw?.[imp.sheet] ?? [], imp.prontoAccounts ?? {}).creditRows,
     };
   })).map(credit => ({
     id: credit.id, importId: credit.importId, sourceRow: credit.sourceRow,

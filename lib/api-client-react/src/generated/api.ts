@@ -81,7 +81,8 @@ import type {
   UploadRecheckInput,
   UploadReviewCard,
   WeekSummary,
-  WeeklySalesData
+  WeeklySalesData,
+  WeeklyScanbackExport
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1746,6 +1747,291 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getApproveScanbackClaimMutationOptions(options), queryClient);
     }
+
+export const getExportScanbackWorkspaceUrl = () => {
+
+
+
+
+  return `/api/scanback/export`
+}
+
+export const exportScanbackWorkspace = async ( options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getExportScanbackWorkspaceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportScanbackWorkspaceQueryKey = () => {
+    return [
+    `/api/scanback/export`
+    ] as const;
+    }
+
+
+export const getExportScanbackWorkspaceQueryOptions = <TData = Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportScanbackWorkspaceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportScanbackWorkspace>>> = ({ signal }) => exportScanbackWorkspace({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExportScanbackWorkspaceQueryResult = NonNullable<Awaited<ReturnType<typeof exportScanbackWorkspace>>>
+export type ExportScanbackWorkspaceQueryError = ErrorType<unknown>
+
+
+export function useExportScanbackWorkspace<TData = Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError = ErrorType<unknown>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportScanbackWorkspace>>,
+          TError,
+          Awaited<ReturnType<typeof exportScanbackWorkspace>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportScanbackWorkspace<TData = Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportScanbackWorkspace>>,
+          TError,
+          Awaited<ReturnType<typeof exportScanbackWorkspace>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportScanbackWorkspace<TData = Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useExportScanbackWorkspace<TData = Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackWorkspace>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExportScanbackWorkspaceQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListWeeklyScanbackExportsUrl = () => {
+
+
+
+
+  return `/api/scanback/exports/weekly`
+}
+
+export const listWeeklyScanbackExports = async ( options?: Parameters<typeof customFetch>[1]): Promise<WeeklyScanbackExport[]> => {
+
+  return customFetch<WeeklyScanbackExport[]>(getListWeeklyScanbackExportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWeeklyScanbackExportsQueryKey = () => {
+    return [
+    `/api/scanback/exports/weekly`
+    ] as const;
+    }
+
+
+export const getListWeeklyScanbackExportsQueryOptions = <TData = Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWeeklyScanbackExportsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWeeklyScanbackExports>>> = ({ signal }) => listWeeklyScanbackExports({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListWeeklyScanbackExportsQueryResult = NonNullable<Awaited<ReturnType<typeof listWeeklyScanbackExports>>>
+export type ListWeeklyScanbackExportsQueryError = ErrorType<unknown>
+
+
+export function useListWeeklyScanbackExports<TData = Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError = ErrorType<unknown>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWeeklyScanbackExports>>,
+          TError,
+          Awaited<ReturnType<typeof listWeeklyScanbackExports>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWeeklyScanbackExports<TData = Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWeeklyScanbackExports>>,
+          TError,
+          Awaited<ReturnType<typeof listWeeklyScanbackExports>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWeeklyScanbackExports<TData = Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useListWeeklyScanbackExports<TData = Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWeeklyScanbackExports>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListWeeklyScanbackExportsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDownloadWeeklyScanbackExportUrl = (name: string,) => {
+
+
+
+
+  return `/api/scanback/exports/weekly/${name}`
+}
+
+export const downloadWeeklyScanbackExport = async (name: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadWeeklyScanbackExportUrl(name),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadWeeklyScanbackExportQueryKey = (name: string,) => {
+    return [
+    `/api/scanback/exports/weekly/${name}`
+    ] as const;
+    }
+
+
+export const getDownloadWeeklyScanbackExportQueryOptions = <TData = Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError = ErrorType<unknown>>(name: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadWeeklyScanbackExportQueryKey(name);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>> = ({ signal }) => downloadWeeklyScanbackExport(name, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: name !== null && name !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type DownloadWeeklyScanbackExportQueryResult = NonNullable<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>>
+export type DownloadWeeklyScanbackExportQueryError = ErrorType<unknown>
+
+
+export function useDownloadWeeklyScanbackExport<TData = Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError = ErrorType<unknown>>(
+ name: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>,
+          TError,
+          Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useDownloadWeeklyScanbackExport<TData = Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError = ErrorType<unknown>>(
+ name: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>,
+          TError,
+          Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useDownloadWeeklyScanbackExport<TData = Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError = ErrorType<unknown>>(
+ name: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useDownloadWeeklyScanbackExport<TData = Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError = ErrorType<unknown>>(
+ name: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof downloadWeeklyScanbackExport>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getDownloadWeeklyScanbackExportQueryOptions(name,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getExportScanbackBatchUrl = (id: string,
     format: 'xlsx' | 'csv',) => {

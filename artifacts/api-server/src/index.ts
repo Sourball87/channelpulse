@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { ensureWeeklyScanbackExport } from "./lib/scanback-export-storage";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,11 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  const runWeeklyExport = () => {
+    void ensureWeeklyScanbackExport().catch(err =>
+      logger.error({ err }, "Weekly scanback export failed; it will retry later"));
+  };
+  runWeeklyExport();
+  const weeklyExportCheck = setInterval(runWeeklyExport, 6 * 60 * 60 * 1000);
+  weeklyExportCheck.unref();
 });

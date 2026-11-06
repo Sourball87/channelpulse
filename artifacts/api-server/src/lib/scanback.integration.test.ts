@@ -57,6 +57,23 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       sessionCookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
       expect(sessionCookie).toContain("channelpulse_session=");
       expect((await call("/auth/session")).data).toMatchObject({ authenticated: true });
+      const workbookResponse = await fetch(base + "/scanback/export", { headers: { Cookie: sessionCookie } });
+      expect(workbookResponse.status).toBe(200);
+      const workbook = XLSX.read(await workbookResponse.arrayBuffer(), { type: "array" });
+      expect(workbook.SheetNames).toEqual([
+        "Programs", "Approved batches", "Approved serials", "Credit resolutions", "Resellers",
+      ]);
+      const weeklyResponse = await fetch(base + "/scanback/exports/weekly", { headers: { Cookie: sessionCookie } });
+      expect(weeklyResponse.status).toBe(200);
+      const weeklyExports = await weeklyResponse.json() as { name: string }[];
+      expect(Array.isArray(weeklyExports)).toBe(true);
+      if (weeklyExports[0]) {
+        const backup = await fetch(base + `/scanback/exports/weekly/${encodeURIComponent(weeklyExports[0].name)}`, {
+          headers: { Cookie: sessionCookie },
+        });
+        expect(backup.status).toBe(200);
+        expect(backup.headers.get("content-type")).toContain("spreadsheetml.sheet");
+      }
       const accounts = (await call("/resellers")).data;
       const parts = (await call("/parts")).data;
       const a = accounts[0], other = accounts[1], part = parts[0];
@@ -269,16 +286,29 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         sourceRow: 2, mode: "serials", serials: [`${prefix}CREDITGOOD`], resolvedBy: "admin",
       }]);
 
-      let oldCredit = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1), "old-unmatched-credit");
+      let oldCredit = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1) +
+        creditPr("CREDIT-OLD-SALE", "OLDUNIQUE", 1), "old-unmatched-credit");
       oldCredit = await remapPronto(oldCredit);
       await commit(oldCredit);
       creditCenter = (await call("/upload-center")).data;
       expect(creditCenter.unmatchedCredits).toContainEqual(expect.objectContaining({
         importId: oldCredit.id, invoice: `${prefix}-CREDIT-OLD`, date: "2026-09-01",
       }));
+      let overlapCredit = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1) +
+        creditPr("CREDIT-OVERLAP-SALE", "OVERLAPUNIQUE", 1), "old-unmatched-overlap");
+      overlapCredit = await remapPronto(overlapCredit);
+      await commit(overlapCredit);
+      const supersededOld = (await pool.query("SELECT payload FROM scanback_imports WHERE id=$1", [oldCredit.id])).rows[0].payload;
+      expect(supersededOld.state).toBe("superseded");
+      expect(supersededOld.rows.map((r: { serial: string }) => r.serial)).toContain(`${prefix}OLDUNIQUE`);
+      creditCenter = (await call("/upload-center")).data;
+      const overlappingCredits = creditCenter.unmatchedCredits.filter((credit: { invoice: string }) =>
+        credit.invoice === `${prefix}-CREDIT-OLD`);
+      expect(overlappingCredits).toHaveLength(1);
+      expect(overlappingCredits[0].importId).toBe(overlapCredit.id);
       const heldByOldCredit = (await call("/scanback/verify", creditSettings)).data;
       expect(heldByOldCredit.results[0].reason).toContain(`${prefix}-CREDIT-OLD`);
-      const reviewedResolution = await call(`/scanback/pronto-credits/${oldCredit.id}/2/resolve`, {
+      const reviewedResolution = await call(`/scanback/pronto-credits/${overlapCredit.id}/2/resolve`, {
         mode: "reviewed", note: "Checked the archived return record.",
       });
       expect(reviewedResolution.status).toBe(200);
@@ -287,8 +317,13 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       });
       const afterReviewedResolution = (await call("/scanback/verify", creditSettings)).data;
       expect(afterReviewedResolution.results[0].reason).not.toContain("unmatched Pronto credit");
-      expect((await call("/upload-center")).data.unmatchedCredits.some((credit: { importId: string }) =>
-        credit.importId === oldCredit.id || credit.importId === missingCredit.id)).toBe(false);
+      let laterOverlap = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1) +
+        creditPr("CREDIT-LATER-SALE", "LATERUNIQUE", 1), "old-credit-later-overlap");
+      laterOverlap = await remapPronto(laterOverlap);
+      await commit(laterOverlap);
+      const afterOverlapCredits = (await call("/upload-center")).data.unmatchedCredits;
+      expect(afterOverlapCredits.some((credit: { invoice: string }) => credit.invoice === `${prefix}-CREDIT-OLD`)).toBe(false);
+      expect((await call("/scanback/verify", creditSettings)).data.results[0].reason).not.toContain("unmatched Pronto credit");
       const customSku = `${prefix}-CUSTOM`;
       const customProgramResponse = await call("/scanback/programs", {
         name: prefix + " Custom SKU", start: "2026-09-01", end: "2026-09-30", notes: "", customerIds: [a.id],

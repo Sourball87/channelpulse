@@ -23,7 +23,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CheckCircle2, Download, RefreshCw, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Download, Eye, EyeOff, RefreshCw, ShieldCheck } from "lucide-react";
 import { SectionEmpty, StatusPill, errorMessage, formatCents, formatDate, formatDateTime, useRefreshWorkspace } from "./shared";
 
 export function VerifyPanel({
@@ -50,6 +50,7 @@ export function VerifyPanel({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reference, setReference] = useState("");
   const [approved, setApproved] = useState<ScanbackBatch | null>(null);
+  const [showNotDdRange, setShowNotDdRange] = useState(false);
 
   const program = programs.find((p) => p.id === programId);
   const activePrograms = programs.filter((p) => !p.archived);
@@ -127,6 +128,8 @@ export function VerifyPanel({
     review: draft.results.filter((r) => r.status === "review").length,
     rejected: draft.results.filter((r) => r.status === "rejected").length,
   } : null;
+  const notDdRangeCount = draft?.results.filter((r) => r.notDdRange).length ?? 0;
+  const visibleResults = draft?.results.filter((r) => showNotDdRange || !r.notDdRange) ?? [];
   const recentDrafts = [...drafts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
   const canApprove = !!draft && !dirty && draft.totalCents > 0 && !verify.isPending && !approve.isPending;
 
@@ -236,6 +239,16 @@ export function VerifyPanel({
           </div>
           {dirty && <p className="border-b bg-amber-50 px-4 py-2 text-xs text-amber-800">Selection or settings changed. Recheck before approving{settingsDirty ? " (settings changed - this will run a fresh verification)" : ""}.</p>}
           <TrackingLegend />
+          {notDdRangeCount > 0 && (
+            <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-4 py-2 text-sm" data-testid="not-dd-range-group">
+              <span className="text-slate-700">Not DD-range: {notDdRangeCount.toLocaleString()} serials</span>
+              <Button type="button" size="sm" variant="outline" aria-expanded={showNotDdRange}
+                data-testid="toggle-not-dd-range" onClick={() => setShowNotDdRange((value) => !value)}>
+                {showNotDdRange ? <EyeOff className="mr-1 h-3.5 w-3.5" /> : <Eye className="mr-1 h-3.5 w-3.5" />}
+                {showNotDdRange ? "Hide rows" : "Show rows"}
+              </Button>
+            </div>
+          )}
           <div className="max-h-[560px] overflow-auto">
             <Table>
               <TableHeader><TableRow>
@@ -244,7 +257,7 @@ export function VerifyPanel({
                 <TableHead className="text-right">Claim</TableHead><TableHead>Reason</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {draft.results.map((r) => { const tc = trackingColorOf(r); return (
+                {visibleResults.map((r) => { const tc = trackingColorOf(r); return (
                   <TableRow key={r.rowIndex} data-testid={`row-result-${r.rowIndex}`} data-tracking={tc} className={TRACKING_ROW[tc]}>
                     <TableCell>
                       {r.selectable && (

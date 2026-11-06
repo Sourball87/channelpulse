@@ -35,6 +35,7 @@ export interface VerificationContext {
   accounts?: { id: number; code: string }[];
   unmatchedCreditKeys?: Set<string>;
   unmatchedProntoCredits?: { accountSkuKey: string; invoice: string; date: string }[];
+  ddRangeSkus?: Set<string>;
 }
 
 export function ownerFor(events: EvidenceRow[]) {
@@ -98,6 +99,7 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       amountCents: 0, quantity: r.quantity, status: "rejected", reason: "",
       include: false, selectable: false, source: "",
       invoicedAccountId: null, invoicedTo: "", costCents: null, trackingColor: "neutral",
+      notDdRange: !!r.sku.trim() && !!ctx.ddRangeSkus && !ctx.ddRangeSkus.has(r.sku.trim().toUpperCase()),
     };
     const reject = (reason: string, review = false) => {
       o.reason = reportRepeatReason ? `${reportRepeatReason} — ${reason}` : reason;

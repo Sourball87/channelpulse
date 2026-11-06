@@ -109,6 +109,14 @@ describe("scanback deterministic verification", () => {
     expect(rows[1].reason).toContain("Duplicate");
   });
   it("blocks missing invoice evidence", () => { expect(first({ evidence: [] }).reason).toContain("not found"); });
+  it("marks only SKUs absent from all DD invoices and promotions as outside DD range", () => {
+    const known = first({ ddRangeSkus: new Set(["SKU", "KNOWN-PROMO"]) });
+    const unknown = first({ claims: [row("SER001", { sku: "MONITOR" })], ddRangeSkus: new Set(["SKU"]) });
+    const blank = first({ claims: [row("SER001", { sku: "" })], ddRangeSkus: new Set(["SKU"]) });
+    expect(known.notDdRange).toBe(false);
+    expect(unknown.notDdRange).toBe(true);
+    expect(blank.notDdRange).toBe(false);
+  });
   it("blocks returned serials and handles a later reinvoice", () => {
     const credit = ev("SER001", { quantity: -1, invoice: "CR1", date: "2026-09-02" });
     expect(first({ evidence: [ev("SER001"), credit] }).reason).toContain("Credited");

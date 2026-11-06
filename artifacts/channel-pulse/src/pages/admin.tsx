@@ -14,7 +14,7 @@ import {
   getGetPartsQueryKey,
   getGetColumnMappingsQueryKey
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Settings2, Trash2, Edit2, AlertCircle } from "lucide-react";
+import { Plus, Settings2, Trash2, Edit2, AlertCircle, Download, RefreshCw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
@@ -38,10 +38,11 @@ export default function AdminSettings() {
 
       <div className="flex-1 overflow-auto p-6">
         <Tabs defaultValue="resellers" className="w-full h-full flex flex-col">
-          <TabsList className="w-[400px]">
+          <TabsList className="grid w-full max-w-xl grid-cols-4">
             <TabsTrigger value="resellers" className="flex-1">Resellers</TabsTrigger>
             <TabsTrigger value="parts" className="flex-1">Parts Master</TabsTrigger>
             <TabsTrigger value="mappings" className="flex-1">Column Mappings</TabsTrigger>
+            <TabsTrigger value="export" className="flex-1">Export</TabsTrigger>
           </TabsList>
           
           <div className="mt-4 flex-1">
@@ -54,9 +55,69 @@ export default function AdminSettings() {
             <TabsContent value="mappings" className="m-0 h-full">
               <MappingsTab />
             </TabsContent>
+            <TabsContent value="export" className="m-0 h-full">
+              <ExportTab />
+            </TabsContent>
           </div>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+interface WeeklyExport { name: string; createdAt: string; size: number }
+function ExportTab() {
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ["scanback-weekly-exports"],
+    queryFn: async (): Promise<WeeklyExport[]> => {
+      const response = await fetch("/api/scanback/exports/weekly");
+      if (!response.ok) throw new Error("Weekly exports are unavailable.");
+      return response.json() as Promise<WeeklyExport[]>;
+    },
+    staleTime: 60_000,
+  });
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Complete scanback export</CardTitle>
+          <CardDescription>One workbook containing programs, approved claim batches and serials, credit resolutions, and the reseller list.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild className="gap-2" data-testid="button-export-scanback-workbook">
+            <a href="/api/scanback/export"><Download className="h-4 w-4" /> Download Excel workbook</a>
+          </Button>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle>Automatic weekly exports</CardTitle>
+            <CardDescription>Saved privately to App Storage. The 12 most recent weekly workbooks are kept.</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching} aria-label="Refresh weekly exports">
+            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {isLoading ? <p className="text-sm text-muted-foreground">Loading weekly exports…</p> :
+            isError ? <p role="alert" className="text-sm text-destructive">Weekly exports could not be loaded. Refresh to try again.</p> :
+              !data?.length ? <p className="text-sm text-muted-foreground">No weekly export has been saved yet.</p> :
+                data.map(item => (
+                  <div key={item.name} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2">
+                    <div>
+                      <p className="font-mono text-xs">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : "Date unavailable"} · {(item.size / 1024).toFixed(0)} KB
+                      </p>
+                    </div>
+                    <Button asChild variant="outline" size="sm">
+                      <a href={`/api/scanback/exports/weekly/${encodeURIComponent(item.name)}`}><Download className="mr-1 h-3.5 w-3.5" />Download</a>
+                    </Button>
+                  </div>
+                ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }

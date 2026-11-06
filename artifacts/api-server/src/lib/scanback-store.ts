@@ -5,8 +5,8 @@ import type {
   ScanbackResult, ScanbackBatch,
 } from "@workspace/api-zod";
 import { verifyClaim, evidenceKey, cents, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
-import { mapImport, parseDate, type Sheets, type Account } from "./scanback-import";
-import { pendingProntoCredits, splitSerials, type ProntoCreditReport } from "./scanback-pronto";
+import { mapImport, parseDate, prontoRangeCovers, type Sheets, type Account } from "./scanback-import";
+import { indexProntoSource, pendingProntoCredits, prontoCreditIdentity, type ProntoCreditReport } from "./scanback-pronto";
 import { maskCustomerText } from "./customer-display";
 import { loadReportedSales, firstReportedSales, earlierReportReason, isSameCustomerReportRepeat } from "./serial-tracking";
 
@@ -54,7 +54,7 @@ export async function put(c: Client, table: Table, id: string, value: unknown) {
   await c.query(`UPDATE ${table} SET payload=$2::jsonb WHERE id=$1`, [id, JSON.stringify(value)]);
 }
 export async function catalog(c: Client): Promise<{ accounts: Account[]; parts: CatalogPart[] }> {
-  const accounts = (await c.query("SELECT id,code,name FROM resellers ORDER BY code")).rows as Account[];
+  const accounts = (await c.query("SELECT id,code,name,active FROM resellers ORDER BY code")).rows as Account[];
   const parts = (await c.query("SELECT id, part_no AS code FROM parts ORDER BY part_no")).rows as CatalogPart[];
   return { accounts, parts };
 }
@@ -66,13 +66,17 @@ export async function ledger(c: Client): Promise<ApprovedSerial[]> {
     JOIN scanback_batches b ON b.id=s.batch_id ORDER BY s.serial`)).rows;
 }
 export function publicImport(value: ScanbackImport, withRows = false): ScanbackImport {
-  return { ...value, rows: withRows ? value.rows.slice(0, 200) : [], errors: value.errors.slice(0, 200) };
+  const publicValue = { ...value } as ScanbackImport & Record<string, unknown>;
+  delete publicValue.prontoCreditRows;
+  delete publicValue.prontoRestrictedSerials;
+  return { ...publicValue, rows: withRows ? value.rows.slice(0, 200) : [], errors: value.errors.slice(0, 200) };
 }
 export async function rebuildImport(c: Client, base: ScanbackImport, raw: Sheets, opts: Parameters<typeof mapImport>[2]) {
   const cat = await catalog(c);
   const value = mapImport(base, raw, opts, cat.accounts, new Set(cat.parts.map(p => p.code.toUpperCase())));
   if (base.kind === "evidence") {
-    const old = (await all<ScanbackImport>(c, "scanback_imports")).filter(i => i.id !== base.id && i.kind === "evidence" && i.state === "committed");
+    const old = (await all<ScanbackImport>(c, "scanback_imports")).filter(i =>
+      i.id !== base.id && i.kind === "evidence" && ["committed", "superseded"].includes(i.state));
     const seen = new Set(old.flatMap(i => i.rows.map(evidenceKey)));
     let ignored = 0;
     value.rows = value.rows.filter(row => {
@@ -142,44 +146,75 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
   requireThat(p.customerIds.includes(settings.accountId), "Choose an eligible Account Code.");
   const claim = await get<ScanbackImport>(c, "scanback_imports", settings.claimImportId);
   requireThat(claim.state === "committed" && claim.kind === "claim", "Choose a committed customer claim import.");
-  const imports = (await all<ScanbackImport>(c, "scanback_imports")).filter(i => i.state === "committed" && i.kind === "evidence");
-  const evidence: EvidenceRow[] = imports.flatMap(i => i.rows.map(r => ({ ...r, source: `${i.name} [${i.id}], ${i.sheet}, row ${r.sourceRow ?? r.rowIndex + 2}` })));
+  type IndexedImport = ScanbackImport & {
+    prontoCreditRows?: Record<string, unknown>[];
+    prontoRestrictedSerials?: string[];
+  };
+  const imports = (await c.query(`SELECT payload FROM scanback_imports
+    WHERE payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded')
+      AND jsonb_array_length(COALESCE(payload->'rows','[]'::jsonb)) > 0`))
+    .rows.map(r => r.payload as ScanbackImport);
+  const evidence: EvidenceRow[] = imports.flatMap(i =>
+    i.rows.map(r => ({ ...r, source: `${i.name} [${i.id}], ${i.sheet}, row ${r.sourceRow ?? r.rowIndex + 2}` })));
   const approved = await ledger(c);
   const cat = await catalog(c);
+  const programs = await all<ScanbackProgram>(c, "scanback_programs");
+  const ddRangeSkus = new Set([
+    ...imports.flatMap(i => i.rows.map(row => row.sku.trim().toUpperCase()).filter(Boolean)),
+    ...programs.flatMap(program => program.lines.map(line => (line.sku ?? cat.parts.find(part => part.id === line.partId)?.code ?? "").trim().toUpperCase()).filter(Boolean)),
+  ]);
   // Excluded accounts/SKUs never become payable evidence. Their overlapping
   // serials still block automatic approval: scoping must not hide a subsequent
   // transfer/return, including when it arrived in a different committed extract.
   const restrictedSerials = new Set<string>();
-  const nativeIds = imports.filter(i => i.pronto).map(i => i.id);
   const prontoReports: ProntoCreditReport[] = [];
-  if (nativeIds.length) {
-    const sources = await c.query("SELECT raw_sheets,payload FROM scanback_imports WHERE id=ANY($1::text[])", [nativeIds]);
-    for (const source of sources.rows) {
+  const sourceRows = await c.query(`SELECT id,
+      CASE WHEN payload ? 'prontoCreditRows' THEN payload - 'rows' ELSE payload END AS payload,
+      CASE WHEN payload ? 'prontoCreditRows' AND payload ? 'prontoRestrictedSerials' THEN NULL ELSE raw_sheets END AS raw_sheets
+    FROM scanback_imports
+    WHERE payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded') AND payload ? 'pronto'`);
+  if (sourceRows.rowCount) {
+    const legacyIndexes = new Map<string, { creditRows: Record<string, unknown>[]; restrictedSerials: string[] }>();
+    const legacyIds = sourceRows.rows.filter(source => !(source.payload as IndexedImport).prontoCreditRows ||
+      !(source.payload as IndexedImport).prontoRestrictedSerials).map(source => source.id);
+    for (const source of sourceRows.rows) {
+      if (!legacyIds.includes(source.id)) continue;
       const imp = source.payload as ScanbackImport;
-      const rows = (source.raw_sheets as Sheets)[imp.sheet] ?? [];
+      const raw = source.raw_sheets as Sheets;
+      legacyIndexes.set(source.id, indexProntoSource(raw?.[imp.sheet] ?? [], imp.prontoAccounts ?? {}));
+    }
+    for (const source of sourceRows.rows) {
+      const imp = source.payload as IndexedImport;
+      const index = legacyIndexes.get(source.id);
+      const rows = imp.prontoCreditRows ?? index?.creditRows ?? [];
       prontoReports.push({ id: imp.id, createdAt: imp.createdAt, committedAt: imp.committedAt,
-        prontoAccounts: imp.prontoAccounts, prontoCreditResolutions: imp.prontoCreditResolutions, rows });
-      for (const row of rows) {
-        const code = String(row["Account Code"] ?? "").trim();
-        if (!imp.prontoAccounts?.[code])
-          for (const serial of splitSerials(row["Serial Number"])) restrictedSerials.add(serial);
-      }
+        prontoAccounts: imp.prontoAccounts, prontoCreditResolutions: imp.prontoCreditResolutions,
+        dateFormat: imp.dateFormat, rows });
+      for (const serial of imp.prontoRestrictedSerials ?? index?.restrictedSerials ?? []) restrictedSerials.add(serial);
     }
   }
   const unmatchedProntoCredits = pendingProntoCredits(prontoReports).map(credit => ({
     ...credit, date: parseDate(credit.date, "dmy") || credit.date,
   }));
+  const appliedResolutionKeys = new Set<string>();
   for (const report of prontoReports) {
-    const imp = imports.find(item => item.id === report.id)!;
+    const imp = sourceRows.rows.find(item => item.id === report.id)?.payload as IndexedImport | undefined;
+    if (!imp) continue;
     for (const resolution of imp.prontoCreditResolutions ?? []) {
       if (resolution.mode !== "serials") continue;
-      const row = report.rows[resolution.sourceRow - 2];
+      const row = report.rows.find(item => Number(item.sourceRow) === resolution.sourceRow) ??
+        report.rows[resolution.sourceRow - 2];
       if (!row) continue;
+      const creditKey = resolution.creditKey ?? prontoCreditIdentity(
+        row["Account Code"], row["Stock Code"], row["Invoice No"], row["Ship Qty"], row["Invoice Date"], imp.dateFormat,
+      );
+      if (appliedResolutionKeys.has(creditKey)) continue;
+      appliedResolutionKeys.add(creditKey);
       const accountCode = String(row["Account Code"] ?? "").trim();
       const accountId = imp.prontoAccounts?.[accountCode];
       if (accountId == null) continue;
       const sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
-      const date = parseDate(row["Invoice Date"], "dmy");
+      const date = parseDate(row["Invoice Date"], imp.dateFormat ?? "dmy");
       const invoice = String(row["Invoice No"] ?? "").trim();
       const price = cents(row["Item Price"]);
       for (const serial of resolution.serials) evidence.push({
@@ -191,10 +226,14 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
   }
   const reportedSales = await loadReportedSales(c);
   const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts,
-    restrictedSerials, unmatchedProntoCredits, reportedSales, accounts: cat.accounts });
+    restrictedSerials, unmatchedProntoCredits, reportedSales, accounts: cat.accounts, ddRangeSkus });
   const token = hash({
     p, settings,
-    imports: imports.map(i => ({ id: i.id, prontoCreditResolutions: i.prontoCreditResolutions ?? [] })).sort((a, b) => a.id.localeCompare(b.id)),
+    imports: imports.map(i => ({ id: i.id, state: i.state, events: i.rows.map(evidenceKey) }))
+      .concat(sourceRows.rows.map(source => {
+        const imp = source.payload as IndexedImport;
+        return { id: imp.id, state: imp.state, events: [], prontoCreditResolutions: imp.prontoCreditResolutions ?? [] };
+      })).sort((a, b) => a.id.localeCompare(b.id)),
     approved, results,
   });
   return { results, token, p, accounts: cat.accounts, parts: cat.parts };

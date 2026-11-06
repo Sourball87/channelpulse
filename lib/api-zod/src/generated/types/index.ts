@@ -134,4 +134,5 @@ export * from './uploadReviewCardStatus';
 export * from './uploadStatus';
 export * from './weeklySalesCell';
 export * from './weeklySalesData';
+export * from './weeklyScanbackExport';
 export * from './weekSummary';

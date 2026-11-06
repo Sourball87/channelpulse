@@ -313,6 +313,7 @@ export const ProntoCreditResolutionMode = {
 
 export interface ProntoCreditResolution {
   sourceRow: number;
+  creditKey?: string;
   mode: ProntoCreditResolutionMode;
   serials: string[];
   note: string;
@@ -407,6 +408,13 @@ export interface ScanbackResult {
   include: boolean;
   selectable: boolean;
   source: string;
+  notDdRange?: boolean;
+}
+
+export interface WeeklyScanbackExport {
+  name: string;
+  createdAt: string;
+  size: number;
 }
 
 export interface ScanbackDraft {

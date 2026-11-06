@@ -7,10 +7,12 @@ import {
   ResolveProntoCreditBody,
   type ScanbackProgram, type ScanbackImport, type ScanbackDraft, type ScanbackBatch, type ScanbackResult,
 } from "@workspace/api-zod";
-import { parseSheets, suggestMapping, detectImportKind } from "../lib/scanback-import";
-import { serialKey, validDate } from "../lib/scanback-engine";
-import { splitSerials } from "../lib/scanback-pronto";
+import { parseSheets, suggestMapping, detectImportKind, mapImport, prontoRangeCovers } from "../lib/scanback-import";
+import { evidenceKey, serialKey, validDate } from "../lib/scanback-engine";
+import { indexProntoSource, prontoCreditIdentity, splitSerials } from "../lib/scanback-pronto";
 import { dateStringToWeekIso, isValidWeekIso } from "../lib/parser";
+import { buildScanbackWorkbook, XLSX_MIME } from "../lib/scanback-export";
+import { listWeeklyExports, readWeeklyExport } from "../lib/scanback-export-storage";
 import { validateProgramReferences } from "../lib/program-table";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
@@ -19,6 +21,10 @@ import {
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+type IndexedScanbackImport = ScanbackImport & {
+  prontoCreditRows?: Record<string, unknown>[];
+  prontoRestrictedSerials?: string[];
+};
 const route = (fn: (c: Client, req: Request, res: Response) => Promise<unknown>) =>
   async (req: Request, res: Response) => {
     try {
@@ -174,18 +180,37 @@ router.post("/scanback/pronto-credits/:importId/:sourceRow/resolve", route(async
   requireThat(Number.isSafeInteger(sourceRow) && sourceRow >= 2, "Choose a valid Pronto credit row.");
   const input = parse(ResolveProntoCreditBody, req.body);
   const value = await get<ScanbackImport>(c, "scanback_imports", importId);
-  requireThat(value.kind === "evidence" && value.state === "committed" && !!value.pronto,
+  requireThat(value.kind === "evidence" && ["committed", "superseded"].includes(value.state) && !!value.pronto,
     "Only a committed Pronto evidence credit can be resolved.");
   const stored = await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1 FOR UPDATE", [value.id]);
   const row = (stored.rows[0].raw_sheets as Record<string, Record<string, unknown>[]>)?.[value.sheet]?.[sourceRow - 2];
   requireThat(row, "Pronto credit source row was not found.", 404);
   const accountCode = String(row["Account Code"] ?? "").trim();
+  const creditKey = prontoCreditIdentity(
+    accountCode, row["Stock Code"], row["Invoice No"], row["Ship Qty"], row["Invoice Date"], value.dateFormat,
+  );
   const quantity = Number(row["Ship Qty"]);
   const accountId = value.prontoAccounts?.[accountCode];
   requireThat(accountId != null && Number.isSafeInteger(quantity) && quantity < 0 &&
     splitSerials(row["Serial Number"]).length === 0,
   "This row is not an unmatched selected Pronto credit.");
   const resolutions = value.prontoCreditResolutions ?? [];
+  const priorImports = await c.query(`SELECT payload,raw_sheets FROM scanback_imports
+    WHERE payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded') AND payload ? 'pronto'`);
+  for (const source of priorImports.rows) {
+    const prior = source.payload as IndexedScanbackImport;
+    if ((prior.prontoCreditResolutions ?? []).some(resolution => resolution.creditKey === creditKey)) {
+      throw new ScanbackError("This Pronto credit has already been resolved.", 409);
+    }
+    for (const resolution of prior.prontoCreditResolutions ?? []) {
+      if (resolution.creditKey) continue;
+      const raw = source.raw_sheets as Record<string, Record<string, unknown>[]>;
+      const priorRow = raw?.[prior.sheet]?.[resolution.sourceRow - 2];
+      if (priorRow && prontoCreditIdentity(
+        priorRow["Account Code"], priorRow["Stock Code"], priorRow["Invoice No"], priorRow["Ship Qty"], priorRow["Invoice Date"], prior.dateFormat,
+      ) === creditKey) throw new ScanbackError("This Pronto credit has already been resolved.", 409);
+    }
+  }
   requireThat(!resolutions.some(resolution => resolution.sourceRow === sourceRow),
     "This Pronto credit has already been resolved.", 409);
   let serials: string[] = [];
@@ -200,7 +225,7 @@ router.post("/scanback/pronto-credits/:importId/:sourceRow/resolve", route(async
     requireThat(note.length > 0 && note.length <= 1000, "Add a note of up to 1,000 characters before marking this credit reviewed.");
   }
   const resolution = {
-    sourceRow, mode: input.mode, serials, note, resolvedAt: new Date().toISOString(), resolvedBy: "admin",
+    sourceRow, creditKey, mode: input.mode, serials, note, resolvedAt: new Date().toISOString(), resolvedBy: "admin",
   };
   value.prontoCreditResolutions = [...resolutions, resolution];
   await put(c, "scanback_imports", value.id, value);
@@ -212,6 +237,36 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
   if (base.state === "committed") return publicImport(base, true);
   const raw = (await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [base.id])).rows[0].raw_sheets;
   const value = await rebuildImport(c, base, raw, base);
+  if (value.kind === "evidence" && value.pronto) {
+    const cat = await catalog(c);
+    const full = mapImport(base, raw, base, cat.accounts, new Set(cat.parts.map(p => p.code.toUpperCase())));
+    const rawRows = raw[value.sheet] ?? [];
+    const indexes = indexProntoSource(rawRows, value.prontoAccounts ?? {});
+    const indexedValue = value as IndexedScanbackImport;
+    indexedValue.prontoCreditRows = indexes.creditRows;
+    indexedValue.prontoRestrictedSerials = indexes.restrictedSerials;
+    const currentKeys = new Map(full.rows.map(row => [evidenceKey(row), row]));
+    const moveKeys = new Set<string>();
+    const older = await c.query(`SELECT id,payload,raw_sheets FROM scanback_imports
+      WHERE id<>$1 AND payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded') AND payload ? 'pronto'`, [value.id]);
+    for (const source of older.rows) {
+      const old = source.payload as ScanbackImport;
+      const oldRows = ((source.raw_sheets as Record<string, Record<string, unknown>[]>)?.[old.sheet] ?? []);
+      if (!prontoRangeCovers(rawRows, value.dateFormat, oldRows, old.dateFormat)) continue;
+      for (const row of old.rows) if (currentKeys.has(evidenceKey(row))) moveKeys.add(evidenceKey(row));
+      old.rows = old.rows.filter(row => !currentKeys.has(evidenceKey(row)));
+      old.recordCount = old.rows.length;
+      old.state = "superseded";
+      old.warnings = [...old.warnings, `Superseded by newer Pronto extract ${value.name}; ${old.recordCount} unique serial event(s) retained.`];
+      await put(c, "scanback_imports", old.id, old);
+    }
+    if (moveKeys.size) {
+      const existingKeys = new Set(value.rows.map(evidenceKey));
+      value.rows.push(...[...moveKeys].filter(key => !existingKeys.has(key)).map(key => currentKeys.get(key)!));
+      value.recordCount = value.rows.length;
+      value.warnings.push(`Covered older Pronto extracts; ${moveKeys.size} overlapping event(s) now use this newer source.`);
+    }
+  }
   if (value.kind === "claim") {
     const registry = (await c.query("SELECT payload FROM center_uploads WHERE payload->>'sourceId'=$1", [base.id])).rows[0]?.payload;
     if (registry) {
@@ -318,6 +373,28 @@ function sendStatement(res: Response, data: ScanbackBatch | ScanbackDraft, forma
       .send(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
   }
 }
+router.get("/scanback/export", route(async (c, _req, res) => {
+  res.type(XLSX_MIME).attachment("ChannelPulse-scanback-export.xlsx").send(await buildScanbackWorkbook(c));
+  return null;
+}));
+router.get("/scanback/exports/weekly", async (req, res): Promise<void> => {
+  try {
+    res.json(await listWeeklyExports());
+  } catch (error) {
+    req.log.error({ err: error }, "Could not list weekly scanback exports");
+    res.status(503).json({ error: "Weekly exports are temporarily unavailable." });
+  }
+});
+router.get("/scanback/exports/weekly/:name", async (req, res): Promise<void> => {
+  try {
+    const name = String(req.params.name);
+    const buffer = await readWeeklyExport(name);
+    res.type(XLSX_MIME).attachment(name).send(buffer);
+  } catch (error) {
+    req.log.error({ err: error }, "Could not download weekly scanback export");
+    res.status(404).json({ error: "Weekly export not found." });
+  }
+});
 router.get("/scanback/batches/:id/export/:format", route(async (c, req, res) => {
   requireThat(["csv", "xlsx"].includes(String(req.params.format)), "Choose CSV or XLSX.");
   sendStatement(res, await get<ScanbackBatch>(c, "scanback_batches", idParam(req)), String(req.params.format));

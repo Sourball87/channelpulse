@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@google-cloud/storage": "^8.4.0",
     "@types/multer": "^2.2.0",
     "@types/papaparse": "^5.5.2",
     "@workspace/api-zod": "workspace:*",

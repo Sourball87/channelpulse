@@ -6,8 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-const allowedCodes = new Set(["ca", "centrecom", "digi", "jw", "ks", "pccg", "ple", "scorptec", "umart"]);
-
 export function ProntoAccounts({ preview, values, onChange, resellers, disabled }: {
   preview: ScanbackProntoPreview;
   values: Record<string, number | null>;
@@ -17,7 +15,7 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
-  const allowed = resellers.filter(r => allowedCodes.has(r.code.toLowerCase()));
+  const allowed = resellers.filter(r => r.active !== false);
   const accounts = preview.accounts.filter(a => `${a.code} ${a.name}`.toLowerCase().includes(search.toLowerCase()));
   const pages = Math.max(1, Math.ceil(accounts.length / 12)), currentPage = Math.min(page, pages - 1);
   const mapped = Object.values(values).filter(id => id != null).length;
@@ -29,12 +27,12 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
   return (
     <section className="space-y-3 border-t p-4" data-testid="pronto-account-mapping">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold">Pronto POS — existing nine resellers only</h3>
+        <h3 className="text-sm font-semibold">Pronto POS account mapping</h3>
         <p className="text-xs text-slate-600">
           {preview.sourceRows.toLocaleString()} invoice/credit rows contain {preview.sourceSerialEvents.toLocaleString()} serial events.
           {" "}Item Price is the invoiced unit price ex GST; Item Cost, Line Cost Ex and RRP are not used.
         </p>
-          <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue. Credits without serials appear in Upload Center, where you can enter returned serials or mark the credit reviewed with a note.</p>
+          <p className="text-xs text-slate-600">Map Pronto codes to any active reseller in Settings. Unselected accounts stay excluded. Name-prefix suggestions are hints and require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue. Credits without serials appear in Upload Center, where you can enter returned serials or mark the credit reviewed with a note.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input className="h-8 max-w-xs" placeholder="Find Pronto code or reseller…" aria-label="Find Pronto account"

@@ -484,6 +484,7 @@ export const GetScanbackWorkspaceResponse = zod.object({
 }).optional(),
   "prontoCreditResolutions": zod.array(zod.object({
   "sourceRow": zod.int(),
+  "creditKey": zod.string().optional(),
   "mode": zod.enum(['serials', 'reviewed']),
   "serials": zod.array(zod.string()),
   "note": zod.string(),
@@ -545,7 +546,8 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "reason": zod.string(),
   "include": zod.boolean(),
   "selectable": zod.boolean(),
-  "source": zod.string()
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
 })),
   "token": zod.string(),
   "createdAt": zod.string(),
@@ -582,7 +584,8 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "reason": zod.string(),
   "include": zod.boolean(),
   "selectable": zod.boolean(),
-  "source": zod.string()
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
 }))
 })),
   "programStats": zod.array(zod.object({
@@ -725,6 +728,7 @@ export const PreviewScanbackImportResponse = zod.object({
 }).optional(),
   "prontoCreditResolutions": zod.array(zod.object({
   "sourceRow": zod.int(),
+  "creditKey": zod.string().optional(),
   "mode": zod.enum(['serials', 'reviewed']),
   "serials": zod.array(zod.string()),
   "note": zod.string(),
@@ -810,6 +814,7 @@ export const RemapScanbackImportResponse = zod.object({
 }).optional(),
   "prontoCreditResolutions": zod.array(zod.object({
   "sourceRow": zod.int(),
+  "creditKey": zod.string().optional(),
   "mode": zod.enum(['serials', 'reviewed']),
   "serials": zod.array(zod.string()),
   "note": zod.string(),
@@ -887,6 +892,7 @@ export const CommitScanbackImportResponse = zod.object({
 }).optional(),
   "prontoCreditResolutions": zod.array(zod.object({
   "sourceRow": zod.int(),
+  "creditKey": zod.string().optional(),
   "mode": zod.enum(['serials', 'reviewed']),
   "serials": zod.array(zod.string()),
   "note": zod.string(),
@@ -964,6 +970,7 @@ export const SupersedeScanbackImportResponse = zod.object({
 }).optional(),
   "prontoCreditResolutions": zod.array(zod.object({
   "sourceRow": zod.int(),
+  "creditKey": zod.string().optional(),
   "mode": zod.enum(['serials', 'reviewed']),
   "serials": zod.array(zod.string()),
   "note": zod.string(),
@@ -1013,6 +1020,7 @@ export const ResolveProntoCreditBody = zod.object({
 
 export const ResolveProntoCreditResponse = zod.object({
   "sourceRow": zod.int(),
+  "creditKey": zod.string().optional(),
   "mode": zod.enum(['serials', 'reviewed']),
   "serials": zod.array(zod.string()),
   "note": zod.string(),
@@ -1063,7 +1071,8 @@ export const VerifyScanbackClaimResponse = zod.object({
   "reason": zod.string(),
   "include": zod.boolean(),
   "selectable": zod.boolean(),
-  "source": zod.string()
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
 })),
   "token": zod.string(),
   "createdAt": zod.string(),
@@ -1108,9 +1117,31 @@ export const ApproveScanbackClaimResponse = zod.object({
   "reason": zod.string(),
   "include": zod.boolean(),
   "selectable": zod.boolean(),
-  "source": zod.string()
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
 }))
 })
+
+
+export const ExportScanbackWorkspaceResponse = zod.unknown()
+
+
+export const ListWeeklyScanbackExportsResponseItem = zod.object({
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "size": zod.int()
+})
+export const ListWeeklyScanbackExportsResponse = zod.array(ListWeeklyScanbackExportsResponseItem)
+
+
+export const downloadWeeklyScanbackExportPathNameRegExp = new RegExp('^scanback-weekly-[0-9]{4}-W[0-9]{2}\\.xlsx$');
+
+
+export const DownloadWeeklyScanbackExportParams = zod.object({
+  "name": zod.coerce.string().regex(downloadWeeklyScanbackExportPathNameRegExp)
+})
+
+export const DownloadWeeklyScanbackExportResponse = zod.unknown()
 
 
 export const ExportScanbackBatchParams = zod.object({

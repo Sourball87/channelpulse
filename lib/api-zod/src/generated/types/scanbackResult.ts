@@ -32,4 +32,5 @@ export interface ScanbackResult {
   include: boolean;
   selectable: boolean;
   source: string;
+  notDdRange?: boolean;
 }
