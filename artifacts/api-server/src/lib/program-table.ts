@@ -87,7 +87,10 @@ export function previewProgramRows(
     startDate: sourceMeta?.startDate ?? null, endDate: sourceMeta?.endDate ?? null, dateNote: sourceMeta?.dateNote ?? null,
     ignoredColumns: mapping.ignored.map(heading => ({ heading, reason:
       computed.has(norm(heading)) ? (norm(heading) === "total" ? "Calculated Total: cross-check only, never an eligibility cap." : "Calculated column; not a source price or customer cap.") :
-      aliases.sku.includes(norm(heading)) ? "Repeats the primary SKU values." : /\[duplicate \d+\]$/.test(heading) ? "Repeated heading; kept the first column." : "Ignored source column." })),
+      aliases.sku.includes(norm(heading)) ? "Repeats the primary SKU values." : /\[duplicate \d+\]$/.test(heading) ? "Repeated heading; kept the first column." :
+      Object.entries(mapping.fields).some(([field]) => aliases[field as ProgramField]?.includes(norm(heading)))
+        ? `Duplicate ${Object.entries(mapping.fields).find(([field]) => aliases[field as ProgramField]?.includes(norm(heading)))?.[0]} field/synonym; the mapped source is kept.`
+        : "Ignored source column." })),
   };
   const issue = (row: number | null, column: string, message: string, blocking = true) =>
     result.issues.push({ row, column, message, blocking });
@@ -154,7 +157,10 @@ export function previewProgramRows(
       row.caps.push({ resellerId: id, quantity });
     }
     const totalHeading = headers.find(h => norm(h) === "total");
-    if (totalHeading) {
+    if (totalHeading && headers.some(h => !used.includes(h))) {
+      const totalText = String(source[totalHeading] ?? "").replace(/[,\s]/g, "");
+      if (totalText) issue(sourceRow, totalHeading, "Total could not be cross-checked until every source and customer column is mapped or ignored.", false);
+    } else if (totalHeading) {
       const totalText = String(source[totalHeading] ?? "").replace(/[,\s]/g, "");
       if (totalText && /^\d+$/.test(totalText) && row.caps.every(c => c.quantity != null)) {
         const sum = row.caps.reduce((s, c) => s + c.quantity!, 0);

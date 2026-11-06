@@ -9,3 +9,4 @@
 - [Category options](category-options.md) — HDD & Memory must not be offered as a category option.
 - [Private browser-test auth](browser-test-auth.md) — notebook and shell do not share secrets; authenticate runtime-side without exposing credentials or weakening app auth.
 - [Weekly sales reconciliation](weekly-sales-reconciliation.md) — independent SOH denominator, serial-backed provenance, missing versus zero, and DD coverage warnings.
+- [Program-table ingestion](program-table-ingestion.md) — tolerant shared paste/upload parsing, reviewable dates and ignored columns, and no guessed caps or calculated claim fields.

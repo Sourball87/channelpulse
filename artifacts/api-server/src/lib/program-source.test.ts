@@ -29,6 +29,7 @@ describe("real program source layouts", () => {
       ddCostExCents: 30700, t1ExCents: 32300, gtmBuyCents: 23200 });
     expect(p.rows[0].caps.map(c => c.quantity)).toEqual([0, 200, 100, 100, 100, 200, 100, 100]);
     expect(p.mapping.ignored).toContain("Part No.");
+    expect(p.issues.some(i => i.message.includes("group-heading"))).toBe(true);
     expect(p.issues.some(i => i.message.includes("unique split"))).toBe(true);
   });
   it("reads the same Excel table with preamble, Allocation, blank column and duplicate Part No.", () => {
@@ -50,6 +51,13 @@ describe("real program source layouts", () => {
     const p = preview(readProgramText("Start 28-Sep\nAllocation\nSKU  GTM Buy Ex  DD Std Cost Ex  T1 EX  Discount  CA  Total\nCUSTOM  $ 1,232.00  $307  $ 323  -40%  1,000  1000", now));
     expect(p.rows[0]).toMatchObject({ gtmBuyCents: 123200, ddCostExCents: 30700, t1ExCents: 32300, caps: [{ resellerId: 1, quantity: 1000 }] });
     expect(p.issues.filter(i => i.blocking)).toEqual([]);
+  });
+  it("flags data under a blank heading rather than silently mapping it to a customer", () => {
+    const p = preview(readProgramText("SKU\tGTM Buy Ex\t\tCA\nCUSTOM\t232\t8\t2", now));
+    expect(p.rows[0].caps).toEqual([{ resellerId: 1, quantity: 2 }]);
+    expect(p.issues).toContainEqual(expect.objectContaining({
+      row: 2, column: "Column 3", blocking: true, message: expect.stringContaining("Unheaded column contains data"),
+    }));
   });
   it("joins wrapped continuation lines and permits trailing empty cells", () => {
     const p = preview(readProgramText("SKU\tGTM Buy Ex\tCA\tCentrecom\tScorptec\nCUSTOM\t$232\n0\t200\t100\t\nNEXT\t$200\t1\t0\t\t", now));
@@ -73,6 +81,7 @@ describe("real program source layouts", () => {
   it("does not discard a different secondary Part No. as if it were a duplicate SKU", () => {
     const p = preview(readProgramText("SKU\tGTM Buy Ex\tPart No.\nCUSTOM\t232\tDIFFERENT", now));
     expect(p.mapping.fields.sku).toBe("SKU");
+    expect(p.mapping.ignored).not.toContain("Part No.");
     expect(p.issues.some(i => i.column === "Part No." && i.blocking)).toBe(true);
   });
   it("leaves ambiguous collapsed caps blocked rather than making them unlimited", () => {

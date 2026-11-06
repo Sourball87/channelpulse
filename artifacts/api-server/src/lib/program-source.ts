@@ -17,9 +17,11 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
   if (original.length > 150 || grid.length > 5000) throw new Error("Limit programs to 1,000 SKU rows and 150 columns.");
   const meta: ProgramTableSource = { ...programDates(grid.slice(0, headerAt), now), issues: [], rowNumbers: [] };
   const note = (row: number | null, column: string, message: string, blocking = false) => meta.issues.push({ row, column, message, blocking });
-  const counts = new Map<string, number>(), columns: { index: number; heading: string }[] = [];
+  for (let i = 0; i < headerAt; i++)
+    if (group(grid[i])) note(i + 1, "", "Ignored group-heading row.");
+  const counts = new Map<string, number>(), columns: { index: number; heading: string }[] = [], blankColumns: number[] = [];
   original.forEach((heading, index) => {
-    if (!heading) { note(null, `Column ${index + 1}`, "Ignored blank spacer/unheaded column."); return; }
+    if (!heading) { blankColumns.push(index); note(null, `Column ${index + 1}`, "Ignored blank spacer column."); return; }
     const n = (counts.get(norm(heading)) ?? 0) + 1; counts.set(norm(heading), n);
     const unique = n === 1 ? heading : `${heading} [duplicate ${n}]`;
     if (n > 1) note(null, unique, `Ignored repeated heading "${heading}"; kept the first column.`);
@@ -28,7 +30,8 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
   const headers = columns.map(c => c.heading), sourceRows: { cells: unknown[]; line: number }[] = [];
   for (let i = headerAt + 1; i < grid.length; i++) {
     let cells = grid[i].map(v => v ?? "");
-    if (cells.every(v => String(v).trim() === "") || group(cells)) continue;
+    if (cells.every(v => String(v).trim() === "")) continue;
+    if (group(cells)) { note(i + 1, "", "Ignored group-heading row."); continue; }
     if (cells.some(skuHeading) && cells.some(v => /gtm|rrp/i.test(String(v)))) {
       note(i + 1, "", "Ignored a repeated table header."); continue;
     }
@@ -50,6 +53,8 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
       continue;
     }
     if (/^(total|grand total)$/i.test(first)) { note(i + 1, "", "Ignored calculated total/footer row."); continue; }
+    for (const index of blankColumns) if (String(cells[index] ?? "").trim())
+      note(i + 1, `Column ${index + 1}`, "Unheaded column contains data; restore its heading or assign it before building a draft.", true);
     sourceRows.push({ cells, line: i + 1 });
   }
   if (sourceRows.length > 1000) throw new Error("Limit programs to 1,000 SKU rows and 150 columns.");
@@ -60,10 +65,11 @@ export function readProgramGrid(grid: unknown[][], now = new Date()): ProgramSou
   });
   return { headers, rows, meta };
 }
-export function readProgramText(text: string, now = new Date()): ProgramSource {
-  if (!text.trim() || text.length > 1_000_000) throw new Error("Paste a table with headings, up to 1 MB.");
+export function readProgramText(text: string, now = new Date(), maxLength = 1_000_000): ProgramSource {
+  if (!text.trim()) throw new Error("Paste a table with headings, up to 1 MB.");
+  if (text.length > maxLength) throw new Error("Program text exceeds the supported file/paste size.");
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
-  const header = lines.find(l => /(?:^|[\t,| ]+)(?:sku|part\s*no\.?|stock\s*code)(?:[\t,| ]|rrp|gtm|$)/i.test(l));
+  const header = lines.find(l => /(?:^|[\t,| ]+)(?:sku|part\s*no\.?|stock\s*code)(?:[\t,| ]|rrp|gtm|$)/i.test(l.replace(/"/g, "")));
   if (!header) throw new Error("No SKU, Part No. or Stock Code heading found.");
   const delimiter = header.includes("\t") ? "\t" : header.includes("|") ? "|" : header.includes(",") ? "," : /\s{2,}/.test(header) ? "spaces" : "flat";
   if (delimiter === "flat") return readProgramGrid(lines.map(l => [l.trim()]), now);

@@ -43,7 +43,7 @@ export function readCenterWorkbook(buffer: Buffer): { sheets: Sheets; programSou
   if (buffer[0] !== 0x50 && buffer[0] !== 0xD0) {
     const text = buffer.toString("utf8");
     if (!text.includes("\0") && /gtm\s*buy\s*ex/i.test(text)) {
-      const source = readProgramText(text);
+      const source = readProgramText(text, new Date(), 10_000_000);
       return { sheets: { Sheet1: source.rows }, programSources: { Sheet1: source.meta } };
     }
   }
