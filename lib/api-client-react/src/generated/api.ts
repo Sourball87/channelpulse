@@ -54,6 +54,8 @@ import type {
   PartUpdate,
   ProgramTablePreview,
   ProgramTablePreviewInput,
+  ProntoCreditResolution,
+  ProntoCreditResolutionInput,
   Reseller,
   ResellerInput,
   ResellerUpdate,
@@ -1494,6 +1496,91 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getSupersedeScanbackImportMutationOptions(options), queryClient);
+    }
+
+export const getResolveProntoCreditUrl = (importId: string,
+    sourceRow: number,) => {
+
+
+
+
+  return `/api/scanback/pronto-credits/${importId}/${sourceRow}/resolve`
+}
+
+export const resolveProntoCredit = async (importId: string,
+    sourceRow: number,
+    prontoCreditResolutionInput: ProntoCreditResolutionInput, options?: Parameters<typeof customFetch>[1]): Promise<ProntoCreditResolution> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ProntoCreditResolution>(getResolveProntoCreditUrl(importId,sourceRow),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(prontoCreditResolutionInput)
+  }
+);}
+
+
+
+
+
+export const getResolveProntoCreditMutationKey = () => ['resolveProntoCredit'] as const;
+
+export const getResolveProntoCreditMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveProntoCredit>>, TError,ResolveProntoCreditMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveProntoCredit>>, TError,ResolveProntoCreditMutationVariables, TContext> => {
+
+const mutationKey = getResolveProntoCreditMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveProntoCredit>>, ResolveProntoCreditMutationVariables> = (props) => {
+          const {importId,sourceRow,data} = props ?? {};
+
+          return  resolveProntoCredit(importId,sourceRow,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveProntoCreditMutationResult = NonNullable<Awaited<ReturnType<typeof resolveProntoCredit>>>
+    export type ResolveProntoCreditMutationBody = BodyType<ProntoCreditResolutionInput>
+    export type ResolveProntoCreditMutationError = ErrorType<void>
+    export type ResolveProntoCreditMutationVariables = {importId: string;sourceRow: number;data: BodyType<ProntoCreditResolutionInput>}
+
+    export const useResolveProntoCredit = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveProntoCredit>>, TError,ResolveProntoCreditMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resolveProntoCredit>>,
+        TError,
+        ResolveProntoCreditMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResolveProntoCreditMutationOptions(options), queryClient);
     }
 
 export const getVerifyScanbackClaimUrl = () => {

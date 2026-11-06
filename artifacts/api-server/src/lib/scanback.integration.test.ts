@@ -245,11 +245,50 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const heldByCredit = (await call("/scanback/verify", creditSettings)).data;
       expect(heldByCredit.results[0]).toMatchObject({ status: "review", trackingColor: "amber", include: false });
       expect(heldByCredit.results[0].reason).toContain("unmatched Pronto credit");
-      let resolvedCredit = await upload("auto", prontoHeader + creditPr("CREDIT-REF", "CREDITRETURNED", -1), "resolved-credit");
-      resolvedCredit = await remapPronto(resolvedCredit);
-      await commit(resolvedCredit);
-      const afterCreditResolution = (await call("/scanback/verify", creditSettings)).data;
-      expect(afterCreditResolution.results[0]).toMatchObject({ status: "eligible", trackingColor: "green", include: true });
+      expect(heldByCredit.results[0].reason).toContain(`${prefix}-CREDIT-REF`);
+      expect(heldByCredit.results[0].reason).toContain("2026-09-01");
+      let creditCenter = (await call("/upload-center")).data;
+      expect(creditCenter.unmatchedCredits).toContainEqual(expect.objectContaining({
+        importId: missingCredit.id, sourceRow: 2, accountId: a.id, sku: creditSku,
+        invoice: `${prefix}-CREDIT-REF`, date: "2026-09-01", quantity: -1,
+      }));
+      const serialResolution = await call(`/scanback/pronto-credits/${missingCredit.id}/2/resolve`, {
+        mode: "serials", serials: [`${prefix}CREDITGOOD`],
+      });
+      expect(serialResolution.status).toBe(200);
+      expect(serialResolution.data).toMatchObject({
+        sourceRow: 2, mode: "serials", serials: [`${prefix}CREDITGOOD`], resolvedBy: "admin",
+      });
+      const afterSerialResolution = (await call("/scanback/verify", creditSettings)).data;
+      expect(afterSerialResolution.results[0].reason).toContain("Credited / returned");
+      expect(afterSerialResolution.results[0].reason).not.toContain("unmatched Pronto credit");
+      const auditedSerialResolution = (await pool.query(
+        "SELECT payload->'prontoCreditResolutions' AS resolutions FROM scanback_imports WHERE id=$1", [missingCredit.id],
+      )).rows[0].resolutions;
+      expect(auditedSerialResolution).toMatchObject([{
+        sourceRow: 2, mode: "serials", serials: [`${prefix}CREDITGOOD`], resolvedBy: "admin",
+      }]);
+
+      let oldCredit = await upload("auto", prontoHeader + creditPr("CREDIT-OLD", "", -1), "old-unmatched-credit");
+      oldCredit = await remapPronto(oldCredit);
+      await commit(oldCredit);
+      creditCenter = (await call("/upload-center")).data;
+      expect(creditCenter.unmatchedCredits).toContainEqual(expect.objectContaining({
+        importId: oldCredit.id, invoice: `${prefix}-CREDIT-OLD`, date: "2026-09-01",
+      }));
+      const heldByOldCredit = (await call("/scanback/verify", creditSettings)).data;
+      expect(heldByOldCredit.results[0].reason).toContain(`${prefix}-CREDIT-OLD`);
+      const reviewedResolution = await call(`/scanback/pronto-credits/${oldCredit.id}/2/resolve`, {
+        mode: "reviewed", note: "Checked the archived return record.",
+      });
+      expect(reviewedResolution.status).toBe(200);
+      expect(reviewedResolution.data).toMatchObject({
+        sourceRow: 2, mode: "reviewed", note: "Checked the archived return record.", serials: [],
+      });
+      const afterReviewedResolution = (await call("/scanback/verify", creditSettings)).data;
+      expect(afterReviewedResolution.results[0].reason).not.toContain("unmatched Pronto credit");
+      expect((await call("/upload-center")).data.unmatchedCredits.some((credit: { importId: string }) =>
+        credit.importId === oldCredit.id || credit.importId === missingCredit.id)).toBe(false);
       const customSku = `${prefix}-CUSTOM`;
       const customProgramResponse = await call("/scanback/programs", {
         name: prefix + " Custom SKU", start: "2026-09-01", end: "2026-09-30", notes: "", customerIds: [a.id],

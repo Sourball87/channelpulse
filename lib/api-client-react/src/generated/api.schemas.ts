@@ -303,6 +303,23 @@ export const ScanbackImportDateFormat = {
 
 export type ScanbackImportProntoAccounts = {[key: string]: number | null};
 
+export type ProntoCreditResolutionMode = typeof ProntoCreditResolutionMode[keyof typeof ProntoCreditResolutionMode];
+
+
+export const ProntoCreditResolutionMode = {
+  serials: 'serials',
+  reviewed: 'reviewed',
+} as const;
+
+export interface ProntoCreditResolution {
+  sourceRow: number;
+  mode: ProntoCreditResolutionMode;
+  serials: string[];
+  note: string;
+  resolvedAt: string;
+  resolvedBy: string;
+}
+
 export interface ScanbackImport {
   id: string;
   kind: ScanbackImportKind;
@@ -319,6 +336,7 @@ export interface ScanbackImport {
   accountId: number | null;
   prontoAccounts?: ScanbackImportProntoAccounts;
   pronto?: ScanbackProntoPreview;
+  prontoCreditResolutions?: ProntoCreditResolution[];
   rows: ScanbackImportRow[];
   errors: ScanbackImportIssue[];
   warnings: string[];
@@ -1063,10 +1081,37 @@ export type UploadCenterWorkspacePricesItem = {
 
 export type UploadCenterWorkspaceProgramRowsItem = { [key: string]: unknown };
 
+export interface UnmatchedProntoCredit {
+  id: string;
+  importId: string;
+  sourceRow: number;
+  accountId: number;
+  accountCode: string;
+  sku: string;
+  invoice: string;
+  date: string;
+  quantity: number;
+}
+
 export interface UploadCenterWorkspace {
   uploads: CenterUpload[];
+  unmatchedCredits: UnmatchedProntoCredit[];
   prices: UploadCenterWorkspacePricesItem[];
   programRows: UploadCenterWorkspaceProgramRowsItem[];
+}
+
+export type ProntoCreditResolutionInputMode = typeof ProntoCreditResolutionInputMode[keyof typeof ProntoCreditResolutionInputMode];
+
+
+export const ProntoCreditResolutionInputMode = {
+  serials: 'serials',
+  reviewed: 'reviewed',
+} as const;
+
+export interface ProntoCreditResolutionInput {
+  mode: ProntoCreditResolutionInputMode;
+  serials?: string[];
+  note?: string;
 }
 
 export interface Part {

@@ -183,6 +183,17 @@ export const GetUploadCenterResponse = zod.object({
   "mapping": zod.record(zod.string(), zod.string()),
   "preview": zod.array(zod.record(zod.string(), zod.unknown()))
 })),
+  "unmatchedCredits": zod.array(zod.object({
+  "id": zod.string(),
+  "importId": zod.string(),
+  "sourceRow": zod.int(),
+  "accountId": zod.int(),
+  "accountCode": zod.string(),
+  "sku": zod.string(),
+  "invoice": zod.string(),
+  "date": zod.string(),
+  "quantity": zod.int()
+})),
   "prices": zod.array(zod.object({
   "sku": zod.string(),
   "description": zod.string(),
@@ -471,6 +482,14 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "reason": zod.string()
 }))
 }).optional(),
+  "prontoCreditResolutions": zod.array(zod.object({
+  "sourceRow": zod.int(),
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()),
+  "note": zod.string(),
+  "resolvedAt": zod.string(),
+  "resolvedBy": zod.string()
+})).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -704,6 +723,14 @@ export const PreviewScanbackImportResponse = zod.object({
   "reason": zod.string()
 }))
 }).optional(),
+  "prontoCreditResolutions": zod.array(zod.object({
+  "sourceRow": zod.int(),
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()),
+  "note": zod.string(),
+  "resolvedAt": zod.string(),
+  "resolvedBy": zod.string()
+})).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -781,6 +808,14 @@ export const RemapScanbackImportResponse = zod.object({
   "reason": zod.string()
 }))
 }).optional(),
+  "prontoCreditResolutions": zod.array(zod.object({
+  "sourceRow": zod.int(),
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()),
+  "note": zod.string(),
+  "resolvedAt": zod.string(),
+  "resolvedBy": zod.string()
+})).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -850,6 +885,14 @@ export const CommitScanbackImportResponse = zod.object({
   "reason": zod.string()
 }))
 }).optional(),
+  "prontoCreditResolutions": zod.array(zod.object({
+  "sourceRow": zod.int(),
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()),
+  "note": zod.string(),
+  "resolvedAt": zod.string(),
+  "resolvedBy": zod.string()
+})).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -919,6 +962,14 @@ export const SupersedeScanbackImportResponse = zod.object({
   "reason": zod.string()
 }))
 }).optional(),
+  "prontoCreditResolutions": zod.array(zod.object({
+  "sourceRow": zod.int(),
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()),
+  "note": zod.string(),
+  "resolvedAt": zod.string(),
+  "resolvedBy": zod.string()
+})).optional(),
   "rows": zod.array(zod.object({
   "rowIndex": zod.int(),
   "serial": zod.string(),
@@ -942,6 +993,31 @@ export const SupersedeScanbackImportResponse = zod.object({
   "warnings": zod.array(zod.string()),
   "duplicate": zod.boolean(),
   "recordCount": zod.int()
+})
+
+
+export const resolveProntoCreditPathSourceRowMin = 2;
+
+
+
+export const ResolveProntoCreditParams = zod.object({
+  "importId": zod.coerce.string(),
+  "sourceRow": zod.coerce.number().int().min(resolveProntoCreditPathSourceRowMin)
+})
+
+export const ResolveProntoCreditBody = zod.object({
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()).optional(),
+  "note": zod.string().optional()
+})
+
+export const ResolveProntoCreditResponse = zod.object({
+  "sourceRow": zod.int(),
+  "mode": zod.enum(['serials', 'reviewed']),
+  "serials": zod.array(zod.string()),
+  "note": zod.string(),
+  "resolvedAt": zod.string(),
+  "resolvedBy": zod.string()
 })
 
 

@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CenterUpload } from './centerUpload';
+import type { UnmatchedProntoCredit } from './unmatchedProntoCredit';
 import type { UploadCenterWorkspacePricesItem } from './uploadCenterWorkspacePricesItem';
 import type { UploadCenterWorkspaceProgramRowsItem } from './uploadCenterWorkspaceProgramRowsItem';
 
 export interface UploadCenterWorkspace {
   uploads: CenterUpload[];
+  unmatchedCredits: UnmatchedProntoCredit[];
   prices: UploadCenterWorkspacePricesItem[];
   programRows: UploadCenterWorkspaceProgramRowsItem[];
 }

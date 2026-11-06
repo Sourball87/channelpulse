@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useResolveProntoCredit, type UnmatchedProntoCredit } from "@workspace/api-client-react";
 
 export type CenterKind = "soh" | "claim" | "evidence" | "history" | "price" | "program" | "unknown";
 
@@ -30,7 +31,12 @@ export interface PriceRow {
 
 export type ProgramRow = Record<string, unknown>;
 
-export interface UploadCenterData { uploads: CenterUpload[]; prices: PriceRow[]; programRows: ProgramRow[] }
+export interface UploadCenterData {
+  uploads: CenterUpload[];
+  prices: PriceRow[];
+  programRows: ProgramRow[];
+  unmatchedCredits: UnmatchedProntoCredit[];
+}
 
 export const KIND_LABEL: Record<CenterKind, string> = {
   soh: "Customer SOH report",
@@ -108,6 +114,15 @@ export function useCommitCenterUpload() {
   return useMutation({
     mutationFn: (id: string) => req<CenterUpload>(`/api/upload-center/${encodeURIComponent(id)}/commit`, { method: "POST" }),
     onSettled: inv,
+  });
+}
+
+export function useResolveCredit() {
+  const qc = useQueryClient();
+  return useResolveProntoCredit({
+    mutation: {
+      onSettled: () => qc.invalidateQueries(),
+    },
   });
 }
 

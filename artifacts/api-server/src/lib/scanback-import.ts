@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import type { ScanbackImport, ScanbackImportRow, ScanbackMapping } from "@workspace/api-zod";
 import { cents, serialKey, validDate } from "./scanback-engine";
-import { isPronto, prontoColumns, prontoMapping, scopePronto, unmatchedCreditReason } from "./scanback-pronto";
+import { isPronto, prontoColumns, prontoMapping, scopePronto, splitSerials, unmatchedCreditReason } from "./scanback-pronto";
 
 export type Sheets = Record<string, Record<string, unknown>[]>;
 export interface Account { id: number; code: string; name: string }
@@ -133,7 +133,7 @@ export function mapImport(
     if (scope && !scope.include.has(i)) return;
     const value = (key: string) => mapping[key] ? row[mapping[key]] : "";
     const text = (key: string) => String(value(key) ?? "").trim();
-    const serials = text("serial").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
+    const serials = scope ? splitSerials(value("serial")) : text("serial").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
     if (rows.length + serials.length > 100_000)
       throw new Error("Limit each import to 100,000 serial events; split this extract.");
     const sku = text("sku").toUpperCase();
@@ -201,7 +201,8 @@ export function mapImport(
         `${scope.preview.includedSourceRows} source rows included; ${scope.preview.excludedSourceRows} excluded. Excluded rows are not evidence and cannot make a serial payable.`,
         "Only explicitly mapped accounts and existing Stock Codes are included. Review every account mapping and exclusion before committing.",
         "Serials also appearing in excluded Pronto rows remain subject to ownership/return review; excluding an account cannot hide conflicting evidence.",
-        ...(unmatchedCreditCount ? [`${unmatchedCreditCount} selected Pronto credit(s) have no serial. They are listed as unmatched and claims for the same reseller/SKU require review until a later matching credit includes its serial.`] : []),
+        ...scope.warnings,
+        ...(unmatchedCreditCount ? [`${unmatchedCreditCount} selected Pronto credit(s) have no serial. They are listed in Upload Center and hold claims for the same reseller/SKU until resolved with returned serials or a review note.`] : []),
       ] : []),
       ...(unlistedSkus.length ? [`Not in the product catalogue (enter the exact code on a promotion to make these claimable): ${unlistedSkus.slice(0, 25).join(", ")}${unlistedSkus.length > 25 ? " …" : ""}. No product SKUs were created.`] : []),
     ],

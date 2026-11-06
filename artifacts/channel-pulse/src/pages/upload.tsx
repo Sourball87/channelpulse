@@ -451,7 +451,8 @@ export default function UploadCenter() {
         <WeeklyView uploads={uploads} resellers={resellers} programs={ws.data?.programs ?? []} uploading={busy}
           onDropFiles={(files, accountId, weekIso, kind) => processFiles(files, { accountId, weekIso, kind })} />
 
-        <DdDataPanel uploads={uploads} priceCount={center.data?.prices.length ?? 0} pricesUpdated={pricesUpdated} />
+        <DdDataPanel uploads={uploads} priceCount={center.data?.prices.length ?? 0} pricesUpdated={pricesUpdated}
+          credits={center.data?.unmatchedCredits ?? []} resellers={resellers} />
 
         <AllUploadsTable uploads={uploads} resellers={resellers} loading={center.isLoading}
           onEdit={setEditTarget} onDelete={setDeleteTarget} onReview={openReview} />

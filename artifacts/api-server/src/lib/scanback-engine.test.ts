@@ -64,9 +64,13 @@ describe("scanback deterministic verification", () => {
     expect(result.reason).toContain("Also in earlier report First customer report [claim]");
   });
   it("reviews the reseller/SKU while a Pronto credit has no matching serial", () => {
-    const result = first({ unmatchedCreditKeys: new Set(["1|SKU"]) });
+    const result = first({ unmatchedProntoCredits: [{
+      accountSkuKey: "1|SKU", invoice: "CR-7539088", date: "2026-09-01",
+    }] });
     expect(result).toMatchObject({ trackingColor: "amber", status: "review", include: false });
     expect(result.reason).toContain("unmatched Pronto credit");
+    expect(result.reason).toContain("CR-7539088");
+    expect(result.reason).toContain("2026-09-01");
   });
   it("retains invoice and claim-basis details for claimed red rows", () => {
     const result = first({ accounts: [{ id: 1, code: "ca" }], approved: [{

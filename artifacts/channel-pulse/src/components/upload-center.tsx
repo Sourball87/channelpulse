@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import type { Reseller, ScanbackProgram } from "@workspace/api-client-react";
+import type { Reseller, ScanbackProgram, UnmatchedProntoCredit } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,7 +14,7 @@ import { customerLabel } from "@/lib/customer-display";
 import { formatWeekLabel, isoWeekDates } from "@/lib/week-display";
 import {
   CENTER_KINDS, KIND_LABEL, KIND_SHORT, formatDay, isoWeekOf, lastCompletedSunday, shiftSunday, shortDate,
-  usePatchCenterUpload, type CenterKind, type CenterUpload,
+  usePatchCenterUpload, useResolveCredit, type CenterKind, type CenterUpload,
 } from "@/lib/upload-center";
 import { ChevronLeft, ChevronRight, ClipboardCopy, FileSpreadsheet, Lock, Pencil, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 
@@ -329,7 +330,44 @@ function SerialSummary({ u, reseller, programs, week }: { u: CenterUpload; resel
 /* ------------------------------------------------------------------ */
 /* DD data panel                                                         */
 /* ------------------------------------------------------------------ */
-export function DdDataPanel({ uploads, priceCount, pricesUpdated }: { uploads: CenterUpload[]; priceCount: number; pricesUpdated: string | null }) {
+export function DdDataPanel({ uploads, priceCount, pricesUpdated, credits, resellers }: {
+  uploads: CenterUpload[];
+  priceCount: number;
+  pricesUpdated: string | null;
+  credits: UnmatchedProntoCredit[];
+  resellers: Reseller[];
+}) {
+  const [credit, setCredit] = useState<UnmatchedProntoCredit | null>(null);
+  const [mode, setMode] = useState<"serials" | "reviewed">("serials");
+  const [serialText, setSerialText] = useState("");
+  const [note, setNote] = useState("");
+  const resolve = useResolveCredit();
+  const { toast } = useToast();
+  const serials = serialText.split(/[|,;\n]+/).map(s => s.trim()).filter(Boolean);
+  const canResolve = !!credit && (mode === "serials"
+    ? serials.length === Math.abs(credit.quantity)
+    : !!note.trim());
+  const openCredit = (item: UnmatchedProntoCredit) => {
+    setCredit(item); setMode("serials"); setSerialText(""); setNote("");
+  };
+  const submitResolution = () => {
+    if (!credit || !canResolve) return;
+    resolve.mutate({
+      importId: credit.importId,
+      sourceRow: credit.sourceRow,
+      data: mode === "serials" ? { mode, serials } : { mode, note: note.trim() },
+    }, {
+      onSuccess: () => {
+        setCredit(null);
+        toast({ title: "Pronto credit resolved", description: "The review hold is cleared and the resolution is recorded in the audit history." });
+      },
+      onError: error => toast({
+        title: "Could not resolve credit",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      }),
+    });
+  };
   const by = (k: CenterKind) => uploads.filter((u) => u.kind === k).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const evidence = by("evidence"), prices = by("price"), history = by("history");
   const latestEv = evidence.find((u) => u.state === "committed");
@@ -377,6 +415,81 @@ export function DdDataPanel({ uploads, priceCount, pricesUpdated }: { uploads: C
           </div>
         ))}
       </div>
+      <div className="rounded-lg border bg-background" data-testid="unmatched-pronto-credits">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold">Unmatched credits</p>
+            <p className="text-xs text-muted-foreground">These credits hold matching reseller/SKU claims for review until resolved.</p>
+          </div>
+          <Badge variant={credits.length ? "secondary" : "outline"}>{credits.length} unresolved</Badge>
+        </div>
+        {credits.length === 0 ? <p className="px-4 py-3 text-sm text-muted-foreground">No unmatched Pronto credits.</p> : (
+          <div className="max-h-72 overflow-auto">
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Reseller</TableHead><TableHead>SKU</TableHead><TableHead>Invoice</TableHead>
+                <TableHead>Date</TableHead><TableHead className="text-right">Qty</TableHead><TableHead />
+              </TableRow></TableHeader>
+              <TableBody>{credits.map(item => (
+                <TableRow key={item.id}>
+                  <TableCell>{customerLabel(resellers.find(r => r.id === item.accountId)?.code ?? item.accountCode)}</TableCell>
+                  <TableCell className="font-mono text-xs">{item.sku}</TableCell>
+                  <TableCell className="font-mono text-xs">{item.invoice || "—"}</TableCell>
+                  <TableCell>{shortDate(item.date)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" onClick={() => openCredit(item)} data-testid={`button-resolve-credit-${item.sourceRow}`}>
+                      Resolve
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+      <Dialog open={!!credit} onOpenChange={open => { if (!open && !resolve.isPending) setCredit(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolve unmatched credit</DialogTitle>
+            <DialogDescription>
+              {credit && `${customerLabel(resellers.find(r => r.id === credit.accountId)?.code ?? credit.accountCode)} · ${credit.sku} · Invoice ${credit.invoice || "—"} · ${shortDate(credit.date)} · Qty ${credit.quantity}`}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Resolution</span>
+            <Select value={mode} onValueChange={value => setMode(value as "serials" | "reviewed")}>
+              <SelectTrigger data-testid="select-credit-resolution-mode"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="serials">Enter returned serials</SelectItem>
+                <SelectItem value="reviewed">Mark reviewed with note</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          {mode === "serials" ? (
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium text-muted-foreground">Returned serials, one per line or separated by commas</span>
+              <Textarea rows={4} value={serialText} onChange={event => setSerialText(event.target.value)}
+                placeholder="ABC123456" data-testid="textarea-credit-serials" />
+              {credit && <span className="text-xs text-muted-foreground">
+                Enter {Math.abs(credit.quantity)} serial(s); {serials.length} entered.
+              </span>}
+            </label>
+          ) : (
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs font-medium text-muted-foreground">Review note</span>
+              <Textarea rows={4} value={note} onChange={event => setNote(event.target.value)}
+                placeholder="Describe what was checked." data-testid="textarea-credit-review-note" />
+            </label>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCredit(null)} disabled={resolve.isPending}>Cancel</Button>
+            <Button onClick={submitResolution} disabled={!canResolve || resolve.isPending} data-testid="button-submit-credit-resolution">
+              {resolve.isPending ? "Saving..." : "Resolve credit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

@@ -20,55 +20,106 @@ export const prontoColumns = (headers: string[]) => headers.filter(column => col
   /^(ourcost|ourunitcostexgst|purchasecost|unitcost|costex|costexgst|itemcost|ddcostex|ddcost|cost)$/.test(column.toLowerCase().replace(/[^a-z0-9]/g, "")));
 export const prontoAllowed = (accounts: Account[]) => accounts.filter(a => Object.hasOwn(names, a.code.toLowerCase()));
 const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
-export const splitSerials = (value: unknown) => String(value ?? "").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
+export function parseProntoSerials(value: unknown) {
+  const serials: string[] = [], placeholders: string[] = [];
+  for (const token of String(value ?? "").split(/[|,;\n]+/)) {
+    const normalized = serialKey(token);
+    if (!normalized) continue;
+    if (normalized.length < 6 || /^0+$/.test(normalized) ||
+      !/[A-Z]/.test(normalized) || !/[0-9]/.test(normalized)) {
+      placeholders.push(token.trim());
+    } else serials.push(normalized);
+  }
+  return { serials, placeholders };
+}
+export const splitSerials = (value: unknown) => parseProntoSerials(value).serials;
 export const unmatchedCreditReason = "Unmatched credit — no serial number";
+export const serialCountMismatchReason = "Serial count does not match Ship Qty";
 export const unmatchedCreditKey = (accountId: number, sku: string) => `${accountId}|${sku.trim().toUpperCase()}`;
 
+export interface ProntoCreditResolution {
+  sourceRow: number;
+  mode: "serials" | "reviewed";
+  serials: string[];
+  note: string;
+  resolvedAt: string;
+  resolvedBy: string;
+}
 export interface ProntoCreditReport {
   id: string;
   createdAt?: string;
   committedAt?: string;
   prontoAccounts?: Record<string, number | null>;
+  prontoCreditResolutions?: ProntoCreditResolution[];
   rows: Record<string, unknown>[];
 }
 
-/** Missing-serial credits remain active until a later selected Pronto file
- * supplies a serial for the same reseller, SKU and credit reference. */
-export function pendingProntoCreditKeys(reports: ProntoCreditReport[]): Set<string> {
-  const pending = new Map<string, string>();
+export interface PendingProntoCredit {
+  id: string;
+  importId: string;
+  sourceRow: number;
+  accountId: number;
+  accountSkuKey: string;
+  accountCode: string;
+  sku: string;
+  invoice: string;
+  date: string;
+  quantity: number;
+}
+
+/** Unresolved credits remain active until matched by a serial-bearing credit
+ * or explicitly resolved and audit-logged by an administrator. */
+export function pendingProntoCredits(reports: ProntoCreditReport[]): PendingProntoCredit[] {
+  const pending = new Map<string, { credit: PendingProntoCredit; invoiceKey: string }>();
   const ordered = [...reports].sort((a, b) =>
     (a.committedAt ?? a.createdAt ?? "").localeCompare(b.committedAt ?? b.createdAt ?? "") || a.id.localeCompare(b.id));
   for (const report of ordered) {
-    const events = report.rows.flatMap(row => {
+    const resolutions = new Set((report.prontoCreditResolutions ?? []).map(r => r.sourceRow));
+    report.rows.forEach((row, index) => {
       const accountId = report.prontoAccounts?.[String(row["Account Code"] ?? "").trim()];
       const sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
       const quantity = Number(row["Ship Qty"]);
       const invoice = String(row["Invoice No"] ?? "").trim().toUpperCase();
-      if (accountId == null || !sku || !Number.isFinite(quantity) || quantity >= 0) return [];
-      const accountSku = unmatchedCreditKey(accountId, sku);
+      if (accountId == null || !sku || !Number.isFinite(quantity) || quantity >= 0) return;
+      const sourceRow = index + 2;
+      const invoiceKey = JSON.stringify([accountId, sku, invoice]);
       const serials = splitSerials(row["Serial Number"]);
-      return [{ key: JSON.stringify([accountId, sku, invoice]), accountSku, hasSerial: serials.length > 0 }];
+      if (serials.length) {
+        for (const [key, item] of pending) if (item.invoiceKey === invoiceKey) pending.delete(key);
+      } else if (!resolutions.has(sourceRow)) {
+        const credit: PendingProntoCredit = {
+          id: `${report.id}:${sourceRow}`, importId: report.id, sourceRow, accountId,
+          accountSkuKey: unmatchedCreditKey(accountId, sku),
+          accountCode: String(row["Account Code"] ?? "").trim(), sku,
+          invoice: String(row["Invoice No"] ?? "").trim(),
+          date: String(row["Invoice Date"] ?? "").trim(),
+          quantity,
+        };
+        pending.set(credit.id, { credit, invoiceKey });
+      }
     });
-    for (const event of events) if (event.hasSerial) pending.delete(event.key);
-    for (const event of events) if (!event.hasSerial) pending.set(event.key, event.accountSku);
   }
-  return new Set(pending.values());
+  return [...pending.values()].map(item => item.credit);
 }
 
 export function scopePronto(
   rows: Record<string, unknown>[], options: ScanbackMapping, accounts: Account[],
 ) {
   const allowed = prontoAllowed(accounts), byCode = new Map<string, { names: Set<string>; rows: number; serials: number }>();
-  const errors: ScanbackImportIssue[] = [], include = new Map<number, number>();
+  const errors: ScanbackImportIssue[] = [], warnings: string[] = [], include = new Map<number, number>();
   const mapping = options.prontoAccounts ?? {};
   let serialEvents = 0;
-  for (const row of rows) {
+  rows.forEach((row, index) => {
     const code = String(row["Account Code"] ?? "").trim(), name = String(row["Reseller Name"] ?? "").trim();
-    const serials = splitSerials(row["Serial Number"]).length;
+    const parsed = parseProntoSerials(row["Serial Number"]);
+    const serials = parsed.serials.length;
+    if (parsed.placeholders.length) warnings.push(
+      `Row ${index + 2} (${String(row["Invoice No"] ?? "").trim() || "no invoice"}): ignored placeholder serial token(s): ${parsed.placeholders.join(", ")}.`,
+    );
     const item = byCode.get(code) ?? { names: new Set<string>(), rows: 0, serials: 0 };
     item.names.add(name); item.rows++; item.serials += serials; byCode.set(code, item);
     serialEvents += serials;
-  }
+  });
   if (serialEvents > 100_000) throw new Error("Limit each Pronto import to 100,000 serial events; split this extract.");
   for (const [code, id] of Object.entries(mapping)) {
     if (!byCode.has(code)) errors.push({ row: 0, message: "Account mapping contains a Pronto code not present in this worksheet." });
@@ -96,16 +147,21 @@ export function scopePronto(
     const code = String(row["Account Code"] ?? "").trim(), sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
     const id = mapping[code], serials = splitSerials(row["Serial Number"]), quantity = Number(row["Ship Qty"]);
     const validAccount = id != null && allowed.some(a => a.id === id);
+    const countMismatch = Number.isSafeInteger(quantity) && (quantity > 0 || serials.length > 0) &&
+      Math.abs(quantity) !== serials.length;
     const reason = !validAccount ? "Account not selected"
+      : countMismatch ? serialCountMismatchReason
       : !serials.length && quantity < 0 ? unmatchedCreditReason
       : !serials.length ? "No serial number — not serial-level evidence" : "";
     if (!reason) { include.set(i, id!); preview.includedSourceRows++; return; }
     preview.excludedSourceRows++;
     preview.excludedCounts[reason] = (preview.excludedCounts[reason] ?? 0) + 1;
+    if (reason === serialCountMismatchReason)
+      warnings.push(`Row ${i + 2} (${String(row["Invoice No"] ?? "").trim() || "no invoice"}): ${serialCountMismatchReason.toLowerCase()} (${serials.length} valid serial(s), Ship Qty ${quantity}). This row was excluded; other rows can still be committed.`);
     if (preview.excludedSamples.filter(sample => sample.reason === reason).length < 15) preview.excludedSamples.push({
       row: i + 2, accountCode: code, accountName: String(row["Reseller Name"] ?? ""), sku,
       invoice: String(row["Invoice No"] ?? ""), quantity: Number.isFinite(quantity) ? quantity : 0, serialCount: serials.length, reason,
     });
   });
-  return { preview, include, errors };
+  return { preview, include, errors, warnings };
 }

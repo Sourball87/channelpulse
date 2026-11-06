@@ -5,6 +5,7 @@
  * ChannelPulse - Reseller SOH & Sell-Through Monitoring API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProntoCreditResolution } from './prontoCreditResolution';
 import type { ScanbackImportDateFormat } from './scanbackImportDateFormat';
 import type { ScanbackImportIssue } from './scanbackImportIssue';
 import type { ScanbackImportKind } from './scanbackImportKind';
@@ -30,6 +31,7 @@ export interface ScanbackImport {
   accountId: number | null;
   prontoAccounts?: ScanbackImportProntoAccounts;
   pronto?: ScanbackProntoPreview;
+  prontoCreditResolutions?: ProntoCreditResolution[];
   rows: ScanbackImportRow[];
   errors: ScanbackImportIssue[];
   warnings: string[];

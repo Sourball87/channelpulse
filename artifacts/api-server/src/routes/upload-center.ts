@@ -7,10 +7,10 @@ import {
   parseFile, hashBuffer, detectWeekFromFilename, detectResellerFromFilename,
   isValidWeekIso, dateStringToWeekIso, applyMappingsToRows, type MappingField,
 } from "../lib/parser";
-import { parseSheets, suggestMapping, type Sheets } from "../lib/scanback-import";
+import { parseDate, parseSheets, suggestMapping, type Sheets } from "../lib/scanback-import";
 import { serialKey } from "../lib/scanback-engine";
 import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
-import { isPronto } from "../lib/scanback-pronto";
+import { isPronto, pendingProntoCredits } from "../lib/scanback-pronto";
 import { transaction, catalog, rebuildImport, requireThat, ScanbackError, type Client } from "../lib/scanback-store";
 import { detectCenterKind, readCenterWorkbook, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
 import { aiAssistEnabled, suggestFileType, suggestRecognition } from "../lib/upload-ai";
@@ -205,6 +205,20 @@ async function workspace(c: Client) {
   const evidence = oldScan.map(x => x.payload as ScanbackImport).filter(x => x.kind === "evidence" && x.state === "committed");
   const sales = reportedSales(oldScan.map(x => x.payload as ScanbackImport));
   for (const e of entries) await hydrate(c, e, evidence, sales);
+  const prontoSources = await c.query(`SELECT id,payload,raw_sheets FROM scanback_imports
+    WHERE payload->>'kind'='evidence' AND payload->>'state'='committed' AND payload ? 'pronto'`);
+  const unmatchedCredits = pendingProntoCredits(prontoSources.rows.map(source => {
+    const imp = source.payload as ScanbackImport;
+    return {
+      id: imp.id, createdAt: imp.createdAt, committedAt: imp.committedAt,
+      prontoAccounts: imp.prontoAccounts, prontoCreditResolutions: imp.prontoCreditResolutions,
+      rows: ((source.raw_sheets as Sheets)[imp.sheet] ?? []),
+    };
+  })).map(credit => ({
+    id: credit.id, importId: credit.importId, sourceRow: credit.sourceRow,
+    accountId: credit.accountId, accountCode: credit.accountCode, sku: credit.sku,
+    invoice: credit.invoice, date: parseDate(credit.date, "dmy") || credit.date, quantity: credit.quantity,
+  }));
   const prices = (await c.query(`SELECT sku,description,rrp_inc_cents AS "rrpIncCents",dd_cost_ex_cents AS "ddCostExCents",
     t1_buy_ex_cents AS "t1BuyExCents",updated_at AS "updatedAt" FROM price_list ORDER BY sku`)).rows;
   const latestProgram = entries.filter(e => e.kind === "program" && e.state === "committed")
@@ -214,7 +228,7 @@ async function workspace(c: Client) {
     const raw = (await c.query("SELECT raw_sheets FROM center_uploads WHERE id=$1", [latestProgram.id])).rows[0].raw_sheets as Sheets;
     programRows = parseReference("program", Object.values(raw)[0], latestProgram.mapping).rows;
   }
-  return { uploads: entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), prices, programRows };
+  return { uploads: entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), prices, programRows, unmatchedCredits };
 }
 router.get("/upload-center", wrap(c => workspace(c)));
 router.post("/upload-center/files", intake.array("files"), async (req, res) => {

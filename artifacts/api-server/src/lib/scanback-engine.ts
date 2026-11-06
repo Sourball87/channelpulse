@@ -34,6 +34,7 @@ export interface VerificationContext {
   reportedSales?: ReportedSale[];
   accounts?: { id: number; code: string }[];
   unmatchedCreditKeys?: Set<string>;
+  unmatchedProntoCredits?: { accountSkuKey: string; invoice: string; date: string }[];
 }
 
 export function ownerFor(events: EvidenceRow[]) {
@@ -131,9 +132,14 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     if (seen.has(r.serial)) { o.trackingColor = "red"; return reject("Duplicate serial in this claim file"); }
     seen.add(r.serial);
     const skuKey = (r.sku || inv?.sku || "").trim().toUpperCase();
-    if (ctx.unmatchedCreditKeys?.has(`${s.accountId}|${skuKey}`)) {
+    const unmatchedCredit = ctx.unmatchedProntoCredits?.find(credit =>
+      credit.accountSkuKey === `${s.accountId}|${skuKey}`);
+    if (unmatchedCredit || ctx.unmatchedCreditKeys?.has(`${s.accountId}|${skuKey}`)) {
       o.trackingColor = "amber";
-      return reject(`Review — unmatched Pronto credit for ${skuKey}; waiting for a later credit report with its serial.`, true);
+      const creditDetails = unmatchedCredit
+        ? `invoice ${unmatchedCredit.invoice || "(no invoice)"} dated ${unmatchedCredit.date || "(date unavailable)"}`
+        : "invoice and date unavailable";
+      return reject(`Review — unmatched Pronto credit for ${skuKey} (${creditDetails}); resolve it in Upload Center.`, true);
     }
     if (ctx.restrictedSerials?.has(r.serial))
       return reject("Serial also appears in excluded Pronto account/SKU rows — review source ownership and returns before approval", true);

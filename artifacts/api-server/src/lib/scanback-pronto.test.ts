@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import * as XLSX from "xlsx";
 import type { ScanbackImport } from "@workspace/api-zod";
 import { parseSheets, mapImport, suggestMapping, type Sheets } from "./scanback-import";
-import { isPronto, pendingProntoCreditKeys, prontoMapping, unmatchedCreditKey, unmatchedCreditReason } from "./scanback-pronto";
+import { isPronto, parseProntoSerials, pendingProntoCredits, prontoMapping, unmatchedCreditKey, unmatchedCreditReason } from "./scanback-pronto";
 import { verifyClaim } from "./scanback-engine";
 
 const accounts = [{ id: 1, code: "CA", name: "Computer Alliance" }, { id: 2, code: "umart", name: "Umart" }, { id: 3, code: "other", name: "Not in the existing nine" }];
 const invoice = (extra: Record<string, unknown> = {}) => ({
   "Invoice No": "TEST-INVOICE", "Invoice Date": "2026-09-01", "Account Code": "123",
   "Reseller Name": "COMPUTER ALLIANCE PTY LTD", "Stock Code": "SKU", "Ship Qty": 2,
-  "Serial Number": "SN001|SN002", "Item Price": 100, "Line Price Ex": 200, ...extra,
+  "Serial Number": "SN0001|SN0002", "Item Price": 100, "Line Price Ex": 200, ...extra,
 });
 const base: ScanbackImport = {
   id: "test", kind: "evidence", name: "test.xlsx", state: "preview", createdAt: "", sheets: ["Sheet1"],
@@ -33,11 +33,35 @@ describe("native Pronto POS evidence", () => {
     expect(result.errors.some(e => e.message.includes("Map at least one"))).toBe(true);
   });
   it("expands pipe-separated serial lists into signed unit events at the invoiced unit price", () => {
-    const r = map([invoice(), invoice({ "Invoice No": "CREDIT", "Serial Number": "SN001", "Ship Qty": -1, "Line Price Ex": -100, "Invoice Date": "2026-09-02" })]);
+    const r = map([invoice(), invoice({ "Invoice No": "CREDIT", "Serial Number": "SN0001", "Ship Qty": -1, "Line Price Ex": -100, "Invoice Date": "2026-09-02" })]);
     expect(r.errors).toEqual([]);
     expect(r.rows.map(row => [row.serial, row.quantity, row.unitPriceCents, row.sourceRow])).toEqual([
-      ["SN001", 1, 10000, 2], ["SN002", 1, 10000, 2], ["SN001", -1, 10000, 3],
+      ["SN0001", 1, 10000, 2], ["SN0002", 1, 10000, 2], ["SN0001", -1, 10000, 3],
     ]);
+  });
+  it("drops Pronto placeholders, lists them in warnings and retains real serials", () => {
+    const row = invoice({
+      "Invoice No": "7539088AC", "Ship Qty": 2, "Line Price Ex": 200,
+      "Serial Number": "-+08|000000000000|ABCDEF|12345678|S7MLNS0YC02190|ABCDEF12",
+    });
+    const parsed = parseProntoSerials(row["Serial Number"]);
+    expect(parsed.serials).toEqual(["S7MLNS0YC02190", "ABCDEF12"]);
+    expect(parsed.placeholders).toEqual(["-+08", "000000000000", "ABCDEF", "12345678"]);
+    const result = map([row]);
+    expect(result.errors).toEqual([]);
+    expect(result.rows.map(record => record.serial)).toEqual(["S7MLNS0YC02190", "ABCDEF12"]);
+    expect(result.warnings.some(w => w.includes("-+08") && w.includes("000000000000"))).toBe(true);
+  });
+  it("excludes a serial-count mismatch row without blocking other Pronto rows", () => {
+    const good = invoice({ "Invoice No": "GOOD", "Serial Number": "GOOD1234|GOOD5678" });
+    const mismatch = invoice({
+      "Invoice No": "BAD", "Ship Qty": 2, "Line Price Ex": 200, "Serial Number": "ONLY1234",
+    });
+    const result = map([good, mismatch]);
+    expect(result.errors).toEqual([]);
+    expect(result.rows.map(record => record.serial)).toEqual(["GOOD1234", "GOOD5678"]);
+    expect(result.pronto?.excludedCounts["Serial count does not match Ship Qty"]).toBe(1);
+    expect(result.warnings.some(w => w.includes("Row 3") && w.includes("excluded"))).toBe(true);
   });
   it("retains uncatalogued SKUs as evidence while excluding unmapped accounts and nonserial lines", () => {
     const r = map([invoice(), invoice({ "Account Code": "999", "Reseller Name": "Outside scope" }),
@@ -55,27 +79,36 @@ describe("native Pronto POS evidence", () => {
     const result = map([invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "" })]);
     expect(result.errors).toEqual([]);
     expect(result.rows).toEqual([]);
-    expect(result.warnings.some(w => w.includes("1 selected Pronto credit") && w.includes("require review"))).toBe(true);
+    expect(result.warnings.some(w => w.includes("1 selected Pronto credit") && w.includes("until resolved"))).toBe(true);
     expect(result.pronto?.excludedCounts[unmatchedCreditReason]).toBe(1);
     expect(result.pronto?.excludedSamples[0]).toMatchObject({
       row: 2, sku: "SKU", quantity: -1, serialCount: 0, reason: unmatchedCreditReason,
     });
     expect(map([invoice({ "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "", "Account Code": "999" })]).errors.some(e => e.message.includes("Credit"))).toBe(false);
   });
-  it("keeps missing-serial credits active until a later matching Pronto credit includes its serial", () => {
+  it("keeps unmatched credits visible until a later matching credit or an audited resolution", () => {
     const missing = invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "" });
-    const resolved = invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "RETURNED-SERIAL" });
+    const resolved = invoice({ "Invoice No": "CREDIT-1", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "RETURNED1" });
     const original = {
       id: "old", committedAt: "2026-09-01T00:00:00Z", prontoAccounts: { "123": 1 }, rows: [missing],
     };
-    expect(pendingProntoCreditKeys([original])).toEqual(new Set([unmatchedCreditKey(1, "SKU")]));
-    expect(pendingProntoCreditKeys([
+    expect(pendingProntoCredits([original])).toMatchObject([{
+      id: "old:2", accountSkuKey: unmatchedCreditKey(1, "SKU"), invoice: "CREDIT-1", date: "2026-09-01",
+    }]);
+    expect(pendingProntoCredits([
       original, { id: "later", committedAt: "2026-09-02T00:00:00Z", prontoAccounts: { "123": 1 }, rows: [resolved] },
-    ])).toEqual(new Set());
-    expect(pendingProntoCreditKeys([
+    ])).toEqual([]);
+    expect(pendingProntoCredits([
       original, { id: "wrong-ref", committedAt: "2026-09-02T00:00:00Z", prontoAccounts: { "123": 1 },
-        rows: [invoice({ "Invoice No": "OTHER-CREDIT", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "RETURNED-SERIAL" })] },
-    ])).toEqual(new Set([unmatchedCreditKey(1, "SKU")]));
+        rows: [invoice({ "Invoice No": "OTHER-CREDIT", "Ship Qty": -1, "Line Price Ex": -100, "Serial Number": "RETURNED1" })] },
+    ])).toHaveLength(1);
+    expect(pendingProntoCredits([{
+      ...original,
+      prontoCreditResolutions: [{
+        sourceRow: 2, mode: "reviewed", serials: [], note: "Checked return record.",
+        resolvedAt: "2026-09-03T00:00:00.000Z", resolvedBy: "admin",
+      }],
+    }])).toEqual([]);
   });
   it("does not allow changing Item Price to cost or replacing the multi-account map with a fallback", () => {
     expect(() => mapImport(base, { Sheet1: [invoice()] }, { ...base, mapping: { ...prontoMapping, unitPrice: "Line Price Ex" } }, accounts, new Set(["SKU"]))).toThrow("fixed invoice/price");
@@ -83,7 +116,9 @@ describe("native Pronto POS evidence", () => {
   });
   it("validates exact extended prices, quantity/serial counts and foreign currency", () => {
     expect(map([invoice({ "Line Price Ex": 199.99 })]).errors.some(e => e.message.includes("exact cents"))).toBe(true);
-    expect(map([invoice({ "Ship Qty": 3, "Line Price Ex": 300 })]).errors.some(e => e.message.includes("match the number"))).toBe(true);
+    const mismatch = map([invoice({ "Ship Qty": 3, "Line Price Ex": 300 })]);
+    expect(mismatch.pronto?.excludedCounts["Serial count does not match Ship Qty"]).toBe(1);
+    expect(mismatch.warnings.some(w => w.includes("serial count does not match Ship Qty".toLowerCase()))).toBe(true);
     expect(map([invoice({ Currency: "USD" })]).errors.some(e => e.message.includes("Foreign-currency"))).toBe(true);
     expect(map([invoice({ Currency: "AUD" })]).errors).toEqual([]);
     expect(map([invoice({ "Item Price": 0, "Line Price Ex": 0 })]).errors).toEqual([]);
@@ -107,7 +142,7 @@ describe("native Pronto POS evidence", () => {
       program: { id: "p", name: "p", start: "2026-09-01", end: "2026-09-30", version: 1, archived: false, notes: "", createdAt: "",
         customerIds: [1], lines: [{ partId: 1, gtmBuyCents: 7000, caps: [] }] },
       settings: { programId: "p", accountId: 1, claimImportId: "c", basis: "invoice", from: "2026-09-01", to: "2026-09-30" },
-      claims: [evidence[0]], evidence, approved: [], parts: [{ id: 1, code: "SKU" }], restrictedSerials: new Set(["SN001"]),
+      claims: [evidence[0]], evidence, approved: [], parts: [{ id: 1, code: "SKU" }], restrictedSerials: new Set(["SN0001"]),
     });
     expect(result[0]).toMatchObject({ status: "review", include: false });
     expect(result[0].reason).toContain("excluded Pronto");
@@ -122,7 +157,8 @@ describe.skipIf(!process.env.PRONTO_SAMPLE)("local uploaded Pronto sample — re
     const skuCodes = new Set(parts.map(p => p.part_no.toUpperCase()));
     const opts = { ...base, mapping: suggestMapping(Object.keys(raw.Sheet1[0])) };
     const initial = mapImport(base, raw, opts, cat, skuCodes);
-    expect(initial.pronto).toMatchObject({ sourceRows: 2160, sourceSerialEvents: 90208, includedSourceRows: 0 });
+    expect(initial.pronto).toMatchObject({ sourceRows: 2160, includedSourceRows: 0 });
+    expect(initial.pronto!.sourceSerialEvents).toBeLessThan(90208);
     const prontoAccounts = Object.fromEntries(initial.pronto!.accounts.filter(a => a.suggestedAccountId != null).map(a => [a.code, a.suggestedAccountId]));
     const scoped = mapImport(base, raw, { ...opts, prontoAccounts }, cat, skuCodes);
     console.log("Read-only Pronto dry-run counts:", JSON.stringify({
@@ -133,10 +169,8 @@ describe.skipIf(!process.env.PRONTO_SAMPLE)("local uploaded Pronto sample — re
     expect(scoped.recordCount).toBeGreaterThan(0);
     expect(scoped.rows.every(row => cat.some(a => a.id === row.accountId))).toBe(true);
     expect(Object.keys(raw.Sheet1[0])).not.toContain("Reseller Address");
-    expect(scoped.errors).toHaveLength(1);
-    expect(scoped.errors).toEqual(expect.arrayContaining([
-      { row: 131, message: "Serial has unsupported characters or length." },
-    ]));
+    expect(scoped.errors).toHaveLength(0);
+    expect(scoped.warnings.some(w => w.includes("Row 131") && w.includes("ignored placeholder serial token"))).toBe(true);
     expect(scoped.pronto?.excludedCounts[unmatchedCreditReason]).toBe(3);
   }, 30_000);
 });

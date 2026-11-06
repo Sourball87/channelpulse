@@ -258,6 +258,26 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ScanbackImport" }
+  /scanback/pronto-credits/{importId}/{sourceRow}/resolve:
+    post:
+      operationId: resolveProntoCredit
+      tags: [scanback]
+      parameters:
+        - { name: importId, in: path, required: true, schema: { type: string } }
+        - { name: sourceRow, in: path, required: true, schema: { type: integer, minimum: 2 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProntoCreditResolutionInput" }
+      responses:
+        "200":
+          description: Credit resolution appended to the audit history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProntoCreditResolution" }
+        "400": { description: Invalid resolution or source credit }
+        "409": { description: Credit is already resolved }
   /scanback/verify:
     post:
       operationId: verifyScanbackClaim
@@ -1102,6 +1122,9 @@ components:
           type: object
           additionalProperties: { type: [integer, "null"] }
         pronto: { $ref: "#/components/schemas/ScanbackProntoPreview" }
+        prontoCreditResolutions:
+          type: array
+          items: { $ref: "#/components/schemas/ProntoCreditResolution" }
         rows: { type: array, items: { $ref: "#/components/schemas/ScanbackImportRow" } }
         errors: { type: array, items: { $ref: "#/components/schemas/ScanbackImportIssue" } }
         warnings: { type: array, items: { type: string } }
@@ -1883,9 +1906,10 @@ components:
         preview: { type: array, items: { type: object, additionalProperties: true } }
     UploadCenterWorkspace:
       type: object
-      required: [uploads, prices, programRows]
+      required: [uploads, prices, programRows, unmatchedCredits]
       properties:
         uploads: { type: array, items: { $ref: "#/components/schemas/CenterUpload" } }
+        unmatchedCredits: { type: array, items: { $ref: "#/components/schemas/UnmatchedProntoCredit" } }
         prices:
           type: array
           items:
@@ -1899,6 +1923,36 @@ components:
               t1BuyExCents: { type: integer }
               updatedAt: { type: string }
         programRows: { type: array, items: { type: object, additionalProperties: true } }
+    UnmatchedProntoCredit:
+      type: object
+      required: [id, importId, sourceRow, accountId, accountCode, sku, invoice, date, quantity]
+      properties:
+        id: { type: string }
+        importId: { type: string }
+        sourceRow: { type: integer }
+        accountId: { type: integer }
+        accountCode: { type: string }
+        sku: { type: string }
+        invoice: { type: string }
+        date: { type: string }
+        quantity: { type: integer }
+    ProntoCreditResolutionInput:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [serials, reviewed] }
+        serials: { type: array, items: { type: string } }
+        note: { type: string }
+    ProntoCreditResolution:
+      type: object
+      required: [sourceRow, mode, serials, note, resolvedAt, resolvedBy]
+      properties:
+        sourceRow: { type: integer }
+        mode: { type: string, enum: [serials, reviewed] }
+        serials: { type: array, items: { type: string } }
+        note: { type: string }
+        resolvedAt: { type: string }
+        resolvedBy: { type: string }
 
     Part:
       type: object

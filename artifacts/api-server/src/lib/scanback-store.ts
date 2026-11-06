@@ -4,9 +4,9 @@ import type {
   ScanbackProgram, ScanbackImport, ScanbackDraft, ScanbackVerificationInput,
   ScanbackResult, ScanbackBatch,
 } from "@workspace/api-zod";
-import { verifyClaim, evidenceKey, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
-import { mapImport, type Sheets, type Account } from "./scanback-import";
-import { pendingProntoCreditKeys, splitSerials, type ProntoCreditReport } from "./scanback-pronto";
+import { verifyClaim, evidenceKey, cents, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
+import { mapImport, parseDate, type Sheets, type Account } from "./scanback-import";
+import { pendingProntoCredits, splitSerials, type ProntoCreditReport } from "./scanback-pronto";
 import { maskCustomerText } from "./customer-display";
 import { loadReportedSales, firstReportedSales, earlierReportReason, isSameCustomerReportRepeat } from "./serial-tracking";
 
@@ -158,7 +158,7 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
       const imp = source.payload as ScanbackImport;
       const rows = (source.raw_sheets as Sheets)[imp.sheet] ?? [];
       prontoReports.push({ id: imp.id, createdAt: imp.createdAt, committedAt: imp.committedAt,
-        prontoAccounts: imp.prontoAccounts, rows });
+        prontoAccounts: imp.prontoAccounts, prontoCreditResolutions: imp.prontoCreditResolutions, rows });
       for (const row of rows) {
         const code = String(row["Account Code"] ?? "").trim();
         if (!imp.prontoAccounts?.[code])
@@ -166,11 +166,37 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
       }
     }
   }
-  const unmatchedCreditKeys = pendingProntoCreditKeys(prontoReports);
+  const unmatchedProntoCredits = pendingProntoCredits(prontoReports).map(credit => ({
+    ...credit, date: parseDate(credit.date, "dmy") || credit.date,
+  }));
+  for (const report of prontoReports) {
+    const imp = imports.find(item => item.id === report.id)!;
+    for (const resolution of imp.prontoCreditResolutions ?? []) {
+      if (resolution.mode !== "serials") continue;
+      const row = report.rows[resolution.sourceRow - 2];
+      if (!row) continue;
+      const accountCode = String(row["Account Code"] ?? "").trim();
+      const accountId = imp.prontoAccounts?.[accountCode];
+      if (accountId == null) continue;
+      const sku = String(row["Stock Code"] ?? "").trim().toUpperCase();
+      const date = parseDate(row["Invoice Date"], "dmy");
+      const invoice = String(row["Invoice No"] ?? "").trim();
+      const price = cents(row["Item Price"]);
+      for (const serial of resolution.serials) evidence.push({
+        rowIndex: resolution.sourceRow - 2, serial, sku, date, accountId, quantity: -1,
+        invoice, unitPriceCents: price == null ? null : Math.abs(price), costCents: null,
+        amountCents: null, program: "", reference: "", source: `Resolved Pronto credit ${invoice} [${imp.id}], row ${resolution.sourceRow}`,
+      });
+    }
+  }
   const reportedSales = await loadReportedSales(c);
   const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts,
-    restrictedSerials, unmatchedCreditKeys, reportedSales, accounts: cat.accounts });
-  const token = hash({ p, settings, imports: imports.map(i => i.id).sort(), approved, results });
+    restrictedSerials, unmatchedProntoCredits, reportedSales, accounts: cat.accounts });
+  const token = hash({
+    p, settings,
+    imports: imports.map(i => ({ id: i.id, prontoCreditResolutions: i.prontoCreditResolutions ?? [] })).sort((a, b) => a.id.localeCompare(b.id)),
+    approved, results,
+  });
   return { results, token, p, accounts: cat.accounts, parts: cat.parts };
 }
 export function total(results: ScanbackResult[]) {

@@ -4,10 +4,12 @@ import * as XLSX from "xlsx";
 import { randomUUID, createHash } from "node:crypto";
 import {
   SaveScanbackProgramBody, RemapScanbackImportBody, VerifyScanbackClaimBody, ApproveScanbackClaimBody,
+  ResolveProntoCreditBody,
   type ScanbackProgram, type ScanbackImport, type ScanbackDraft, type ScanbackBatch, type ScanbackResult,
 } from "@workspace/api-zod";
 import { parseSheets, suggestMapping, detectImportKind } from "../lib/scanback-import";
-import { validDate } from "../lib/scanback-engine";
+import { serialKey, validDate } from "../lib/scanback-engine";
+import { splitSerials } from "../lib/scanback-pronto";
 import { dateStringToWeekIso, isValidWeekIso } from "../lib/parser";
 import { validateProgramReferences } from "../lib/program-table";
 import {
@@ -165,6 +167,44 @@ router.post("/scanback/imports/:id/supersede", route(async (c, req) => {
   value.state = "superseded";
   await put(c, "scanback_imports", value.id, value);
   return publicImport(value, true);
+}));
+router.post("/scanback/pronto-credits/:importId/:sourceRow/resolve", route(async (c, req) => {
+  const importId = String(req.params.importId);
+  const sourceRow = Number(req.params.sourceRow);
+  requireThat(Number.isSafeInteger(sourceRow) && sourceRow >= 2, "Choose a valid Pronto credit row.");
+  const input = parse(ResolveProntoCreditBody, req.body);
+  const value = await get<ScanbackImport>(c, "scanback_imports", importId);
+  requireThat(value.kind === "evidence" && value.state === "committed" && !!value.pronto,
+    "Only a committed Pronto evidence credit can be resolved.");
+  const stored = await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1 FOR UPDATE", [value.id]);
+  const row = (stored.rows[0].raw_sheets as Record<string, Record<string, unknown>[]>)?.[value.sheet]?.[sourceRow - 2];
+  requireThat(row, "Pronto credit source row was not found.", 404);
+  const accountCode = String(row["Account Code"] ?? "").trim();
+  const quantity = Number(row["Ship Qty"]);
+  const accountId = value.prontoAccounts?.[accountCode];
+  requireThat(accountId != null && Number.isSafeInteger(quantity) && quantity < 0 &&
+    splitSerials(row["Serial Number"]).length === 0,
+  "This row is not an unmatched selected Pronto credit.");
+  const resolutions = value.prontoCreditResolutions ?? [];
+  requireThat(!resolutions.some(resolution => resolution.sourceRow === sourceRow),
+    "This Pronto credit has already been resolved.", 409);
+  let serials: string[] = [];
+  const note = String(input.note ?? "").trim();
+  if (input.mode === "serials") {
+    serials = [...new Set((input.serials ?? []).map(serialKey))];
+    requireThat(serials.length === Math.abs(quantity),
+      `Enter exactly ${Math.abs(quantity)} returned serial(s) for this credit.`);
+    requireThat(serials.every(serial => /^[A-Z0-9._/-]{6,100}$/.test(serial) && /[A-Z]/.test(serial) && /[0-9]/.test(serial)),
+      "Returned serials must be 6–100 characters and contain both letters and numbers.");
+  } else {
+    requireThat(note.length > 0 && note.length <= 1000, "Add a note of up to 1,000 characters before marking this credit reviewed.");
+  }
+  const resolution = {
+    sourceRow, mode: input.mode, serials, note, resolvedAt: new Date().toISOString(), resolvedBy: "admin",
+  };
+  value.prontoCreditResolutions = [...resolutions, resolution];
+  await put(c, "scanback_imports", value.id, value);
+  return resolution;
 }));
 router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
   const base = await get<ScanbackImport>(c, "scanback_imports", idParam(req));

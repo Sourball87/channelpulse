@@ -34,7 +34,7 @@ export function ProntoAccounts({ preview, values, onChange, resellers, disabled 
           {preview.sourceRows.toLocaleString()} invoice/credit rows contain {preview.sourceSerialEvents.toLocaleString()} serial events.
           {" "}Item Price is the invoiced unit price ex GST; Item Cost, Line Cost Ex and RRP are not used.
         </p>
-         <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue. Credits without serials are listed as unmatched and put claims for that reseller/SKU into review until a later file supplies the serial.</p>
+          <p className="text-xs text-slate-600">Map Pronto codes below. Unselected accounts stay excluded. Suggestions require your review; uncatalogued SKUs are retained as evidence but never added to the product catalogue. Credits without serials appear in Upload Center, where you can enter returned serials or mark the credit reviewed with a note.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input className="h-8 max-w-xs" placeholder="Find Pronto code or reseller…" aria-label="Find Pronto account"
