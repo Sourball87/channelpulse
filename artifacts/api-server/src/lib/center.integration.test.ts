@@ -239,4 +239,127 @@ describe.skipIf(!base)("Upload Center development API", () => {
       await pool.query("DELETE FROM parts WHERE part_no=$1 AND NOT EXISTS (SELECT 1 FROM inventory_snapshots WHERE part_id=parts.id)", [`${prefix}-SKU`]);
     }
   }, 60000);
+
+  it("corrects a committed SOH week only when the destination has no matching snapshots", async () => {
+    if (base !== "http://localhost:80/api") throw new Error("Use the local development proxy only.");
+    const prefix = `WEEKFIX${Date.now()}`;
+    const sku = `${prefix}-SKU`;
+    const fingerprint = computeHeaderFingerprint(["SKU", "SOH", "Sold Last 7 Days"]);
+    let cookie = "";
+    let accountId: number | null = null;
+    let centerId: string | null = null;
+    let sourceId: number | null = null;
+    let conflictCenterId: string | null = null;
+    let conflictSourceId: number | null = null;
+    let originalPatterns: string[] = [];
+    let fingerprintWasPresent = false;
+    let fingerprintChecked = false;
+    try {
+      const login = await fetch(base + "/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: process.env.CHANNELPULSE_ADMIN_PASSWORD }),
+      });
+      expect(login.status).toBe(200);
+      cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
+      const accounts = await fetch(base + "/resellers", { headers: { Cookie: cookie } })
+        .then(r => r.json() as Promise<{ id: number; active: boolean }[]>);
+      const account = accounts.find(r => r.active);
+      if (!account) throw new Error("No active reseller is available for the integration test.");
+      accountId = account.id;
+      const original = (await pool.query("SELECT filename_patterns FROM resellers WHERE id=$1", [accountId])).rows[0];
+      originalPatterns = [...(original.filename_patterns ?? [])];
+      fingerprintWasPresent = ((await pool.query(
+        "SELECT 1 FROM reseller_format_associations WHERE reseller_id=$1 AND fingerprint=$2",
+        [accountId, fingerprint],
+      )).rowCount ?? 0) > 0;
+      fingerprintChecked = true;
+
+      const form = new FormData();
+      form.append("files", new Blob([`SKU,SOH,Sold Last 7 Days\n${sku},12,3\n`]), `${prefix}.csv`);
+      form.append("accountId", String(accountId));
+      form.append("weekIso", "2026-W40");
+      form.append("ai_assist", "false");
+      const stagedResponse = await fetch(base + "/upload-center/files", {
+        method: "POST", headers: { Cookie: cookie }, body: form,
+      });
+      expect(stagedResponse.status).toBe(200);
+      const staged = await stagedResponse.json() as { uploads: CenterUpload[]; errors: unknown[] };
+      expect(staged.errors).toEqual([]);
+      const upload = staged.uploads[0];
+      centerId = upload.id;
+      sourceId = Number(upload.sourceId);
+
+      const commit = await fetch(base + `/upload-center/${encodeURIComponent(upload.id)}/commit`, {
+        method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reseller_id: accountId,
+          week_iso: "2026-W40",
+          mappings: upload.sohReview?.mappings,
+        }),
+      });
+      const commitBody = await commit.json() as { error?: string };
+      expect(commit.status, commitBody.error).toBe(200);
+
+      const conflictForm = new FormData();
+      conflictForm.append("files", new Blob([`SKU,SOH,Sold Last 7 Days\n${sku},15,4\n`]), `${prefix}-conflict.csv`);
+      conflictForm.append("accountId", String(accountId));
+      conflictForm.append("weekIso", "2026-W41");
+      conflictForm.append("ai_assist", "false");
+      const conflictStageResponse = await fetch(base + "/upload-center/files", {
+        method: "POST", headers: { Cookie: cookie }, body: conflictForm,
+      });
+      expect(conflictStageResponse.status).toBe(200);
+      const conflictStaged = await conflictStageResponse.json() as { uploads: CenterUpload[]; errors: unknown[] };
+      expect(conflictStaged.errors).toEqual([]);
+      const conflictUpload = conflictStaged.uploads[0];
+      conflictCenterId = conflictUpload.id;
+      conflictSourceId = Number(conflictUpload.sourceId);
+      const conflictCommit = await fetch(base + `/upload-center/${encodeURIComponent(conflictUpload.id)}/commit`, {
+        method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reseller_id: accountId,
+          week_iso: "2026-W41",
+          mappings: conflictUpload.sohReview?.mappings,
+        }),
+      });
+      expect(conflictCommit.status).toBe(200);
+
+      const blocked = await fetch(base + `/upload-center/${encodeURIComponent(upload.id)}`, {
+        method: "PATCH", headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ weekIso: "2026-W41" }),
+      });
+      expect(blocked.status).toBe(409);
+
+      const correction = await fetch(base + `/upload-center/${encodeURIComponent(upload.id)}`, {
+        method: "PATCH", headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ weekIso: "2026-W42" }),
+      });
+      expect(correction.status).toBe(200);
+      expect((await correction.json() as CenterUpload).weekIso).toBe("2026-W42");
+      const db = await pool.query(
+        "SELECT u.week_iso AS upload_week,count(*) FILTER (WHERE s.week_iso='2026-W42')::int AS corrected_rows,recognition->'weekCorrections' AS corrections FROM uploads u JOIN inventory_snapshots s ON s.upload_id=u.id WHERE u.id=$1 GROUP BY u.id",
+        [sourceId],
+      );
+      expect(db.rows[0]).toMatchObject({ upload_week: "2026-W42", corrected_rows: 1 });
+      expect(db.rows[0].corrections).toHaveLength(1);
+      expect(db.rows[0].corrections[0]).toMatchObject({ from: "2026-W40", to: "2026-W42", snapshotRows: 1 });
+    } finally {
+      if (centerId) await pool.query("DELETE FROM center_uploads WHERE id=$1", [centerId]);
+      if (conflictCenterId) await pool.query("DELETE FROM center_uploads WHERE id=$1", [conflictCenterId]);
+      if (sourceId != null) {
+        await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=$1", [sourceId]);
+        await pool.query("DELETE FROM uploads WHERE id=$1", [sourceId]);
+      }
+      if (conflictSourceId != null) {
+        await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=$1", [conflictSourceId]);
+        await pool.query("DELETE FROM uploads WHERE id=$1", [conflictSourceId]);
+      }
+      if (accountId != null) {
+        await pool.query("UPDATE resellers SET filename_patterns=$2::text[] WHERE id=$1", [accountId, originalPatterns]);
+        if (fingerprintChecked && !fingerprintWasPresent)
+          await pool.query("DELETE FROM reseller_format_associations WHERE reseller_id=$1 AND fingerprint=$2", [accountId, fingerprint]);
+      }
+      await pool.query("DELETE FROM parts WHERE part_no=$1 AND NOT EXISTS (SELECT 1 FROM inventory_snapshots WHERE part_id=parts.id)", [sku]);
+    }
+  }, 60000);
 });

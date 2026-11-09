@@ -405,6 +405,60 @@ async function removeSource(c: Client, e: CenterUpload) {
     await c.query("DELETE FROM price_list WHERE upload_id=$1", [e.id]);
   }
 }
+async function correctCommittedSohWeek(c: Client, req: Request, entry: CenterUpload, raw: Sheets, weekIso: string) {
+  requireThat(entry.kind === "soh" && entry.state === "committed" && entry.sourceId,
+    "Only committed SOH uploads can use this correction path.", 409);
+  const sourceId = Number(entry.sourceId);
+  const source = (await c.query(
+    "SELECT id,reseller_id,week_iso,status,recognition FROM uploads WHERE id=$1 FOR UPDATE", [sourceId],
+  )).rows[0];
+  requireThat(source?.status === "committed" && source.week_iso, "The committed SOH source is unavailable.", 409);
+  const oldWeek = String(source.week_iso);
+  requireThat(oldWeek !== weekIso, "Choose a different completed week.", 400);
+  const resellerId = Number(source.reseller_id);
+  requireThat(Number.isSafeInteger(resellerId) && resellerId > 0, "The SOH source has no reseller.", 409);
+
+  await c.query("SELECT pg_advisory_xact_lock($1::int, hashtext($2))", [resellerId, weekIso]);
+  const counts = (await c.query(`SELECT count(*)::int AS total,
+      count(*) FILTER (WHERE week_iso IS DISTINCT FROM $2)::int AS mismatched
+    FROM inventory_snapshots WHERE upload_id=$1`, [sourceId, oldWeek])).rows[0];
+  const snapshotCount = Number(counts?.total ?? 0);
+  requireThat(snapshotCount > 0, "This committed SOH upload has no inventory snapshots to correct.", 409);
+  requireThat(Number(counts.mismatched) === 0, "Its snapshots do not all match the stored report week; no data was changed.", 409);
+
+  const collisions = Number((await c.query(`SELECT count(*)::int AS count
+    FROM inventory_snapshots target
+    JOIN inventory_snapshots source_rows ON source_rows.part_id=target.part_id
+      AND source_rows.reseller_id=target.reseller_id
+    WHERE source_rows.upload_id=$1 AND target.upload_id<>$1
+      AND target.reseller_id=$2 AND target.week_iso=$3`, [sourceId, resellerId, weekIso])).rows[0]?.count ?? 0);
+  requireThat(collisions === 0,
+    `Cannot move this report to ${weekIso}: ${collisions} matching SKU snapshots already exist for that week. No data was changed.`, 409);
+
+  const moved = await c.query("UPDATE inventory_snapshots SET week_iso=$2 WHERE upload_id=$1 AND week_iso=$3",
+    [sourceId, weekIso, oldWeek]);
+  requireThat(Number(moved.rowCount ?? 0) === snapshotCount,
+    "The snapshot set changed during correction; no data was changed.", 409);
+
+  const recognition = source.recognition && typeof source.recognition === "object"
+    ? source.recognition as Record<string, unknown> : {};
+  const history = Array.isArray(recognition.weekCorrections) ? recognition.weekCorrections : [];
+  recognition.weekSource = "manual";
+  recognition.confirmedWeek = weekIso;
+  recognition.weekCorrections = [...history, {
+    from: oldWeek, to: weekIso, correctedAt: new Date().toISOString(), snapshotRows: snapshotCount,
+  }];
+  const updated = await c.query(`UPDATE uploads SET week_iso=$2,recognition=$3::jsonb
+    WHERE id=$1 AND status='committed' AND week_iso=$4 RETURNING id`,
+    [sourceId, weekIso, JSON.stringify(recognition), oldWeek]);
+  requireThat(updated.rowCount, "The SOH source changed during correction; no data was changed.", 409);
+
+  entry.weekIso = weekIso;
+  entry.weekSource = "manual";
+  req.log.info({ sourceId, oldWeek, weekIso, snapshotRows: snapshotCount }, "Corrected committed SOH reporting week");
+  await save(c, entry, raw);
+  return hydrate(c, entry);
+}
 router.delete("/upload-center", wrap(async (c, req) => {
   const ids = req.body?.ids;
   requireThat(Array.isArray(ids) && ids.length > 0 && ids.length <= 5000 &&
@@ -429,7 +483,13 @@ router.patch("/upload-center/:id", wrap(async (c, req) => {
   const options = parsed.data!;
   await validateMeta(c, options);
   const { entry, raw } = await load(c, String(req.params.id));
-  requireThat(entry.state !== "committed", "Committed financial evidence and reports are immutable.", 409);
+  if (entry.state === "committed") {
+    const onlyWeekCorrection = entry.kind === "soh" && options.weekIso != null &&
+      Object.keys(options).every(field => field === "weekIso");
+    requireThat(onlyWeekCorrection,
+      "Committed financial evidence and reports are immutable except for a completed-week correction.", 409);
+    return correctCommittedSohWeek(c, req, entry, raw, options.weekIso!);
+  }
   const changedKind = options.kind !== undefined && options.kind !== entry.kind;
   // Same-kind metadata changes preserve financial column/account mappings.
   if (!changedKind && entry.sourceId && ["claim", "evidence", "history"].includes(entry.kind)) {

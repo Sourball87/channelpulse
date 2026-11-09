@@ -55,4 +55,4 @@ Never file a new upload in a week whose Sunday has not passed in Australia/Sydne
 
 **Why:** The user specified that “2026_WK_46…KS” uploaded Monday 9 November belongs to W45, while a WK42 file created Sunday 18 October remains W42; unfinished manual weeks must not be accepted.
 
-**How to apply:** Use Sydney-local calendar dates for completion checks, preserve adjustment warnings, validate on both client and server, and list existing anomalies for manual correction rather than silently rewriting them.
+**How to apply:** Use Sydney-local calendar dates for completion checks, preserve adjustment warnings, validate on both client and server, and list existing anomalies for manual correction rather than silently rewriting them. If the user authorizes a committed SOH week correction, move all linked snapshots atomically, reject destination-week SKU conflicts, and retain the old/new week and correction time.
