@@ -15,11 +15,17 @@ A serial can be paid only once across all promotions, not once per promotion.
 
 **How to apply:** Check the shared approved-claims history during verification and enforce the rule again when approving a batch. Never treat changing promotions as permission to pay the same serial again.
 
-Claim per serial equals the price charged to the reseller, excluding GST, minus GTM Buy Ex. It does not use the distributor's purchase cost.
+Claim per serial equals the Dicker Data/Pronto invoiced unit price to that reseller, excluding GST, minus GTM Buy Ex for that SKU on the matched promotion. STA, T1, price-list values, distributor cost, and SOH/ST values never enter the claim calculation.
 
-**Why:** The user explicitly selected the reseller invoiced price after the model's “Invoice Cost” label was identified as ambiguous.
+**Why:** The user confirmed this is the only claim method and explicitly excluded all reference prices, cost fields, and stock/sales reports.
 
-**How to apply:** Label the amount “Invoiced unit price (ex GST)”, distinguish it from purchase cost during import mapping, and calculate currency using exact decimal arithmetic or integer cents.
+**How to apply:** Match each serial to its active DD invoice event, use the customer-reported sold date to choose the promotion, and calculate with exact decimal arithmetic or integer cents.
+
+Customer serial reports drive claim drafts; customer SOH/ST reports feed Dashboard and Explorer only. Assign each serial to the unique active promotion for that customer and sold date, splitting reports across promotions. Never guess when there is no unique match.
+
+**Why:** The user specified separate report jobs and required automatic promotion selection from customer and sale date.
+
+**How to apply:** Generate per-customer/per-promotion drafts from committed serial reports. Leave unmatched or overlapping rows for explicit manual override; never make SOH/ST reports claim inputs.
 
 Verification fingerprints must canonicalize JSON object keys before hashing.
 

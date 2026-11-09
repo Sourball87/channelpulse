@@ -1,10 +1,11 @@
 import { pool, type PoolClient } from "@workspace/db";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   ScanbackProgram, ScanbackImport, ScanbackDraft, ScanbackVerificationInput,
   ScanbackResult, ScanbackBatch,
 } from "@workspace/api-zod";
 import { verifyClaim, evidenceKey, cents, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
+import { splitClaimRowsByPromotion } from "./scanback-auto-drafts";
 import { mapImport, parseDate, prontoRangeCovers, type Sheets, type Account } from "./scanback-import";
 import { indexProntoSource, pendingProntoCredits, prontoCreditIdentity, type ProntoCreditReport } from "./scanback-pronto";
 import { maskCustomerText } from "./customer-display";
@@ -140,10 +141,13 @@ export async function currentClaimReport(c: Client, report: ScanbackImport): Pro
     return { ...row, reuseReason };
   }) };
 }
-export async function calculateDraft(c: Client, settings: ScanbackVerificationInput) {
+export async function calculateDraft(c: Client, settings: ScanbackVerificationInput, scopeRowIndices?: number[]) {
   const p = await get<ScanbackProgram>(c, "scanback_programs", settings.programId);
   requireThat(!p.archived, "This promotion is archived.");
   requireThat(p.customerIds.includes(settings.accountId), "Choose an eligible Account Code.");
+  const canonicalSettings: ScanbackVerificationInput = {
+    ...settings, basis: "sell", from: p.start, to: p.end,
+  };
   const claim = await get<ScanbackImport>(c, "scanback_imports", settings.claimImportId);
   requireThat(claim.state === "committed" && claim.kind === "claim", "Choose a committed customer claim import.");
   type IndexedImport = ScanbackImport & {
@@ -225,10 +229,12 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
     }
   }
   const reportedSales = await loadReportedSales(c);
-  const results = verifyClaim({ program: p, settings, claims: claim.rows, evidence, approved, parts: cat.parts,
+  const scopedIndices = scopeRowIndices ? new Set(scopeRowIndices) : null;
+  const scopedClaims = scopedIndices ? claim.rows.filter(row => scopedIndices.has(row.rowIndex)) : claim.rows;
+  const results = verifyClaim({ program: p, settings: canonicalSettings, claims: scopedClaims, evidence, approved, parts: cat.parts,
     restrictedSerials, unmatchedProntoCredits, reportedSales, accounts: cat.accounts, ddRangeSkus });
   const token = hash({
-    p, settings,
+    p, settings: canonicalSettings, scopeRowIndices,
     imports: imports.map(i => ({ id: i.id, state: i.state, events: i.rows.map(evidenceKey) }))
       .concat(sourceRows.rows.map(source => {
         const imp = source.payload as IndexedImport;
@@ -236,7 +242,69 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
       })).sort((a, b) => a.id.localeCompare(b.id)),
     approved, results,
   });
-  return { results, token, p, accounts: cat.accounts, parts: cat.parts };
+  return { results, token, p, settings: canonicalSettings, accounts: cat.accounts, parts: cat.parts };
+}
+
+export async function generateAutomaticClaimDrafts(c: Client, report: ScanbackImport): Promise<ScanbackDraft[]> {
+  if (report.kind !== "claim" || report.state !== "committed") return [];
+  const programs = await all<ScanbackProgram>(c, "scanback_programs");
+  const { groups, unmatched } = splitClaimRowsByPromotion(report.rows, report.accountId, programs);
+
+  report.warnings = (report.warnings ?? []).filter(warning => !warning.startsWith("Automatic promotion matching:"));
+  if (unmatched.length) {
+    report.warnings.push(
+      `Automatic promotion matching: ${unmatched.length} row(s) could not be assigned to exactly one active customer promotion. Use Verify Claims override to review them.`,
+    );
+  }
+
+  const drafts: ScanbackDraft[] = [];
+  for (const group of groups) {
+    const settings: ScanbackVerificationInput = {
+      programId: group.program.id, accountId: group.accountId, claimImportId: report.id,
+      basis: "sell", from: group.program.start, to: group.program.end,
+      selectedRows: group.rowIndices,
+    };
+    const autoKey = `${report.id}|${group.program.id}|${group.accountId}`;
+    const existing = (await c.query(
+      "SELECT id,payload FROM scanback_drafts WHERE payload->>'autoKey'=$1 LIMIT 1", [autoKey],
+    )).rows[0];
+    if (existing && (await c.query("SELECT 1 FROM scanback_batches WHERE draft_id=$1", [existing.id])).rowCount) continue;
+
+    const previousSelection = (existing?.payload as ScanbackDraft | undefined)?.settings?.selectedRows;
+    const selectedRows = Array.isArray(previousSelection)
+      ? previousSelection.filter(index => group.rowIndices.includes(index))
+      : group.rowIndices;
+    const selectedCalculation = await calculateDraft(c, { ...settings, selectedRows }, group.rowIndices);
+    const id = existing?.id ?? randomUUID();
+    const draft: ScanbackDraft = {
+      id, settings: selectedCalculation.settings, results: selectedCalculation.results, token: selectedCalculation.token,
+      createdAt: new Date().toISOString(), totalCents: total(selectedCalculation.results),
+      autoGenerated: true, scopeRowIndices: group.rowIndices,
+    };
+    const snapshot = {
+      ...draft, autoKey, programName: group.program.name,
+      accountCode: selectedCalculation.accounts.find(account => account.id === group.accountId)?.code,
+    };
+    await c.query(
+      `INSERT INTO scanback_drafts(id,payload) VALUES($1,$2::jsonb)
+       ON CONFLICT(id) DO UPDATE SET payload=EXCLUDED.payload`,
+      [id, JSON.stringify(snapshot)],
+    );
+    drafts.push(draft);
+  }
+
+  await put(c, "scanback_imports", report.id, report);
+  return drafts;
+}
+
+export async function refreshAutomaticClaimDrafts(c: Client) {
+  const existing = await c.query(
+    "SELECT DISTINCT payload->'settings'->>'claimImportId' AS import_id FROM scanback_drafts WHERE payload->>'autoGenerated'='true'",
+  );
+  const importIds = new Set(existing.rows.map(row => String(row.import_id ?? "")));
+  const claims = (await all<ScanbackImport>(c, "scanback_imports"))
+    .filter(report => importIds.has(report.id) && report.kind === "claim" && report.state === "committed");
+  for (const claim of claims) await generateAutomaticClaimDrafts(c, claim);
 }
 export function total(results: ScanbackResult[]) {
   const sum = results.filter(r => r.include && r.status === "eligible").reduce((sum, r) => sum + r.amountCents, 0);

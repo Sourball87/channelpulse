@@ -12,7 +12,6 @@ import { VerifyPanel } from "@/components/scanback/verify-panel";
 import { HistoryPanel } from "@/components/scanback/history-panel";
 import { errorMessage, formatCents, useScanbackWorkspace } from "@/components/scanback/shared";
 import { useUploadCenter } from "@/lib/upload-center";
-import { isoWeekDates } from "@/lib/week-display";
 
 export default function ScanbackClaims() {
   const ws = useScanbackWorkspace();
@@ -43,17 +42,10 @@ export default function ScanbackClaims() {
     if (!report && !reseller && !promotion) return null;
     const reportId = report?.replace(/^scan:/, "") ?? undefined;
     const entry = center.data?.uploads.find((u) => u.id === report || u.sourceId === reportId);
-    let from = entry?.summary?.from || undefined;
-    let to = entry?.summary?.to || undefined;
-    if ((!from || !to) && entry?.weekIso) {
-      const d = isoWeekDates(entry.weekIso);
-      if (d) { from = d.start.toISOString().slice(0, 10); to = d.end.toISOString().slice(0, 10); }
-    }
     return {
       reportId: entry?.sourceId ?? reportId,
       resellerId: reseller && /^\d+$/.test(reseller) ? Number(reseller) : undefined,
       promotionId: promotion ?? undefined,
-      from, to,
     };
   }, [search, center.data]);
 
@@ -78,17 +70,17 @@ export default function ScanbackClaims() {
           </div>
         </div>
       </header>
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto px-4 py-6 md:px-8">
         {ws.isLoading ? (
-          <div className="space-y-3"><Skeleton className="h-10 w-96" /><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>
+          <div className="mx-auto w-full max-w-[1440px] space-y-3"><Skeleton className="h-10 w-96" /><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>
         ) : ws.isError || !data ? (
-          <div className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
+          <div className="mx-auto w-full max-w-[1440px] rounded-lg border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
             <p className="font-semibold">Could not load scanback workspace</p>
             <p className="mt-1">{errorMessage(ws.error)}</p>
             <Button className="mt-3" size="sm" variant="outline" onClick={() => ws.refetch()} data-testid="button-retry-workspace">Retry</Button>
           </div>
         ) : (
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs value={tab} onValueChange={setTab} className="mx-auto w-full max-w-[1440px]">
             <TabsList className="flex-wrap h-auto">
               <TabsTrigger value="verify" data-testid="tab-verify">Verify Claims</TabsTrigger>
               <TabsTrigger value="programs" data-testid="tab-programs">Programs</TabsTrigger>

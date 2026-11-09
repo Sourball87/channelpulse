@@ -149,8 +149,10 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     if (!inv) return reject("Credited / returned — no active invoice");
     o.invoice = inv.invoice; o.invoiceDate = inv.date; o.unitPriceCents = inv.unitPriceCents;
     o.sku = inv.sku; o.source = inv.source;
-    if (inv.accountId !== s.accountId || (r.accountId !== null && r.accountId !== s.accountId))
+    if (inv.accountId !== s.accountId || (r.accountId !== null && r.accountId !== s.accountId)) {
+      o.trackingColor = "red";
       return reject("Invoiced or reported to a different customer");
+    }
     if (r.sku && r.sku !== inv.sku) return reject(`SKU mismatch: invoice is ${inv.sku}`);
     if (r.date && r.date < inv.date) {
       if (r.date < p.start || r.date > p.end) o.trackingColor = "orange";
@@ -159,10 +161,10 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     const sellDateOutside = !!r.date && (r.date < p.start || r.date > p.end);
     if (sellDateOutside) {
       o.trackingColor = "orange";
-      if (s.basis !== "invoice") return reject("Outside promotion dates — customer sell date");
+      return reject("Outside promotion dates — customer sell date");
     }
-    const date = s.basis === "invoice" ? inv.date : r.date;
-    if (!date) return reject("Customer sell date is required for this eligibility basis", true);
+    const date = r.date;
+    if (!date) return reject("Customer sell date is required", true);
     if (date < p.start || date > p.end || date < s.from || date > s.to) {
       return reject("Outside promotion or selected date period");
     }
@@ -184,11 +186,7 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
     const count = running.get(sku) ?? 0;
     if (wants && cap != null && prior + count >= cap) return reject(`Customer/SKU cap reached (${cap} units)`);
     o.amountCents = amount; o.status = "eligible";
-    const warnings = [
-      reportRepeatReason,
-      sellDateOutside && s.basis === "invoice" ? "Customer sell date outside promotion dates (warning only; DD invoice-date basis)" : "",
-    ].filter(Boolean);
-    o.reason = [...warnings, wants ? "Eligible" : "Eligible — excluded from selection"].join(" — ");
+    o.reason = [reportRepeatReason, wants ? "Eligible" : "Eligible — excluded from selection"].filter(Boolean).join(" — ");
     if (!sellDateOutside) o.trackingColor = reportRepeatReason ? "amber" : "green";
     o.include = wants;
     if (wants) running.set(sku, count + 1);

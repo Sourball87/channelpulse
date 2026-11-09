@@ -80,20 +80,22 @@ describe("scanback deterministic verification", () => {
     expect(result).toMatchObject({ trackingColor: "red", include: false, invoicedTo: "ca", invoice: "INV1", invoiceDate: "2026-09-01", unitPriceCents: 10000, gtmBuyCents: 7000 });
     expect(result.reason).toContain("Past promotion"); expect(result.reason).toContain("REF1");
   });
-  it("marks sold-outside dates orange, including when invoice basis would otherwise be in range", () => {
-    expect(first({ settings: { ...settings, basis: "sell" }, claims: [row("SER001", { date: "2026-10-01" })] }))
-      .toMatchObject({ trackingColor: "orange", include: false, status: "rejected" });
-    const invoiceBasis = first({ settings: { ...settings, basis: "invoice" }, claims: [row("SER001", { date: "2026-10-01" })] });
-    expect(invoiceBasis).toMatchObject({ trackingColor: "orange", include: true, status: "eligible" });
-    expect(invoiceBasis.reason).toContain("warning only");
+  it("always uses the customer sold date even if a legacy request asks for invoice basis", () => {
+    const result = first({ settings: { ...settings, basis: "invoice" }, claims: [row("SER001", { date: "2026-10-01" })] });
+    expect(result).toMatchObject({ trackingColor: "orange", include: false, status: "rejected" });
+    expect(result.reason).toContain("Outside promotion dates");
   });
   it("keeps other blockers neutral and never lets reference cost change the payout", () => {
     expect(first({ evidence: [] }).trackingColor).toBe("neutral");
     expect(first({ evidence: [ev("SER001", { costCents: 999999 })] }))
       .toMatchObject({ trackingColor: "green", amountCents: 3000, costCents: 999999 });
   });
-  it("pays the invoiced reseller unit price minus GTM", () => {
-    expect(first()).toMatchObject({ status: "eligible", amountCents: 3000, include: true });
+  it("calculates claim as DD invoiced price ex GST minus GTM Buy Ex", () => {
+    const result = first({
+      evidence: [ev("SER001", { unitPriceCents: 11725, costCents: 99999 })],
+      program: { ...p, lines: [{ ...p.lines[0], gtmBuyCents: 8450, rrpIncCents: 99999, t1ExCents: 50000 }] },
+    });
+    expect(result).toMatchObject({ status: "eligible", unitPriceCents: 11725, gtmBuyCents: 8450, amountCents: 3275, include: true });
   });
   it("never uses program reference prices or GTM Inc as the claim basis", () => {
     const references = { ...p, lines: p.lines.map(line => ({
@@ -133,9 +135,9 @@ describe("scanback deterministic verification", () => {
     expect(first({ evidence: [ev("SER001", { accountId: 5 })] }).reason).toContain("different customer");
     expect(first({ claims: [row("SER001", { sku: "WRONG" })] }).reason).toContain("SKU mismatch");
   });
-  it("requires sale dates on sale basis, but accepts invoice basis without sale date", () => {
+  it("requires the customer sold date and never substitutes the DD invoice date", () => {
     expect(first({ claims: [row("SER001", { date: "" })] }).status).toBe("review");
-    expect(first({ settings: { ...settings, basis: "invoice" }, claims: [row("SER001", { date: "" })] }).include).toBe(true);
+    expect(first({ settings: { ...settings, basis: "invoice" }, claims: [row("SER001", { date: "" })] }).include).toBe(false);
   });
   it("rejects sales before invoice, outside dates and invalid program SKUs", () => {
     expect(first({ claims: [row("SER001", { date: "2026-08-31" })] }).reason).toContain("precedes");
