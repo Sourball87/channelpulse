@@ -23,7 +23,7 @@ import {
   AllUploadsTable, DdDataPanel, KindBadge, MetaEditDialog, StateBadge, WeeklyView,
 } from "@/components/upload-center";
 import {
-  KIND_LABEL, useCenterUpload, useCommitCenterUpload, useDeleteCenterUpload, usePatchCenterUpload, useUploadCenter,
+  KIND_LABEL, useCenterUpload, useCommitCenterUpload, useDeleteCenterUpload, useDeleteCenterUploads, usePatchCenterUpload, useUploadCenter,
   type CenterKind, type CenterUpload,
 } from "@/lib/upload-center";
 import {
@@ -113,6 +113,8 @@ export default function UploadCenter() {
   const [conflictInfo, setConflictInfo] = useState<ConflictState | null>(null);
   const [isConfirmingOverwrite, setIsConfirmingOverwrite] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CenterUpload | null>(null);
+  const [bulkDeleteTargets, setBulkDeleteTargets] = useState<CenterUpload[] | null>(null);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [editTarget, setEditTarget] = useState<CenterUpload | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -123,11 +125,14 @@ export default function UploadCenter() {
   const center = useUploadCenter();
   const sendFiles = useCenterUpload();
   const deleteCenter = useDeleteCenterUpload();
+  const deleteManyCenter = useDeleteCenterUploads();
   const { data: resellerData } = useGetResellers();
   const ws = useScanbackWorkspace();
   const resellers: Reseller[] = resellerData ?? [];
   const uploads = center.data?.uploads ?? [];
   const pending = useMemo(() => uploads.filter((u) => u.state === "preview").sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [uploads]);
+  const selectedPending = pending.filter((u) => selectedPendingIds.includes(u.id));
+  const allPendingSelected = pending.length > 0 && selectedPending.length === pending.length;
   const open = uploads.find((u) => u.id === openId) ?? null;
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const pricesUpdated = (center.data?.prices ?? []).reduce<string | null>((m, p) => (!m || p.updatedAt > m ? p.updatedAt : m), null);
@@ -187,10 +192,37 @@ export default function UploadCenter() {
         trackEvent("upload_deleted", { was_committed: false });
         toast({ title: "Pending upload deleted", description: `"${target.name}" has been removed.` });
         if (openId === target.id) setOpenId(null);
+        setSelectedPendingIds(ids => ids.filter(id => id !== target.id));
         setDeleteTarget(null);
       },
       onError: (e) => { toast({ title: "Failed to delete upload", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); setDeleteTarget(null); },
     });
+  };
+
+  const confirmBulkDelete = () => {
+    if (!bulkDeleteTargets?.length) return;
+    const targets = bulkDeleteTargets;
+    deleteManyCenter.mutate(targets.map(upload => upload.id), {
+      onSuccess: ({ deletedIds }) => {
+        trackEvent("upload_deleted", { was_committed: false, file_count: deletedIds.length });
+        toast({
+          title: `${deletedIds.length} pending upload${deletedIds.length === 1 ? "" : "s"} deleted`,
+          description: "The selected files have been removed.",
+        });
+        if (openId && deletedIds.includes(openId)) setOpenId(null);
+        setSelectedPendingIds(ids => ids.filter(id => !deletedIds.includes(id)));
+        setBulkDeleteTargets(null);
+      },
+      onError: (e) => {
+        toast({ title: "Failed to delete selected uploads", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
+        setBulkDeleteTargets(null);
+      },
+    });
+  };
+
+  const requestBulkDelete = (targets: CenterUpload[]) => {
+    const deletable = targets.filter(upload => upload.state === "preview");
+    if (deletable.length) setBulkDeleteTargets(deletable);
   };
 
   const doCommit = async (centerUploadId: string, uploadId: number, resellerId: number, weekIso: string, mappings: any[], confirmOverwrite: boolean) => {
@@ -331,6 +363,23 @@ export default function UploadCenter() {
             AI assistance uses Replit AI Integrations, requires no API key, and is billed to your credits.
             Only unclear metadata is sent, never inventory quantities or financial rows. You confirm all suggestions.
           </p>
+          {!center.isLoading && !center.isError && pending.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-background px-3 py-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox checked={allPendingSelected ? true : selectedPending.length ? "indeterminate" : false}
+                  onCheckedChange={(checked) => setSelectedPendingIds(checked === true ? pending.map(upload => upload.id) : [])}
+                  aria-label="Select all pending uploads" data-testid="checkbox-select-all-pending" />
+                Select pending files
+              </label>
+              <span className="text-xs text-muted-foreground">{selectedPending.length} selected</span>
+              <Button size="sm" variant="destructive" className="ml-auto"
+                disabled={!selectedPending.length || deleteManyCenter.isPending}
+                onClick={() => requestBulkDelete(selectedPending)}
+                data-testid="button-delete-selected-pending">
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete selected
+              </Button>
+            </div>
+          )}
           {center.isLoading ? (
             <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
           ) : center.isError ? (
@@ -343,6 +392,11 @@ export default function UploadCenter() {
             <div className="divide-y rounded-lg border bg-background">
               {pending.map((u) => (
                 <div key={u.id} className={`flex flex-wrap items-center gap-3 px-4 py-2.5 ${openId === u.id ? "bg-cyan-50/60" : ""}`} data-testid={`row-pending-${u.id}`}>
+                  <Checkbox checked={selectedPendingIds.includes(u.id)}
+                    onCheckedChange={(checked) => setSelectedPendingIds(ids => checked === true
+                      ? ids.includes(u.id) ? ids : [...ids, u.id]
+                      : ids.filter(id => id !== u.id))}
+                    aria-label={`Select ${u.name}`} data-testid={`checkbox-pending-${u.id}`} />
                   <KindBadge kind={u.kind} />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium" title={u.name}>{u.name}</span>
                   <span className="font-mono text-xs text-muted-foreground">
@@ -434,7 +488,7 @@ export default function UploadCenter() {
           credits={center.data?.unmatchedCredits ?? []} resellers={resellers} />
 
         <AllUploadsTable uploads={uploads} resellers={resellers} loading={center.isLoading}
-          onEdit={setEditTarget} onDelete={setDeleteTarget} onReview={openReview} />
+          onEdit={setEditTarget} onDelete={setDeleteTarget} onDeleteMany={requestBulkDelete} onReview={openReview} />
       </div>
 
       <MetaEditDialog upload={editTarget} resellers={resellers} onClose={() => setEditTarget(null)} />
@@ -451,6 +505,29 @@ export default function UploadCenter() {
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={deleteCenter.isPending} data-testid="button-confirm-delete">
               {deleteCenter.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!bulkDeleteTargets?.length} onOpenChange={(o) => { if (!o && !deleteManyCenter.isPending) setBulkDeleteTargets(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-rose-500" /> Delete {bulkDeleteTargets?.length ?? 0} pending uploads?</DialogTitle>
+            <DialogDescription>
+              These files have not been committed. Deleting them removes the files and their pending review data; reporting and claim history will not change.
+            </DialogDescription>
+          </DialogHeader>
+          {!!bulkDeleteTargets?.length && (
+            <div className="max-h-40 overflow-y-auto rounded-md border px-3 py-2 text-sm">
+              {bulkDeleteTargets.slice(0, 8).map(upload => <p key={upload.id} className="truncate">{upload.name}</p>)}
+              {bulkDeleteTargets.length > 8 && <p className="mt-1 text-muted-foreground">and {bulkDeleteTargets.length - 8} more</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteTargets(null)} disabled={deleteManyCenter.isPending}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmBulkDelete} disabled={deleteManyCenter.isPending} data-testid="button-confirm-bulk-delete">
+              {deleteManyCenter.isPending ? "Deleting..." : `Delete ${bulkDeleteTargets?.length ?? 0} files`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -145,6 +145,20 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect((await call(`/upload-center/${unknown.uploads[0].id}/commit`, "POST", {})).status).toBe(400);
       expect((await call(`/upload-center/${unknown.uploads[0].id}`, "DELETE")).status).toBe(200);
       expect((await call(`/upload-center/${soh.id}`, "DELETE")).status).toBe(409);
+
+      const bulk = await stage([
+        ["bulk-a", `Unrecognised,Value\n${prefix}A,one\n`],
+        ["bulk-b", `Unrecognised,Value\n${prefix}B,two\n`],
+      ], account.id);
+      const bulkDelete = await call("/upload-center", "DELETE", { ids: bulk.uploads.map((upload: CenterUpload) => upload.id) });
+      expect(bulkDelete.status).toBe(200);
+      expect(bulkDelete.data.deletedIds.sort()).toEqual(bulk.uploads.map((upload: CenterUpload) => upload.id).sort());
+
+      const protectedBatch = await stage([["bulk-protected", `Unrecognised,Value\n${prefix}C,three\n`]], account.id);
+      const protectedDelete = await call("/upload-center", "DELETE", { ids: [protectedBatch.uploads[0].id, soh.id] });
+      expect(protectedDelete.status).toBe(409);
+      expect((await call("/upload-center")).data.uploads.some((upload: CenterUpload) => upload.id === protectedBatch.uploads[0].id)).toBe(true);
+      expect((await call(`/upload-center/${protectedBatch.uploads[0].id}`, "DELETE")).status).toBe(200);
     } finally {
       // Test-owned references/evidence only; never use broad business-data cleanup.
       if (accountId != null) {

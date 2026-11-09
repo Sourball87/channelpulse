@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -519,19 +520,24 @@ export function DdDataPanel({ uploads, priceCount, pricesUpdated, credits, resel
 /* All uploads                                                           */
 /* ------------------------------------------------------------------ */
 export function AllUploadsTable({
-  uploads, resellers, loading, onEdit, onDelete, onReview,
+  uploads, resellers, loading, onEdit, onDelete, onDeleteMany, onReview,
 }: {
   uploads: CenterUpload[]; resellers: Reseller[]; loading: boolean;
-  onEdit: (u: CenterUpload) => void; onDelete: (u: CenterUpload) => void; onReview: (u: CenterUpload) => void;
+  onEdit: (u: CenterUpload) => void; onDelete: (u: CenterUpload) => void;
+  onDeleteMany: (uploads: CenterUpload[]) => void; onReview: (u: CenterUpload) => void;
 }) {
   const [kind, setKind] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const list = uploads.filter((u) => kind === "all" || u.kind === kind).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const deletable = list.filter(upload => upload.state === "preview");
+  const selected = deletable.filter(upload => selectedIds.includes(upload.id));
+  const allSelected = deletable.length > 0 && selected.length === deletable.length;
   return (
     <section className="space-y-2" data-testid="section-all-uploads">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">All uploads</h2>
-        <Select value={kind} onValueChange={setKind}>
+        <Select value={kind} onValueChange={(value) => { setKind(value); setSelectedIds([]); }}>
           <SelectTrigger className="h-8 w-56" data-testid="select-filter-kind"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
@@ -539,18 +545,42 @@ export function AllUploadsTable({
           </SelectContent>
         </Select>
       </div>
+      {!loading && deletable.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-background px-3 py-2">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox checked={allSelected ? true : selected.length ? "indeterminate" : false}
+              onCheckedChange={(checked) => setSelectedIds(checked === true ? deletable.map(upload => upload.id) : [])}
+              aria-label="Select all pending uploads in this list" data-testid="checkbox-select-all-uploads" />
+            Select pending uploads
+          </label>
+          <span className="text-xs text-muted-foreground">{selected.length} selected</span>
+          <Button size="sm" variant="destructive" className="ml-auto" disabled={!selected.length}
+            onClick={() => onDeleteMany(selected)} data-testid="button-delete-selected-uploads">
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete selected
+          </Button>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border bg-background">
         <Table>
           <TableHeader className="bg-muted/50">
-            <TableRow><TableHead>Type</TableHead><TableHead>Reseller</TableHead><TableHead>Week</TableHead><TableHead>File</TableHead><TableHead className="text-right">Rows</TableHead><TableHead>Uploaded</TableHead><TableHead>State</TableHead><TableHead className="text-right">Actions</TableHead></TableRow>
+            <TableRow><TableHead className="w-10"></TableHead><TableHead>Type</TableHead><TableHead>Reseller</TableHead><TableHead>Week</TableHead><TableHead>File</TableHead><TableHead className="text-right">Rows</TableHead><TableHead>Uploaded</TableHead><TableHead>State</TableHead><TableHead className="text-right">Actions</TableHead></TableRow>
           </TableHeader>
           <TableBody>
             {loading ? Array.from({ length: 4 }).map((_, i) => (
-              <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-5 w-full" /></TableCell></TableRow>
+              <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-5 w-full" /></TableCell></TableRow>
             )) : list.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">No uploads of this type yet. Drop files into the zone above.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="h-24 text-center text-sm text-muted-foreground">No uploads of this type yet. Drop files into the zone above.</TableCell></TableRow>
             ) : list.map((u) => (
               <TableRow key={u.id} data-testid={`row-upload-${u.id}`}>
+                <TableCell>
+                  {u.state === "preview" && (
+                    <Checkbox checked={selectedIds.includes(u.id)}
+                      onCheckedChange={(checked) => setSelectedIds(ids => checked === true
+                        ? ids.includes(u.id) ? ids : [...ids, u.id]
+                        : ids.filter(id => id !== u.id))}
+                      aria-label={`Select ${u.name}`} data-testid={`checkbox-upload-${u.id}`} />
+                  )}
+                </TableCell>
                 <TableCell><KindBadge kind={u.kind} /></TableCell>
                 <TableCell className="font-mono text-xs">{u.accountId == null ? "-" : customerLabel(resById.get(u.accountId)?.code ?? u.accountId)}</TableCell>
                 <TableCell className="font-mono text-xs">{u.weekIso ?? "-"}</TableCell>

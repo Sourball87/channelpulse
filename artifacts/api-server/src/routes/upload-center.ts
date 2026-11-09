@@ -366,6 +366,25 @@ async function removeSource(c: Client, e: CenterUpload) {
     requireThat(r.rowCount, "This source was committed or changed. Refresh before editing.", 409);
   }
 }
+router.delete("/upload-center", wrap(async (c, req) => {
+  const ids = req.body?.ids;
+  requireThat(Array.isArray(ids) && ids.length > 0 && ids.length <= 5000 &&
+    ids.every((id: unknown) => typeof id === "string" && id.trim().length > 0) &&
+    new Set(ids).size === ids.length, "Choose between 1 and 5,000 unique uploads to delete.");
+  const entries: CenterUpload[] = [];
+  for (const id of ids as string[]) {
+    const { entry } = await load(c, id);
+    requireThat(entry.state !== "committed", "Committed financial evidence and reports are immutable.", 409);
+    entries.push(entry);
+  }
+  // Validate every entry before removing any source. The transaction also
+  // rolls back the whole selection if a source changes during deletion.
+  for (const entry of entries) {
+    await removeSource(c, entry);
+    await c.query("DELETE FROM center_uploads WHERE id=$1", [entry.id]);
+  }
+  return { success: true, deletedIds: entries.map(entry => entry.id) };
+}));
 router.patch("/upload-center/:id", wrap(async (c, req) => {
   const parsed = CorrectCenterUploadBody.safeParse(req.body);
   requireThat(parsed.success, "Invalid metadata correction.");

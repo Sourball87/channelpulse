@@ -114,6 +114,16 @@ export function useDeleteCenterUpload() {
   });
 }
 
+export function useDeleteCenterUploads() {
+  const inv = useInvalidateAll();
+  return useMutation({
+    mutationFn: (ids: string[]) => req<{ success: boolean; deletedIds: string[] }>("/api/upload-center", {
+      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    }),
+    onSettled: inv,
+  });
+}
+
 export function useCommitCenterUpload() {
   const inv = useInvalidateAll();
   return useMutation({
