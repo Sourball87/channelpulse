@@ -10,7 +10,10 @@ import {
 import { parseFile } from "../lib/file-parser";
 import { parseDate, parseSheets, suggestMapping, type Sheets } from "../lib/scanback-import";
 import { parseCsvSheets, filterFullHistorySerialRows } from "../lib/scanback-import";
-import { isWeekOutsideWindow, mostCommonWeek } from "../lib/dates";
+import {
+  isCompletedWeekAsOf, isWeekOutsideWindow, mostCommonWeek, previousCompletedWeekIso,
+  resolveWeekFromFilename, resolveWeekFromReportDates, weekEndingShortLabel,
+} from "../lib/dates";
 import { serialKey } from "../lib/scanback-engine";
 import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
 import { indexProntoSource, isPronto, pendingProntoCredits } from "../lib/scanback-pronto";
@@ -48,8 +51,14 @@ const wrap = (fn: (c: Client, req: Request) => Promise<unknown>) => async (req: 
 async function profiles(c: Client) {
   return (await c.query("SELECT id,name,code,aliases,filename_patterns AS \"filenamePatterns\" FROM resellers ORDER BY code")).rows;
 }
+function unfinishedManualWeekMessage(weekIso: string, now = new Date()): string {
+  const latest = previousCompletedWeekIso(now);
+  return `Manual week ${weekIso} has not ended in Australia/Sydney. Choose a completed week (latest: ${latest}, w/e ${weekEndingShortLabel(latest)}).`;
+}
 async function validateMeta(c: Client, options: CenterUploadCorrection) {
   requireThat(options.weekIso == null || isValidWeekIso(options.weekIso), "Choose a valid reporting week.");
+  requireThat(options.weekIso == null || isCompletedWeekAsOf(options.weekIso),
+    options.weekIso ? unfinishedManualWeekMessage(options.weekIso) : "Choose a completed reporting week.");
   if (options.accountId != null)
     requireThat(Number.isSafeInteger(options.accountId) &&
       (await c.query("SELECT id FROM resellers WHERE id=$1", [options.accountId])).rowCount, "Choose an existing customer.");
@@ -111,7 +120,7 @@ async function createSource(c: Client, entry: CenterUpload, raw: Sheets, buffer?
     if (entry.kind === "claim") {
       const known = (await loadReportedSales(c)).map(row => row.serial);
       const filenameWeek = detectWeekFromFilename(entry.name).weekIso;
-      const targetWeek = entry.weekSource === "manual" ? entry.weekIso : filenameWeek;
+      const targetWeek = entry.weekSource === "manual" ? entry.weekIso : entry.weekIso ?? filenameWeek;
       const filtered = filterFullHistorySerialRows(sourceRows, mapping, known, targetWeek);
       sourceRows = filtered.rows;
       financial[sheet] = sourceRows;
@@ -222,10 +231,20 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
     const dates = r.rows.map(x => x.date).filter(Boolean).sort();
     if (e.kind === "claim" && e.weekSource !== "manual" && dates.length) {
       const detected = mostCommonWeek(dates);
-      if (detected.weekIso) { e.weekIso = detected.weekIso; e.weekSource = "file_dates"; }
+      if (detected.weekIso) {
+        const resolved = resolveWeekFromReportDates(detected.weekIso, detected.reportDate, new Date());
+        e.weekIso = resolved.weekIso;
+        e.weekSource = "file_dates";
+        if (resolved.warning) e.warnings = [...(e.warnings ?? []), resolved.warning];
+      }
     } else if (!e.weekIso && dates.length) {
       const detected = mostCommonWeek(dates);
-      if (detected.weekIso) { e.weekIso = detected.weekIso; e.weekSource = "file_dates"; }
+      if (detected.weekIso) {
+        const resolved = resolveWeekFromReportDates(detected.weekIso, detected.reportDate, new Date());
+        e.weekIso = resolved.weekIso;
+        e.weekSource = "file_dates";
+        if (resolved.warning) e.warnings = [...(e.warnings ?? []), resolved.warning];
+      }
     }
     e.summary = { ...emptySummary(), serialCount: new Set(r.rows.map(x => x.serial)).size,
       skuCount: new Set(r.rows.map(x => x.sku).filter(Boolean)).size, from: dates[0] ?? "", to: dates.at(-1) ?? "",
@@ -252,7 +271,16 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
       }
     }
   }
-  e.warnings = (e.warnings ?? []).filter(w => !w.startsWith("Detected report week is more than 8 weeks"));
+  e.warnings = (e.warnings ?? []).filter(w =>
+    !w.startsWith("Detected report week is more than 8 weeks") &&
+    !w.startsWith("This upload is filed in an unfinished week") &&
+    !w.startsWith("Manual week "),
+  );
+  if (e.weekIso && !isCompletedWeekAsOf(e.weekIso)) {
+    e.warnings.push(e.weekSource === "manual"
+      ? unfinishedManualWeekMessage(e.weekIso)
+      : `This upload is filed in an unfinished week (${e.weekIso}). Review and correct it before committing.`);
+  }
   if (e.weekIso && isWeekOutsideWindow(e.weekIso))
     e.warnings.push("Detected report week is more than 8 weeks from today. Confirm the reporting period before committing.");
   return e;

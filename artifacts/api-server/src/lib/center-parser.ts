@@ -50,16 +50,20 @@ export async function readCenterCsv(buffer: Buffer): Promise<Sheets> {
   if (!table.headers.length) throw new Error("No CSV headings found.");
   return { CSV: table.rows };
 }
-export function readCenterWorkbook(buffer: Buffer): { sheets: Sheets; programSources: Record<string, ProgramTableSource> } {
+export function readCenterWorkbook(buffer: Buffer): {
+  sheets: Sheets; programSources: Record<string, ProgramTableSource>; fileCreatedAt: Date | string | null;
+} {
   const programSources: Record<string, ProgramTableSource> = {};
   if (buffer[0] !== 0x50 && buffer[0] !== 0xD0) {
     const text = buffer.toString("utf8");
     if (!text.includes("\0") && /gtm\s*buy\s*ex/i.test(text)) {
       const source = readProgramText(text, new Date(), 10_000_000);
-      return { sheets: { Sheet1: source.rows }, programSources: { Sheet1: source.meta } };
+      return { sheets: { Sheet1: source.rows }, programSources: { Sheet1: source.meta }, fileCreatedAt: null };
     }
   }
   const wb = XLSX.read(buffer, { type: "buffer", raw: true, cellDates: false, sheetRows: 20002 });
+  const createdDate = (wb as XLSX.WorkBook & { Props?: { CreatedDate?: unknown } }).Props?.CreatedDate;
+  const fileCreatedAt = createdDate instanceof Date || typeof createdDate === "string" ? createdDate : null;
   if (wb.SheetNames.length > 30) throw new Error("Limit each workbook to 30 worksheets.");
   const result: Sheets = {};
   let total = 0;
@@ -90,7 +94,7 @@ export function readCenterWorkbook(buffer: Buffer): { sheets: Sheets; programSou
     result[name] = rows;
   }
   if (!Object.keys(result).length) throw new Error("No tabular data found.");
-  return { sheets: result, programSources };
+  return { sheets: result, programSources, fileCreatedAt };
 }
 export function sheetsBuffer(raw: Sheets): Buffer {
   const wb = XLSX.utils.book_new();

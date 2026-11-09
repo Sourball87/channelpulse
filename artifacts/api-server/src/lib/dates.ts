@@ -97,13 +97,99 @@ export function isWeekOutsideWindow(weekIso: string, referenceWeek = currentWeek
 }
 
 export function currentWeekIso(now = new Date()): string {
-  return dateStringToWeekIso(now.toISOString().slice(0, 10));
+  return dateStringToWeekIso(sydneyDateString(now));
+}
+
+const SYDNEY_TIME_ZONE = "Australia/Sydney";
+const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export function sydneyDateString(now = new Date()): string {
+  const fields = new Intl.DateTimeFormat("en-AU", {
+    timeZone: SYDNEY_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => fields.find(field => field.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function dateOfFileCreation(value: Date | string | null | undefined, fallbackNow: Date): string {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return sydneyDateString(value);
+  if (typeof value === "string") {
+    if (isValidDateString(value)) return value;
+    const instant = new Date(value);
+    if (Number.isFinite(instant.getTime())) return sydneyDateString(instant);
+  }
+  return sydneyDateString(fallbackNow);
+}
+
+/** Latest week whose Sunday end date is before the supplied local calendar date. */
+export function lastCompletedWeekBeforeDate(date: string): string {
+  if (!isValidDateString(date)) return "";
+  let week = dateStringToWeekIso(date);
+  while (week && (weekDates(week)?.end ?? date) >= date) week = previousWeekIso(week);
+  return week;
 }
 
 export function previousCompletedWeekIso(now = new Date()): string {
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const day = today.getUTCDay() || 7;
-  return dateStringToWeekIso(new Date(today.getTime() - day * DAY_MS).toISOString().slice(0, 10));
+  return lastCompletedWeekBeforeDate(sydneyDateString(now));
+}
+
+export function isCompletedWeekAsOf(weekIso: string, now = new Date()): boolean {
+  const end = weekDates(weekIso)?.end;
+  return !!end && end < sydneyDateString(now);
+}
+
+export function weekEndingShortLabel(weekIso: string): string {
+  const end = weekDates(weekIso)?.end;
+  if (!end) return weekIso;
+  const [year, month, day] = end.split("-").map(Number);
+  return `${day} ${MONTH_ABBREVIATIONS[month - 1]}`;
+}
+
+export function resolveWeekFromReportDates(
+  weekIso: string | null,
+  reportDate: string | null,
+  now = new Date(),
+  label = "Report dates",
+): { weekIso: string | null; warning: string | null } {
+  if (!weekIso || isCompletedWeekAsOf(weekIso, now)) return { weekIso, warning: null };
+  const completedWeek = previousCompletedWeekIso(now);
+  const dateLabel = reportDate ? ` (${reportDate})` : "";
+  return {
+    weekIso: completedWeek,
+    warning: `${label}${dateLabel} fall in an unfinished week. Filed as w/e ${weekEndingShortLabel(completedWeek)} — check.`,
+  };
+}
+
+const WEEK_NUMBER_FILENAME = /(?:^|[^\d])((?:19|20)\d{2})(?:[\s_.-]*[A-Z][A-Z0-9]*)?[\s_.-]*WK[\s_.-]*(\d{1,2})(?!\d)/i;
+
+export function resolveWeekFromFilename(
+  filename: string,
+  fileCreatedAt?: Date | string | null,
+  now = new Date(),
+): { weekIso: string | null; reportDate: string | null; warning: string | null } {
+  const detected = detectWeekFromFilename(filename);
+  if (!detected.weekIso) return { ...detected, warning: null };
+
+  const namedWeek = WEEK_NUMBER_FILENAME.exec(filename);
+  let weekIso = detected.weekIso;
+  let warning: string | null = null;
+  if (namedWeek) {
+    const createdDate = dateOfFileCreation(fileCreatedAt, now);
+    const namedEnd = weekDates(weekIso)?.end;
+    if (namedEnd && createdDate < namedEnd) {
+      weekIso = lastCompletedWeekBeforeDate(createdDate);
+      warning = `Filename said WK ${namedWeek[2]} (not finished yet). Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`;
+    }
+  }
+
+  if (!isCompletedWeekAsOf(weekIso, now)) {
+    weekIso = previousCompletedWeekIso(now);
+    warning ??= namedWeek
+      ? `Filename said WK ${namedWeek[2]} (not finished yet). Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`
+      : `Filename date${detected.reportDate ? ` ${detected.reportDate}` : ""} is in an unfinished week. Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`;
+  }
+
+  return { ...detected, weekIso, warning };
 }
 
 export function previousWeekIso(weekIso: string): string {

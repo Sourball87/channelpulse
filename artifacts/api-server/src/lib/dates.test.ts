@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  calendarDate, detectWeekFromFilename, isWeekOutsideWindow, mostCommonWeek,
+  calendarDate, detectWeekFromFilename, isCompletedWeekAsOf, isWeekOutsideWindow,
+  mostCommonWeek, previousCompletedWeekIso, resolveWeekFromFilename,
 } from "./dates";
 
 describe("central report dates", () => {
@@ -23,5 +24,41 @@ describe("central report dates", () => {
   it("validates calendar dates used by specialized report formats", () => {
     expect(calendarDate(2028, 1, 29)).toBe("2028-02-29");
     expect(calendarDate(2027, 1, 29)).toBeNull();
+  });
+
+  it("moves a KS WK filename created before the named week ends to the last completed week", () => {
+    const resolved = resolveWeekFromFilename(
+      "2026_WK_46_Samsung_SSD_SOH_reports_-_KS.xlsx",
+      "2026-11-09T00:30:00.000Z",
+      new Date("2026-11-09T00:30:00.000Z"),
+    );
+    expect(resolved.weekIso).toBe("2026-W45");
+    expect(resolved.warning).toBe("Filename said WK 46 (not finished yet). Filed as w/e 8 Nov — check.");
+  });
+
+  it("keeps WK 42 when its file creation date is the week's ending Sunday", () => {
+    const resolved = resolveWeekFromFilename(
+      "2026_WK_42_Samsung_SSD_SOH_reports_-_KS.xlsx",
+      "2026-10-18",
+      new Date("2026-11-09T00:30:00.000Z"),
+    );
+    expect(resolved.weekIso).toBe("2026-W42");
+    expect(resolved.warning).toBeNull();
+  });
+
+  it("clamps a filename date range ending tomorrow to the last Sydney-completed week", () => {
+    const resolved = resolveWeekFromFilename(
+      "report_2026-11-02_2026-11-10.xlsx",
+      null,
+      new Date("2026-11-09T00:30:00.000Z"),
+    );
+    expect(resolved.weekIso).toBe("2026-W45");
+    expect(resolved.warning).toContain("Filed as w/e 8 Nov");
+  });
+
+  it("uses Australia/Sydney when selecting the last completed week", () => {
+    const justPastMidnightSydney = new Date("2026-11-08T13:30:00.000Z");
+    expect(previousCompletedWeekIso(justPastMidnightSydney)).toBe("2026-W45");
+    expect(isCompletedWeekAsOf("2026-W46", justPastMidnightSydney)).toBe(false);
   });
 });
