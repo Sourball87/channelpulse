@@ -430,6 +430,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/HeatmapData"
 
+  /dashboard/woi-heatmap:
+    get:
+      operationId: getWoiHeatmap
+      tags: [dashboard]
+      summary: Get weeks-of-inventory by SKU and customer
+      parameters:
+        - name: week_iso
+          in: query
+          schema:
+            type: string
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            enum: [4, 8, 13]
+            default: 4
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: part_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+        - name: reseller_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+      responses:
+        "200":
+          description: WOI heatmap data; missing sales observations remain distinct from reported zero sales
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WoiHeatmapData"
+
   /dashboard/weekly-sales:
     get:
       operationId: getDashboardWeeklySales
@@ -510,6 +548,72 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ExplorerRow"
+
+  /explorer/analytics:
+    get:
+      operationId: getExplorerAnalytics
+      tags: [explorer]
+      summary: Get weekly Explorer measures for SKUs and customers
+      parameters:
+        - name: week_iso
+          in: query
+          schema:
+            type: string
+        - name: week_from
+          in: query
+          schema:
+            type: string
+        - name: week_to
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: part_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+        - name: reseller_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+        - name: woi_weeks
+          in: query
+          schema:
+            type: integer
+            enum: [4, 8, 13]
+            default: 4
+      responses:
+        "200":
+          description: Weekly Sold, SOH, WOI, serial-reported units and DD sell-in data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplorerAnalyticsData"
+
+  /explorer/export:
+    post:
+      operationId: exportExplorerView
+      tags: [explorer]
+      summary: Export the currently visible Explorer rows to Excel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExplorerExportInput"
+      responses:
+        "200":
+          description: Excel workbook for the current Explorer view
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
 
   /explorer/trend:
     get:
@@ -719,6 +823,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Part"
+
+  /parts/order:
+    put:
+      operationId: updatePartOrder
+      tags: [parts]
+      summary: Save the shared SKU display order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartOrderInput"
+      responses:
+        "200":
+          description: Updated shared SKU order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Part"
+
+  /parts/order/reset:
+    post:
+      operationId: resetPartOrder
+      tags: [parts]
+      summary: Reset the shared SKU order
+      responses:
+        "200":
+          description: Default shared SKU order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Part"
 
   /parts/{id}:
     patch:
@@ -1269,6 +1409,60 @@ components:
           items:
             $ref: "#/components/schemas/HeatmapCell"
 
+    WoiHeatmapCustomer:
+      type: object
+      required: [id, code]
+      properties:
+        id: { type: integer }
+        code: { type: string }
+
+    WoiHeatmapCell:
+      type: object
+      required: [reseller_id, reseller_code, soh, avg_weekly_sales, woi, weeks_observed, window_weeks, state]
+      properties:
+        reseller_id: { type: ["integer", "null"] }
+        reseller_code: { type: ["string", "null"] }
+        soh: { type: ["integer", "null"] }
+        avg_weekly_sales: { type: ["number", "null"] }
+        woi: { type: ["number", "null"] }
+        weeks_observed: { type: integer }
+        window_weeks: { type: integer }
+        state:
+          type: string
+          enum: [value, no_sales, no_sales_data, no_soh]
+
+    WoiHeatmapPart:
+      type: object
+      required: [part_id, part_no, category, cells, channel_total]
+      properties:
+        part_id: { type: integer }
+        part_no: { type: string }
+        category: { type: string }
+        cells:
+          type: array
+          items:
+            $ref: "#/components/schemas/WoiHeatmapCell"
+        channel_total:
+          $ref: "#/components/schemas/WoiHeatmapCell"
+
+    WoiHeatmapData:
+      type: object
+      required: [week_iso, window_weeks, weeks, customers, rows]
+      properties:
+        week_iso: { type: ["string", "null"] }
+        window_weeks: { type: integer }
+        weeks:
+          type: array
+          items: { type: string }
+        customers:
+          type: array
+          items:
+            $ref: "#/components/schemas/WoiHeatmapCustomer"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/WoiHeatmapPart"
+
     WeeklySalesCell:
       type: object
       required: [part_id, part_no, week_iso, units_sold, reported_accounts]
@@ -1381,6 +1575,56 @@ components:
           type: ["integer", "null"]
         avg_cost:
           type: ["number", "null"]
+
+    ExplorerAnalyticsRow:
+      type: object
+      required: [category, part_id, part_no, reseller_id, reseller_code, week_iso, sold, soh, avg_weekly_sold, woi, woi_state, serials_reported, dd_sell_in]
+      properties:
+        category: { type: string }
+        part_id: { type: ["integer", "null"] }
+        part_no: { type: string }
+        reseller_id: { type: integer }
+        reseller_code: { type: string }
+        week_iso: { type: string }
+        sold: { type: ["integer", "null"] }
+        soh: { type: ["integer", "null"] }
+        avg_weekly_sold: { type: ["number", "null"] }
+        woi: { type: ["number", "null"] }
+        woi_state:
+          type: string
+          enum: [value, no_sales, no_sales_data, no_soh]
+        serials_reported: { type: ["integer", "null"] }
+        dd_sell_in: { type: ["integer", "null"] }
+
+    ExplorerAnalyticsData:
+      type: object
+      required: [week_iso, weeks, woi_weeks, pronto_note, rows]
+      properties:
+        week_iso: { type: ["string", "null"] }
+        weeks:
+          type: array
+          items: { type: string }
+        woi_weeks: { type: integer }
+        pronto_note: { type: ["string", "null"] }
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerAnalyticsRow"
+
+    ExplorerExportInput:
+      type: object
+      required: [columns, rows]
+      properties:
+        columns:
+          type: array
+          minItems: 1
+          items: { type: string }
+        rows:
+          type: array
+          items:
+            type: array
+            items:
+              type: ["string", "number", "null"]
 
     TrendPoint:
       type: object
@@ -1877,7 +2121,7 @@ components:
 
     Part:
       type: object
-      required: [id, part_no, category]
+      required: [id, part_no, category, sort_order]
       properties:
         id:
           type: integer
@@ -1889,6 +2133,20 @@ components:
           type: string
         active:
           type: boolean
+        sort_order:
+          type: integer
+
+    PartOrderInput:
+      type: object
+      required: [part_ids]
+      properties:
+        part_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
 
     PartInput:
       type: object

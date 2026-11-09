@@ -1,11 +1,13 @@
 import { formatWeekLabel } from "@/lib/week-display";
 import { customerLabel } from "@/lib/customer-display";
+import { useState } from "react";
 import { useGetDashboardHeatmap, useGetResellers } from "@workspace/api-client-react";
 import { useFilters } from "@/context/filter-context";
 import { sortByOrder, useHeatmapOrder } from "@/hooks/use-heatmap-order";
 import { useStockMetrics } from "@/hooks/use-stock-metrics";
 import { METRIC_INFO, type StockMetric } from "@/lib/metric-selection";
 import { MetricPicker } from "@/components/metric-picker";
+import { GripVertical } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,21 @@ function shade(metric: StockMetric, intensity: number): string {
 }
 
 /** Point-in-time view: SOH and ST both come from the single selected (or period-ending) week. */
-export function StockOnHandHeatmap({ category }: { category?: string }) {
+export function StockOnHandHeatmap({
+  category,
+  partOrder,
+  isEditing = false,
+  onReorder,
+  dragPart,
+  currentDrag,
+}: {
+  category?: string;
+  partOrder?: string[];
+  isEditing?: boolean;
+  onReorder?: (from: string, to: string) => void;
+  dragPart?: (part: string | null) => void;
+  currentDrag?: string | null;
+}) {
   const { apiParams, insightWeek, resellerIds } = useFilters();
   const stockParams = {
     week_iso: insightWeek,
@@ -31,9 +47,10 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
   };
   const { data, isLoading, isError, refetch } = useGetDashboardHeatmap(stockParams);
   const { data: accounts } = useGetResellers();
-  const { partOrder, resellerOrder } = useHeatmapOrder();
+  const { resellerOrder } = useHeatmapOrder();
   const { metrics, update } = useStockMetrics();
-  const stocks = sortByOrder(data?.parts ?? [], partOrder);
+  const stocks = partOrder ? sortByOrder(data?.parts ?? [], partOrder) : (data?.parts ?? []);
+  const [dragOverStock, setDragOverStock] = useState<string | null>(null);
   // Include non-reporting accounts as empty columns, not false zero values.
   const accountCodes = accounts
     ? accounts.filter(account => !resellerIds.length || resellerIds.includes(account.id)).map(account => account.code)
@@ -94,22 +111,22 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
               ))}
               <span>0 = reported zero · — No reported data</span>
             </div>
-            <div className="overflow-x-auto">
+            <div className="max-h-[440px] overflow-auto">
               <table className="w-full text-xs border-separate border-spacing-0" aria-label="Sell through and stock on hand by Stock Code and Account Code">
                 <thead>
                   <tr>
-                    <th scope="col" rowSpan={2} className="sticky left-0 z-20 bg-card text-left font-semibold text-muted-foreground p-2 border-b min-w-[152px] align-bottom">
+                    <th scope="col" rowSpan={2} className="sticky left-0 top-0 z-30 bg-card text-left font-semibold text-muted-foreground p-2 border-b min-w-[152px] align-bottom">
                       Stock Code
                     </th>
-                    <th scope="colgroup" colSpan={metrics.length} className={`text-center font-semibold p-2 border-b bg-muted/30 ${groupEdge}`}>Total</th>
+                    <th scope="colgroup" colSpan={metrics.length} className={`sticky top-0 z-20 text-center font-semibold p-2 border-b bg-muted/30 ${groupEdge}`}>Total</th>
                     {columns.map(code => (
-                      <th key={code} scope="colgroup" colSpan={metrics.length} className={`text-center font-semibold text-muted-foreground p-2 border-b ${groupEdge}`}>{customerLabel(code)}</th>
+                      <th key={code} scope="colgroup" colSpan={metrics.length} className={`sticky top-0 z-20 bg-card text-center font-semibold text-muted-foreground p-2 border-b ${groupEdge}`}>{customerLabel(code)}</th>
                     ))}
                   </tr>
                   <tr>
                     {["__total", ...columns].map(code => metrics.map((metric, i) => (
                       <th key={`${code}-${metric}`} scope="col" title={METRIC_INFO[metric].long}
-                        className={`text-center font-medium text-muted-foreground px-1 py-1 border-b min-w-[56px] ${i === 0 ? groupEdge : ""} ${code === "__total" ? "bg-muted/30" : ""}`}>
+                        className={`sticky top-[34px] z-20 bg-card text-center font-medium text-muted-foreground px-1 py-1 border-b min-w-[56px] ${i === 0 ? groupEdge : ""} ${code === "__total" ? "bg-muted/30" : ""}`}>
                         {METRIC_INFO[metric].short}
                       </th>
                     )))}
@@ -119,8 +136,16 @@ export function StockOnHandHeatmap({ category }: { category?: string }) {
                   {stocks.map(stock => {
                     const total = totals(stock);
                     return (
-                      <tr key={stock} className="group">
-                        <th scope="row" className="sticky left-0 z-10 bg-card text-left font-medium p-2 border-b whitespace-nowrap">{stock}</th>
+                        <tr key={stock} className={`group ${dragOverStock === stock ? "bg-primary/5" : ""}`}>
+                        <th
+                          scope="row"
+                          draggable={isEditing}
+                          onDragStart={() => { dragPart?.(stock); }}
+                          onDragOver={(event) => { event.preventDefault(); setDragOverStock(stock); }}
+                          onDrop={() => { if (currentDrag) onReorder?.(currentDrag, stock); dragPart?.(null); setDragOverStock(null); }}
+                          onDragEnd={() => { dragPart?.(null); setDragOverStock(null); }}
+                          className={`sticky left-0 z-10 bg-card text-left font-medium p-2 border-b whitespace-nowrap ${isEditing ? "cursor-grab active:cursor-grabbing" : ""}`}
+                        >{isEditing && <GripVertical className="mr-1 inline h-3 w-3 text-muted-foreground" />}{stock}</th>
                         {metrics.map((metric, i) => (
                           <td key={`total-${metric}`} className={`p-1 border-b text-center font-semibold tabular-nums bg-muted/30 ${i === 0 ? groupEdge : ""}`}
                             data-testid={`total-${metric}-${stock}`}>

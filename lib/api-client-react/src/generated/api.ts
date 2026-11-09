@@ -36,20 +36,25 @@ import type {
   DashboardKpis,
   DeleteCenterUpload200,
   DeleteResult,
+  ExplorerAnalyticsData,
+  ExplorerExportInput,
   ExplorerRow,
   GetAlertsParams,
   GetDashboardHeatmapParams,
   GetDashboardKpisParams,
   GetDashboardWeeklySalesParams,
+  GetExplorerAnalyticsParams,
   GetExplorerDataParams,
   GetExplorerTrendParams,
   GetPartsParams,
   GetSerialReconciliationParams,
   GetTrendsParams,
+  GetWoiHeatmapParams,
   HealthStatus,
   HeatmapData,
   Part,
   PartInput,
+  PartOrderInput,
   PartUpdate,
   ProgramTablePreview,
   ProgramTablePreviewInput,
@@ -76,7 +81,8 @@ import type {
   UploadCenterWorkspace,
   WeekSummary,
   WeeklySalesData,
-  WeeklyScanbackExport
+  WeeklyScanbackExport,
+  WoiHeatmapData
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -2557,6 +2563,114 @@ export function useGetDashboardHeatmap<TData = Awaited<ReturnType<typeof getDash
 
 
 
+export const getGetWoiHeatmapUrl = (params?: GetWoiHeatmapParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dashboard/woi-heatmap?${stringifiedParams}` : `/api/dashboard/woi-heatmap`
+}
+
+/**
+ * @summary Get weeks-of-inventory by SKU and customer
+ */
+export const getWoiHeatmap = async (params?: GetWoiHeatmapParams, options?: Parameters<typeof customFetch>[1]): Promise<WoiHeatmapData> => {
+
+  return customFetch<WoiHeatmapData>(getGetWoiHeatmapUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWoiHeatmapQueryKey = (params?: GetWoiHeatmapParams,) => {
+    return [
+    `/api/dashboard/woi-heatmap`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWoiHeatmapQueryOptions = <TData = Awaited<ReturnType<typeof getWoiHeatmap>>, TError = ErrorType<unknown>>(params?: GetWoiHeatmapParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWoiHeatmap>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWoiHeatmapQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWoiHeatmap>>> = ({ signal }) => getWoiHeatmap(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWoiHeatmap>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWoiHeatmapQueryResult = NonNullable<Awaited<ReturnType<typeof getWoiHeatmap>>>
+export type GetWoiHeatmapQueryError = ErrorType<unknown>
+
+
+export function useGetWoiHeatmap<TData = Awaited<ReturnType<typeof getWoiHeatmap>>, TError = ErrorType<unknown>>(
+ params: undefined |  GetWoiHeatmapParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWoiHeatmap>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWoiHeatmap>>,
+          TError,
+          Awaited<ReturnType<typeof getWoiHeatmap>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWoiHeatmap<TData = Awaited<ReturnType<typeof getWoiHeatmap>>, TError = ErrorType<unknown>>(
+ params?: GetWoiHeatmapParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWoiHeatmap>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWoiHeatmap>>,
+          TError,
+          Awaited<ReturnType<typeof getWoiHeatmap>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWoiHeatmap<TData = Awaited<ReturnType<typeof getWoiHeatmap>>, TError = ErrorType<unknown>>(
+ params?: GetWoiHeatmapParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWoiHeatmap>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get weeks-of-inventory by SKU and customer
+ */
+
+export function useGetWoiHeatmap<TData = Awaited<ReturnType<typeof getWoiHeatmap>>, TError = ErrorType<unknown>>(
+ params?: GetWoiHeatmapParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWoiHeatmap>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWoiHeatmapQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetDashboardWeeklySalesUrl = (params?: GetDashboardWeeklySalesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2873,6 +2987,202 @@ export function useGetExplorerData<TData = Awaited<ReturnType<typeof getExplorer
 
 
 
+
+export const getGetExplorerAnalyticsUrl = (params?: GetExplorerAnalyticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/explorer/analytics?${stringifiedParams}` : `/api/explorer/analytics`
+}
+
+/**
+ * @summary Get weekly Explorer measures for SKUs and customers
+ */
+export const getExplorerAnalytics = async (params?: GetExplorerAnalyticsParams, options?: Parameters<typeof customFetch>[1]): Promise<ExplorerAnalyticsData> => {
+
+  return customFetch<ExplorerAnalyticsData>(getGetExplorerAnalyticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetExplorerAnalyticsQueryKey = (params?: GetExplorerAnalyticsParams,) => {
+    return [
+    `/api/explorer/analytics`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetExplorerAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getExplorerAnalytics>>, TError = ErrorType<unknown>>(params?: GetExplorerAnalyticsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getExplorerAnalytics>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetExplorerAnalyticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getExplorerAnalytics>>> = ({ signal }) => getExplorerAnalytics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getExplorerAnalytics>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetExplorerAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getExplorerAnalytics>>>
+export type GetExplorerAnalyticsQueryError = ErrorType<unknown>
+
+
+export function useGetExplorerAnalytics<TData = Awaited<ReturnType<typeof getExplorerAnalytics>>, TError = ErrorType<unknown>>(
+ params: undefined |  GetExplorerAnalyticsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getExplorerAnalytics>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getExplorerAnalytics>>,
+          TError,
+          Awaited<ReturnType<typeof getExplorerAnalytics>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetExplorerAnalytics<TData = Awaited<ReturnType<typeof getExplorerAnalytics>>, TError = ErrorType<unknown>>(
+ params?: GetExplorerAnalyticsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getExplorerAnalytics>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getExplorerAnalytics>>,
+          TError,
+          Awaited<ReturnType<typeof getExplorerAnalytics>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetExplorerAnalytics<TData = Awaited<ReturnType<typeof getExplorerAnalytics>>, TError = ErrorType<unknown>>(
+ params?: GetExplorerAnalyticsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getExplorerAnalytics>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get weekly Explorer measures for SKUs and customers
+ */
+
+export function useGetExplorerAnalytics<TData = Awaited<ReturnType<typeof getExplorerAnalytics>>, TError = ErrorType<unknown>>(
+ params?: GetExplorerAnalyticsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getExplorerAnalytics>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetExplorerAnalyticsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getExportExplorerViewUrl = () => {
+
+
+
+
+  return `/api/explorer/export`
+}
+
+/**
+ * @summary Export the currently visible Explorer rows to Excel
+ */
+export const exportExplorerView = async (explorerExportInput: ExplorerExportInput, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Blob>(getExportExplorerViewUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(explorerExportInput)
+  }
+);}
+
+
+
+
+
+export const getExportExplorerViewMutationKey = () => ['exportExplorerView'] as const;
+
+export const getExportExplorerViewMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportExplorerView>>, TError,ExportExplorerViewMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exportExplorerView>>, TError,ExportExplorerViewMutationVariables, TContext> => {
+
+const mutationKey = getExportExplorerViewMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportExplorerView>>, ExportExplorerViewMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  exportExplorerView(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExportExplorerViewMutationResult = NonNullable<Awaited<ReturnType<typeof exportExplorerView>>>
+    export type ExportExplorerViewMutationBody = BodyType<ExplorerExportInput>
+    export type ExportExplorerViewMutationError = ErrorType<unknown>
+    export type ExportExplorerViewMutationVariables = {data: BodyType<ExplorerExportInput>}
+
+    /**
+ * @summary Export the currently visible Explorer rows to Excel
+ */
+export const useExportExplorerView = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportExplorerView>>, TError,ExportExplorerViewMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof exportExplorerView>>,
+        TError,
+        ExportExplorerViewMutationVariables,
+        TContext
+      > => {
+      return useMutation(getExportExplorerViewMutationOptions(options), queryClient);
+    }
 
 export const getGetExplorerTrendUrl = (params?: GetExplorerTrendParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -3744,6 +4054,168 @@ export const useCreatePart = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreatePartMutationOptions(options), queryClient);
+    }
+
+export const getUpdatePartOrderUrl = () => {
+
+
+
+
+  return `/api/parts/order`
+}
+
+/**
+ * @summary Save the shared SKU display order
+ */
+export const updatePartOrder = async (partOrderInput: PartOrderInput, options?: Parameters<typeof customFetch>[1]): Promise<Part[]> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Part[]>(getUpdatePartOrderUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(partOrderInput)
+  }
+);}
+
+
+
+
+
+export const getUpdatePartOrderMutationKey = () => ['updatePartOrder'] as const;
+
+export const getUpdatePartOrderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartOrder>>, TError,UpdatePartOrderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePartOrder>>, TError,UpdatePartOrderMutationVariables, TContext> => {
+
+const mutationKey = getUpdatePartOrderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartOrder>>, UpdatePartOrderMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updatePartOrder(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePartOrderMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartOrder>>>
+    export type UpdatePartOrderMutationBody = BodyType<PartOrderInput>
+    export type UpdatePartOrderMutationError = ErrorType<unknown>
+    export type UpdatePartOrderMutationVariables = {data: BodyType<PartOrderInput>}
+
+    /**
+ * @summary Save the shared SKU display order
+ */
+export const useUpdatePartOrder = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartOrder>>, TError,UpdatePartOrderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updatePartOrder>>,
+        TError,
+        UpdatePartOrderMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdatePartOrderMutationOptions(options), queryClient);
+    }
+
+export const getResetPartOrderUrl = () => {
+
+
+
+
+  return `/api/parts/order/reset`
+}
+
+/**
+ * @summary Reset the shared SKU order
+ */
+export const resetPartOrder = async ( options?: Parameters<typeof customFetch>[1]): Promise<Part[]> => {
+
+  return customFetch<Part[]>(getResetPartOrderUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getResetPartOrderMutationKey = () => ['resetPartOrder'] as const;
+
+export const getResetPartOrderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetPartOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetPartOrder>>, TError,void, TContext> => {
+
+const mutationKey = getResetPartOrderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetPartOrder>>, void> = () => {
+
+
+          return  resetPartOrder(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetPartOrderMutationResult = NonNullable<Awaited<ReturnType<typeof resetPartOrder>>>
+
+    export type ResetPartOrderMutationError = ErrorType<unknown>
+
+
+    /**
+ * @summary Reset the shared SKU order
+ */
+export const useResetPartOrder = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetPartOrder>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resetPartOrder>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResetPartOrderMutationOptions(options), queryClient);
     }
 
 export const getUpdatePartUrl = (id: number,) => {

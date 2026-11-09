@@ -13,4 +13,5 @@ export interface Part {
   display_name?: string | null;
   category: string;
   active?: boolean;
+  sort_order: number;
 }

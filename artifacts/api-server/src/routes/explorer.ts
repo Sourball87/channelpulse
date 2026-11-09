@@ -2,8 +2,18 @@ import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers } from "@workspace/db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
 import { previousWeekIso } from "../lib/parser";
-import { GetExplorerDataQueryParams, GetExplorerTrendQueryParams } from "@workspace/api-zod";
+import * as XLSX from "xlsx";
+import {
+  ExportExplorerViewBody,
+  GetExplorerAnalyticsQueryParams,
+  GetExplorerAnalyticsResponse,
+  GetExplorerDataQueryParams,
+  GetExplorerTrendQueryParams,
+} from "@workspace/api-zod";
 import { parseFilterParams, resolveRange, buildConditions } from "../lib/filter-params";
+import { loadSalesReconciliation } from "../lib/load-sales-reconciliation";
+import { calculateWoi } from "../lib/woi";
+import { calendarWeeksBetween, weeklySalesWeeks } from "../lib/weekly-sales";
 
 const router: IRouter = Router();
 
@@ -19,6 +29,136 @@ async function getLatestWeek(): Promise<string | null> {
     .limit(1);
   return result[0]?.week ?? null;
 }
+
+router.get("/explorer/analytics", async (req, res): Promise<void> => {
+  const query = GetExplorerAnalyticsQueryParams.safeParse({
+    ...req.query,
+    woi_weeks: typeof req.query.woi_weeks === "string" ? Number(req.query.woi_weeks) : req.query.woi_weeks,
+  });
+  if (!query.success) {
+    res.status(400).json({ error: "Select a valid reporting week and 4, 8 or 13-week WOI window." });
+    return;
+  }
+  const filters = parseFilterParams(req.query as Record<string, unknown>);
+  const range = filters.weekFrom && filters.weekTo
+    ? calendarWeeksBetween(filters.weekFrom, filters.weekTo)
+    : [];
+  if (filters.weekFrom && filters.weekTo && !range.length) {
+    res.status(400).json({ error: "Select a valid ISO week range of 260 weeks or less." });
+    return;
+  }
+
+  try {
+    const fallbackWeek = await getLatestWeek();
+    const displayWeeks = range.length
+      ? range
+      : [query.data.week_iso ?? filters.weekIso ?? fallbackWeek].filter((week): week is string => !!week);
+    const endWeek = displayWeeks.at(-1) ?? null;
+    if (!endWeek) {
+      res.json(GetExplorerAnalyticsResponse.parse({
+        week_iso: null, weeks: [], woi_weeks: query.data.woi_weeks ?? 4, pronto_note: null, rows: [],
+      }));
+      return;
+    }
+    const woiWeeks = query.data.woi_weeks ?? 4;
+    const trailingWeeks = weeklySalesWeeks(endWeek, woiWeeks);
+    const allWeeks = [...new Set([...displayWeeks, ...trailingWeeks])].sort();
+    const partsWhere = [
+      eq(parts.active, true),
+      query.data.category && query.data.category !== "All" ? eq(parts.category, query.data.category) : undefined,
+      filters.partIds.length ? inArray(parts.id, filters.partIds) : undefined,
+    ].filter(Boolean);
+    const [partRows, reconciliation] = await Promise.all([
+      db.select({
+        id: parts.id,
+        part_no: parts.partNo,
+        category: parts.category,
+        sort_order: parts.sortOrder,
+      }).from(parts).where(and(...partsWhere)).orderBy(parts.sortOrder, parts.category, parts.partNo),
+      loadSalesReconciliation(endWeek, {
+        partIds: filters.partIds,
+        resellerIds: filters.resellerIds,
+        category: query.data.category,
+        weeks: allWeeks,
+      }),
+    ]);
+    const partById = new Map(partRows.map(part => [part.id, part]));
+    const reconciliationByPairWeek = new Map<string, (typeof reconciliation.rows)[number]>();
+    for (const row of reconciliation.rows) {
+      if (row.part_id == null) continue;
+      reconciliationByPairWeek.set(`${row.part_id}:${row.reseller_id}:${row.week_iso}`, row);
+    }
+    const displayWeekSet = new Set(displayWeeks);
+    const sortedRows = reconciliation.rows
+      .filter(row => row.part_id != null && partById.has(row.part_id) && displayWeekSet.has(row.week_iso))
+      .sort((a, b) => {
+        const weekDiff = a.week_iso.localeCompare(b.week_iso);
+        if (weekDiff) return weekDiff;
+        const partA = partById.get(a.part_id!)!;
+        const partB = partById.get(b.part_id!)!;
+        return partA.sort_order - partB.sort_order || a.code.localeCompare(b.code);
+      });
+
+    const rows = sortedRows.map(row => {
+      const part = partById.get(row.part_id!)!;
+      const window = weeklySalesWeeks(row.week_iso, woiWeeks);
+      const observations = window
+        .map(week => reconciliationByPairWeek.get(`${row.part_id}:${row.reseller_id}:${week}`))
+        .filter((observation): observation is NonNullable<typeof observation> => observation != null)
+        .map(observation => ({
+          sold: observation.soh_sold,
+          soldColumnPresent: observation.sold_column_present,
+        }));
+      const woi = calculateWoi(row.soh, observations, woiWeeks);
+      return {
+        category: part.category,
+        part_id: row.part_id,
+        part_no: row.part_no,
+        reseller_id: row.reseller_id,
+        reseller_code: row.code,
+        week_iso: row.week_iso,
+        sold: row.soh_sold,
+        soh: row.soh,
+        avg_weekly_sold: woi.avgWeeklySales,
+        woi: woi.woi,
+        woi_state: woi.state,
+        serials_reported: row.serials_reported,
+        dd_sell_in: row.dd_sell_in_week,
+      };
+    });
+    res.json(GetExplorerAnalyticsResponse.parse({
+      week_iso: endWeek,
+      weeks: displayWeeks,
+      woi_weeks: woiWeeks,
+      pronto_note: reconciliation.pronto_note,
+      rows,
+    }));
+  } catch (err) {
+    req.log.error({ err }, "Failed to get Explorer analytics");
+    res.status(500).json({ error: "Unable to load Explorer data." });
+  }
+});
+
+router.post("/explorer/export", async (req, res): Promise<void> => {
+  const body = ExportExplorerViewBody.safeParse(req.body);
+  if (!body.success || body.data.columns.length > 50 || body.data.rows.length > 50_000 ||
+      body.data.rows.some(row => row.length !== body.data.columns.length)) {
+    res.status(400).json({ error: "The Explorer export is invalid or too large." });
+    return;
+  }
+  try {
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([body.data.columns, ...body.data.rows] as unknown[][]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Explorer");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="channelpulse-explorer.xlsx"');
+    res.status(200).send(buffer);
+  } catch (err) {
+    req.log.error({ err }, "Failed to export Explorer workbook");
+    res.status(500).json({ error: "Unable to create the Excel export." });
+  }
+});
 
 router.get("/explorer", async (req, res) => {
   try {

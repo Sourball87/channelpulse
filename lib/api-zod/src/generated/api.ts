@@ -1278,6 +1278,58 @@ export const GetDashboardHeatmapResponse = zod.object({
 
 
 /**
+ * @summary Get weeks-of-inventory by SKU and customer
+ */
+export const getWoiHeatmapQueryWeeksDefault = 4;
+export const getWoiHeatmapQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+export const getWoiHeatmapQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+
+
+export const GetWoiHeatmapQueryParams = zod.object({
+  "week_iso": zod.coerce.string().optional(),
+  "weeks": zod.union([zod.literal(4),zod.literal(8),zod.literal(13)]).default(getWoiHeatmapQueryWeeksDefault),
+  "category": zod.coerce.string().optional(),
+  "part_ids": zod.coerce.string().regex(getWoiHeatmapQueryPartIdsRegExp).optional(),
+  "reseller_ids": zod.coerce.string().regex(getWoiHeatmapQueryResellerIdsRegExp).optional()
+})
+
+export const GetWoiHeatmapResponse = zod.object({
+  "week_iso": zod.string().nullable(),
+  "window_weeks": zod.int(),
+  "weeks": zod.array(zod.string()),
+  "customers": zod.array(zod.object({
+  "id": zod.int(),
+  "code": zod.string()
+})),
+  "rows": zod.array(zod.object({
+  "part_id": zod.int(),
+  "part_no": zod.string(),
+  "category": zod.string(),
+  "cells": zod.array(zod.object({
+  "reseller_id": zod.int().nullable(),
+  "reseller_code": zod.string().nullable(),
+  "soh": zod.int().nullable(),
+  "avg_weekly_sales": zod.number().nullable(),
+  "woi": zod.number().nullable(),
+  "weeks_observed": zod.int(),
+  "window_weeks": zod.int(),
+  "state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh'])
+})),
+  "channel_total": zod.object({
+  "reseller_id": zod.int().nullable(),
+  "reseller_code": zod.string().nullable(),
+  "soh": zod.int().nullable(),
+  "avg_weekly_sales": zod.number().nullable(),
+  "woi": zod.number().nullable(),
+  "weeks_observed": zod.int(),
+  "window_weeks": zod.int(),
+  "state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh'])
+})
+}))
+})
+
+
+/**
  * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
  */
 export const getDashboardWeeklySalesQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
@@ -1347,6 +1399,60 @@ export const GetExplorerDataResponseItem = zod.object({
   "avg_cost": zod.number().nullish()
 })
 export const GetExplorerDataResponse = zod.array(GetExplorerDataResponseItem)
+
+
+/**
+ * @summary Get weekly Explorer measures for SKUs and customers
+ */
+export const getExplorerAnalyticsQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+export const getExplorerAnalyticsQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+export const getExplorerAnalyticsQueryWoiWeeksDefault = 4;
+
+export const GetExplorerAnalyticsQueryParams = zod.object({
+  "week_iso": zod.coerce.string().optional(),
+  "week_from": zod.coerce.string().optional(),
+  "week_to": zod.coerce.string().optional(),
+  "category": zod.coerce.string().optional(),
+  "part_ids": zod.coerce.string().regex(getExplorerAnalyticsQueryPartIdsRegExp).optional(),
+  "reseller_ids": zod.coerce.string().regex(getExplorerAnalyticsQueryResellerIdsRegExp).optional(),
+  "woi_weeks": zod.union([zod.literal(4),zod.literal(8),zod.literal(13)]).default(getExplorerAnalyticsQueryWoiWeeksDefault)
+})
+
+export const GetExplorerAnalyticsResponse = zod.object({
+  "week_iso": zod.string().nullable(),
+  "weeks": zod.array(zod.string()),
+  "woi_weeks": zod.int(),
+  "pronto_note": zod.string().nullable(),
+  "rows": zod.array(zod.object({
+  "category": zod.string(),
+  "part_id": zod.int().nullable(),
+  "part_no": zod.string(),
+  "reseller_id": zod.int(),
+  "reseller_code": zod.string(),
+  "week_iso": zod.string(),
+  "sold": zod.int().nullable(),
+  "soh": zod.int().nullable(),
+  "avg_weekly_sold": zod.number().nullable(),
+  "woi": zod.number().nullable(),
+  "woi_state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh']),
+  "serials_reported": zod.int().nullable(),
+  "dd_sell_in": zod.int().nullable()
+}))
+})
+
+
+/**
+ * @summary Export the currently visible Explorer rows to Excel
+ */
+
+
+
+export const ExportExplorerViewBody = zod.object({
+  "columns": zod.array(zod.string()).min(1),
+  "rows": zod.array(zod.array(zod.union([zod.string(),zod.number()]).nullable()))
+})
+
+export const ExportExplorerViewResponse = zod.unknown()
 
 
 /**
@@ -1527,7 +1633,8 @@ export const GetPartsResponseItem = zod.object({
   "part_no": zod.string(),
   "display_name": zod.string().nullish(),
   "category": zod.string(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sort_order": zod.int()
 })
 export const GetPartsResponse = zod.array(GetPartsResponseItem)
 
@@ -1546,8 +1653,45 @@ export const CreatePartResponse = zod.object({
   "part_no": zod.string(),
   "display_name": zod.string().nullish(),
   "category": zod.string(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sort_order": zod.int()
 })
+
+
+/**
+ * @summary Save the shared SKU display order
+ */
+
+
+
+
+export const UpdatePartOrderBody = zod.object({
+  "part_ids": zod.array(zod.int().min(1)).min(1)
+})
+
+export const UpdatePartOrderResponseItem = zod.object({
+  "id": zod.int(),
+  "part_no": zod.string(),
+  "display_name": zod.string().nullish(),
+  "category": zod.string(),
+  "active": zod.boolean().optional(),
+  "sort_order": zod.int()
+})
+export const UpdatePartOrderResponse = zod.array(UpdatePartOrderResponseItem)
+
+
+/**
+ * @summary Reset the shared SKU order
+ */
+export const ResetPartOrderResponseItem = zod.object({
+  "id": zod.int(),
+  "part_no": zod.string(),
+  "display_name": zod.string().nullish(),
+  "category": zod.string(),
+  "active": zod.boolean().optional(),
+  "sort_order": zod.int()
+})
+export const ResetPartOrderResponse = zod.array(ResetPartOrderResponseItem)
 
 
 /**
@@ -1568,7 +1712,8 @@ export const UpdatePartResponse = zod.object({
   "part_no": zod.string(),
   "display_name": zod.string().nullish(),
   "category": zod.string(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "sort_order": zod.int()
 })
 
 

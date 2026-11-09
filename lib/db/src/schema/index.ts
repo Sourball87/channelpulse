@@ -38,6 +38,7 @@ export const parts = pgTable("parts", {
   displayName: text("display_name"),
   category: text("category").notNull(),
   active: boolean("active").default(true).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
 });
 
 export const uploads = pgTable("uploads", {

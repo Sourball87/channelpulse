@@ -27,10 +27,11 @@ export async function loadSalesReconciliation(requestedWeek: string | undefined,
       ...imports.flatMap(i => i.rows.filter(r => validDate(r.date)).map(r => dateStringToWeekIso(r.date))),
     ].filter((w): w is string => typeof w === "string" && isValidWeekIso(w)).sort();
     const week = requestedWeek ?? candidates.at(-1) ?? null;
+    const weeks = scope.weeks ?? (week ? weeklySalesWeeks(week) : []);
     const snapshots = week ? (await c.query(`SELECT s.reseller_id AS "resellerId",p.part_no AS sku,
       s.week_iso AS week,s.soh,s.sell_through_7d AS sold,u.detected_mappings AS mapping
       FROM inventory_snapshots s JOIN parts p ON p.id=s.part_id LEFT JOIN uploads u ON u.id=s.upload_id
-      WHERE s.week_iso=ANY($1::text[])`, [weeklySalesWeeks(week)])).rows.map(s => ({
+      WHERE s.week_iso=ANY($1::text[])`, [weeks])).rows.map(s => ({
         resellerId: s.resellerId, sku: s.sku, week: s.week, soh: Number(s.soh), sold: Number(s.sold),
         soldColumn: mappedSoldColumn(s.mapping, Number(s.sold)),
       })) : [];

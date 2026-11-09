@@ -3,7 +3,7 @@ name: PHO-style Focus drill-down
 description: User's requested analytics sidebar behavior and reference
 ---
 
-The user wants ChannelPulse's left bar to resemble their PHO sidebar, with Focus and Reset and account/SKU drill-downs that automatically filter the analytics.
+The user wants ChannelPulse's left bar to resemble their PHO sidebar, with Focus and Reset and account/SKU drill-downs that automatically filter the analytics. Focus filtering belongs on Explorer.
 
 **Why:** The user requested the familiar PHO workflow, rather than a navigation-only sidebar.
 
@@ -21,23 +21,23 @@ Stock Code is used to measure stock sell-through per week, meaning units sold pe
 
 **How to apply:** Express weekly sell-through in units. Distinguish it from stock on hand, percentage sell-through and weeks of inventory.
 
-Show weekly sell-through (units sold) in the heatmap under Stock Code.
+The user wants one Dashboard at `/` with the current-week SOH/ST table and a WOI heatmap. WOI windows are 4, 8 or 13 weeks, default 4; missing sales reports are not zero, and no sales is a separate state.
 
-**Why:** The user corrected their earlier choice: "no sorry switch the heatmap under stock code to weekly sell through".
+**Why:** The user replaced the separate SOH/Sell Through layout with a Dashboard WOI view and explicitly set the coverage windows and no-sales behavior.
 
-**How to apply:** Use weekly sales for cell values and heatmap colours, not weeks of inventory. Keep Account Code, Stock Code and reporting-week filters connected.
+**How to apply:** Keep the Dashboard table independently scrollable. Show WOI under 2 in red, 2 to under 4 amber, 4 through 12 neutral, and over 12 blue. Use actual SOH/ST sales observations for the average, expose coverage, and never represent zero sales as infinite WOI.
 
-Show weeks across the top with the most recent week first, Stock Codes down the left, and units sold in each cell for the last 12 weeks.
+Sell Through and Explorer are one Phocas-style Explorer at `/explorer`; `/sell-through` may remain an alias. Selectable dimensions are Category, SKU, Customer, Week; measures are Sold, SOH, WOI, Serials reported and DD sell-in. Drill Category → SKU → Customer, with Week available as an additional dimension.
 
-**Why:** The user selected "weeks across the top, SKUs down the left" and "Last 12 weeks", then requested reversing the columns so the most recent week is first.
+**Why:** The user requested a unified Explorer instead of a separate Sell Through page.
 
-**How to apply:** Account selection scopes the sales and available Stock Codes to the 12-week history. Use consecutive calendar weeks ending at the reporting selection, not 12 nonconsecutive uploaded weeks. Preserve missing reports as missing, rather than inventing zero sales.
+**How to apply:** Keep Focus account/SKU filters on Explorer. Use actual part categories for its category filter, and keep category editing in Settings.
 
-Separate SOH and Sell Through into navigation pages, with Sell Through directly below SOH (the former Dashboard). SOH keeps all current summary cards and shows current-week stock with SKUs down the left and Account Codes across the top. Sell Through contains the Phocas Focus sidebar and the weekly sales heatmap only.
+SKU row order is shared between the Dashboard's SOH/ST table and WOI heatmap, stored centrally for all users, and resettable.
 
-**Why:** After trying a shared Dashboard/Focus toggle, the user said they would rather separate them and put Sell Through underneath the Dashboard/SOH navigation item. They previously confirmed the SOH layout and retention of all summary cards.
+**Why:** The user explicitly rejected browser-local ordering and requested a shared Reset order action.
 
-**How to apply:** Default to SOH. Open Phocas via the Sell Through navigation entry, not a Dashboard mode toggle. Preserve account/stock/date filters between pages and retain the 12-week newest-first sales matrix. Focus only expands/collapses the sell-through drill controls. Keep stock/WOI summary cards out of Sell Through.
+**How to apply:** Persist the complete SKU order server-side and render both Dashboard tables from it. Do not store SKU order in localStorage.
 
 The customer-by-Stock-Code table should support SOH-only, ST-only and combined ST/SOH subcolumns, with metrics dragged into the table.
 

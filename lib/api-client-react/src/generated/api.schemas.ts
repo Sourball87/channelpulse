@@ -599,6 +599,54 @@ export interface HeatmapData {
   cells: HeatmapCell[];
 }
 
+export interface WoiHeatmapCustomer {
+  id: number;
+  code: string;
+}
+
+export type WoiHeatmapCellState = typeof WoiHeatmapCellState[keyof typeof WoiHeatmapCellState];
+
+
+export const WoiHeatmapCellState = {
+  value: 'value',
+  no_sales: 'no_sales',
+  no_sales_data: 'no_sales_data',
+  no_soh: 'no_soh',
+} as const;
+
+export interface WoiHeatmapCell {
+  /** @nullable */
+  reseller_id: number | null;
+  /** @nullable */
+  reseller_code: string | null;
+  /** @nullable */
+  soh: number | null;
+  /** @nullable */
+  avg_weekly_sales: number | null;
+  /** @nullable */
+  woi: number | null;
+  weeks_observed: number;
+  window_weeks: number;
+  state: WoiHeatmapCellState;
+}
+
+export interface WoiHeatmapPart {
+  part_id: number;
+  part_no: string;
+  category: string;
+  cells: WoiHeatmapCell[];
+  channel_total: WoiHeatmapCell;
+}
+
+export interface WoiHeatmapData {
+  /** @nullable */
+  week_iso: string | null;
+  window_weeks: number;
+  weeks: string[];
+  customers: WoiHeatmapCustomer[];
+  rows: WoiHeatmapPart[];
+}
+
 export interface WeeklySalesCell {
   /** @nullable */
   part_id: number | null;
@@ -721,6 +769,55 @@ export interface ExplorerRow {
   on_order?: number | null;
   /** @nullable */
   avg_cost?: number | null;
+}
+
+export type ExplorerAnalyticsRowWoiState = typeof ExplorerAnalyticsRowWoiState[keyof typeof ExplorerAnalyticsRowWoiState];
+
+
+export const ExplorerAnalyticsRowWoiState = {
+  value: 'value',
+  no_sales: 'no_sales',
+  no_sales_data: 'no_sales_data',
+  no_soh: 'no_soh',
+} as const;
+
+export interface ExplorerAnalyticsRow {
+  category: string;
+  /** @nullable */
+  part_id: number | null;
+  part_no: string;
+  reseller_id: number;
+  reseller_code: string;
+  week_iso: string;
+  /** @nullable */
+  sold: number | null;
+  /** @nullable */
+  soh: number | null;
+  /** @nullable */
+  avg_weekly_sold: number | null;
+  /** @nullable */
+  woi: number | null;
+  woi_state: ExplorerAnalyticsRowWoiState;
+  /** @nullable */
+  serials_reported: number | null;
+  /** @nullable */
+  dd_sell_in: number | null;
+}
+
+export interface ExplorerAnalyticsData {
+  /** @nullable */
+  week_iso: string | null;
+  weeks: string[];
+  woi_weeks: number;
+  /** @nullable */
+  pronto_note: string | null;
+  rows: ExplorerAnalyticsRow[];
+}
+
+export interface ExplorerExportInput {
+  /** @minItems 1 */
+  columns: string[];
+  rows: ((string | number | null)[])[];
 }
 
 export interface TrendPoint {
@@ -1162,6 +1259,15 @@ export interface Part {
   display_name?: string | null;
   category: string;
   active?: boolean;
+  sort_order: number;
+}
+
+export interface PartOrderInput {
+  /**
+     * @minItems 1
+     * @items.minimum 1
+     */
+  part_ids: number[];
 }
 
 export interface PartInput {
@@ -1218,6 +1324,29 @@ week_iso?: string;
 category?: string;
 };
 
+export type GetWoiHeatmapParams = {
+week_iso?: string;
+weeks?: GetWoiHeatmapWeeks;
+category?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+part_ids?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+reseller_ids?: string;
+};
+
+export type GetWoiHeatmapWeeks = typeof GetWoiHeatmapWeeks[keyof typeof GetWoiHeatmapWeeks];
+
+
+export const GetWoiHeatmapWeeks = {
+  NUMBER_4: 4,
+  NUMBER_8: 8,
+  NUMBER_13: 13,
+} as const;
+
 export type GetDashboardWeeklySalesParams = {
 /**
  * Final week of the 12-week window; defaults to the latest uploaded week
@@ -1250,6 +1379,31 @@ export const GetExplorerDataPivot = {
   category_model_reseller: 'category_model_reseller',
   reseller_model: 'reseller_model',
   model_week: 'model_week',
+} as const;
+
+export type GetExplorerAnalyticsParams = {
+week_iso?: string;
+week_from?: string;
+week_to?: string;
+category?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+part_ids?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+reseller_ids?: string;
+woi_weeks?: GetExplorerAnalyticsWoiWeeks;
+};
+
+export type GetExplorerAnalyticsWoiWeeks = typeof GetExplorerAnalyticsWoiWeeks[keyof typeof GetExplorerAnalyticsWoiWeeks];
+
+
+export const GetExplorerAnalyticsWoiWeeks = {
+  NUMBER_4: 4,
+  NUMBER_8: 8,
+  NUMBER_13: 13,
 } as const;
 
 export type GetExplorerTrendParams = {

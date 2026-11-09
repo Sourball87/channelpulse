@@ -1,148 +1,92 @@
-import { useState, useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getGetPartsQueryKey,
+  useGetParts,
+  useResetPartOrder,
+  useUpdatePartOrder,
+} from "@workspace/api-client-react";
 
-// ─── Defaults extracted from reference screenshot ─────────────────────────────
+export const DEFAULT_PART_ORDER: string[] = [];
+export const DEFAULT_RESELLER_ORDER: string[] = ["CA", "centrecom", "scorptec", "ple", "pccg", "umart", "ks", "jw", "digi"];
 
-export const DEFAULT_PART_ORDER: string[] = [
-  "MZ-77E250BW",
-  "MZ-77E500BW",
-  "MZ-77E1T0BW",
-  "MZ-77E2T0BW",
-  "MZ-77E4T0BW",
-  "MZ-77E8T0BW",
-  "MZ-V9V1T0BW",
-  "MZ-V9V2T0BW",
-  "MZ-V9S1T0BW",
-  "MZ-V9S2T0BW",
-  "MZ-V9S4T0BW",
-  "MZ-V9P1T0BW",
-  "MZ-V9P2T0BW",
-  "MZ-V9P4T0BW",
-  "MZ-V9P1T0CW",
-  "MZ-V9P2T0CW",
-  "MZ-V9P4T0CW",
-  "MZ-VAP1T0BW",
-  "MZ-VAP2T0BW",
-  "MZ-VAP4T0BW",
-  "MZ-VAP8T0BW",
-  "MZ-VAP1T0CW",
-  "MZ-VAP2T0CW",
-  "MZ-VAP4T0CW",
-  "MZ-VAP8T0CW",
-];
-
-// Ordered by reseller code (case-insensitive match)
-export const DEFAULT_RESELLER_ORDER: string[] = [
-  "CA",
-  "centrecom",
-  "scorptec",
-  "ple",
-  "pccg",
-  "umart",
-  "ks",
-  "jw",
-  "digi",
-];
-
-const LS_PARTS_KEY = "channel-pulse:heatmap-part-order";
-const LS_RESELLERS_KEY = "channel-pulse:heatmap-reseller-order";
-
-function loadFromStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw) as T;
-  } catch {
-    // ignore
-  }
-  return fallback;
-}
-
-function saveToStorage<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
-}
-
-// ─── Sort helpers ─────────────────────────────────────────────────────────────
-
-/** Sort `items` by their position in `order` (case-insensitive). Unknown items append at the end. */
 export function sortByOrder(items: string[], order: string[]): string[] {
-  const orderMap = new Map(order.map((v, i) => [v.toLowerCase(), i]));
-  return [...items].sort((a, b) => {
-    const ai = orderMap.get(a.toLowerCase()) ?? Infinity;
-    const bi = orderMap.get(b.toLowerCase()) ?? Infinity;
-    return ai - bi;
-  });
+  const positions = new Map(order.map((value, index) => [value.toLowerCase(), index]));
+  return [...items].sort((a, b) => (positions.get(a.toLowerCase()) ?? Infinity) - (positions.get(b.toLowerCase()) ?? Infinity));
 }
 
-function reorderArray(arr: string[], fromItem: string, toItem: string): string[] {
-  const next = [...arr];
-  const fromIdx = next.findIndex(v => v.toLowerCase() === fromItem.toLowerCase());
-  const toIdx = next.findIndex(v => v.toLowerCase() === toItem.toLowerCase());
-  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return arr;
-  next.splice(fromIdx, 1);
-  next.splice(toIdx, 0, fromItem);
+function reorderArray(items: string[], from: string, to: string): string[] {
+  const next = [...items];
+  const fromIndex = next.findIndex((value) => value.toLowerCase() === from.toLowerCase());
+  const toIndex = next.findIndex((value) => value.toLowerCase() === to.toLowerCase());
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return items;
+  next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, from);
   return next;
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
+/** SKU order is sourced from the server; only the uncommitted draft is local. */
 export function useHeatmapOrder() {
-  const [partOrder, setPartOrder] = useState<string[]>(() =>
-    loadFromStorage(LS_PARTS_KEY, DEFAULT_PART_ORDER)
-  );
-  const [resellerOrder, setResellerOrder] = useState<string[]>(() =>
-    loadFromStorage(LS_RESELLERS_KEY, DEFAULT_RESELLER_ORDER)
-  );
-
-  // Working copies while in edit mode (not yet committed to storage)
-  const [draftPartOrder, setDraftPartOrder] = useState<string[]>(partOrder);
-  const [draftResellerOrder, setDraftResellerOrder] = useState<string[]>(resellerOrder);
-
-  const [isEditing, setIsEditing] = useState(false);
+  const { data: parts = [] } = useGetParts();
+  const queryClient = useQueryClient();
+  const updateOrder = useUpdatePartOrder();
+  const resetOrder = useResetPartOrder();
+  const [draftPartOrder, setDraftPartOrder] = useState<string[]>([]);
+  const [draftActive, setDraftActive] = useState(false);
+  const [resellerOrder, setResellerOrder] = useState<string[]>(DEFAULT_RESELLER_ORDER);
+  const [draftResellerOrder, setDraftResellerOrder] = useState<string[]>(DEFAULT_RESELLER_ORDER);
+  const partOrder = useMemo(() => [...parts].sort((a, b) => a.sort_order - b.sort_order).map((part) => part.part_no), [parts]);
+  const isEditing = draftActive;
 
   const startEditing = useCallback(() => {
     setDraftPartOrder(partOrder);
     setDraftResellerOrder(resellerOrder);
-    setIsEditing(true);
+    setDraftActive(true);
   }, [partOrder, resellerOrder]);
-
-  const commitOrder = useCallback(() => {
-    setPartOrder(draftPartOrder);
-    setResellerOrder(draftResellerOrder);
-    saveToStorage(LS_PARTS_KEY, draftPartOrder);
-    saveToStorage(LS_RESELLERS_KEY, draftResellerOrder);
-    setIsEditing(false);
-  }, [draftPartOrder, draftResellerOrder]);
-
+  const reorderPart = useCallback((from: string, to: string) => {
+    setDraftPartOrder((current) => reorderArray(current, from, to));
+  }, []);
   const cancelEditing = useCallback(() => {
     setDraftPartOrder(partOrder);
     setDraftResellerOrder(resellerOrder);
-    setIsEditing(false);
+    setDraftActive(false);
   }, [partOrder, resellerOrder]);
-
+  const commitOrder = useCallback(() => {
+    const orderedIds = [...parts]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .sort((a, b) => {
+        const ai = draftPartOrder.indexOf(a.part_no);
+        const bi = draftPartOrder.indexOf(b.part_no);
+        return (ai < 0 ? Infinity : ai) - (bi < 0 ? Infinity : bi);
+      })
+      .map((part) => part.id);
+    if (!orderedIds.length) return;
+    updateOrder.mutate({ data: { part_ids: orderedIds } }, {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getGetPartsQueryKey() });
+        setDraftActive(false);
+      },
+    });
+  }, [parts, draftPartOrder, updateOrder, queryClient]);
   const resetToDefaults = useCallback(() => {
-    setDraftPartOrder(DEFAULT_PART_ORDER);
-    setDraftResellerOrder(DEFAULT_RESELLER_ORDER);
-  }, []);
-
-  const reorderPart = useCallback((from: string, to: string) => {
-    setDraftPartOrder(prev => reorderArray(prev, from, to));
-  }, []);
-
+    resetOrder.mutate(undefined, {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getGetPartsQueryKey() });
+        setDraftActive(false);
+      },
+    });
+  }, [resetOrder, queryClient]);
   const reorderReseller = useCallback((from: string, to: string) => {
-    setDraftResellerOrder(prev => reorderArray(prev, from, to));
+    setDraftResellerOrder((current) => reorderArray(current, from, to));
   }, []);
 
   return {
-    // Active (committed) order — use for display
     partOrder,
     resellerOrder,
-    // Draft order — use while editing
     draftPartOrder,
     draftResellerOrder,
     isEditing,
+    isSaving: updateOrder.isPending || resetOrder.isPending,
     startEditing,
     commitOrder,
     cancelEditing,

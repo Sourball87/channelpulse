@@ -1,6 +1,6 @@
 - [ChannelPulse build decisions](channel-pulse.md) — key architecture choices and gotchas for this project
 - [Preview resize notifications](preview-resize-notifications.md) — distinguish harmless browser ResizeObserver notices from real application exceptions.
-- [Focus drill-down](focus-drill-down.md) — user wants a PHO-style sidebar with account/SKU selections that automatically filter analytics.
+- [Focus drill-down](focus-drill-down.md) — Dashboard WOI and a shared-order, PHO-style Explorer with account/SKU drill-down.
 - [Analytics privacy](analytics-privacy.md) — measure actions and counts without sending channel data or account/SKU identities.
 - [Report interpretation](report-interpretation.md) — missing dates and shared formats require confirmation; calendar dates determine ISO weeks.
 - [Dependency security](dependency-security.md) — patched SheetJS releases still trigger unbounded npm advisories; force-rebuild composite types after upgrades.
@@ -8,5 +8,5 @@
 - [Customer masking](customer-masking.md) — show the nine customers only by their requested abbreviations; preserve internal matching identities.
 - [Category options](category-options.md) — HDD & Memory must not be offered as a category option.
 - [Private browser-test auth](browser-test-auth.md) — notebook and shell do not share secrets; authenticate runtime-side without exposing credentials or weakening app auth.
-- [Weekly sales reconciliation](weekly-sales-reconciliation.md) — independent SOH denominator, serial-backed provenance, missing versus zero, and DD coverage warnings.
+- [Weekly sales reconciliation](weekly-sales-reconciliation.md) — independent WOI sales provenance, missing versus zero, serial fallback and DD coverage warnings.
 - [Program-table ingestion](program-table-ingestion.md) — tolerant shared paste/upload parsing, reviewable dates and ignored columns, and no guessed caps or calculated claim fields.

@@ -13,7 +13,7 @@ export interface SalesInputs {
   accounts: SalesAccount[]; parts: SalesPart[]; snapshots: SalesSnapshot[];
   uploads: SalesUpload[]; imports: ScanbackImport[]; reports: ReportMeta[];
 }
-export interface SalesScope { partIds?: number[]; resellerIds?: number[]; category?: string }
+export interface SalesScope { partIds?: number[]; resellerIds?: number[]; category?: string; weeks?: string[] }
 const key = (account: number, sku: string, week = "") => JSON.stringify([account, sku, week]);
 const skuKey = (sku: string) => sku.trim().toUpperCase();
 
@@ -47,7 +47,7 @@ export function reconcileSales(input: {
 
 export function salesReconciliation(endWeek: string | null, data: SalesInputs, scope: SalesScope = {}): SerialReconciliation {
   if (!endWeek) return { week_iso: null, weeks: [], rows: [], pronto_through: null, pronto_note: "No committed Pronto serial data.", unmatched_serials: 0 };
-  const weeks = weeklySalesWeeks(endWeek), window = new Set(weeks);
+  const weeks = scope.weeks ?? weeklySalesWeeks(endWeek), window = new Set(weeks);
   const accounts = new Map(data.accounts.map(a => [a.id, a]));
   const parts = new Map(data.parts.map(p => [skuKey(p.code), p]));
   const include = (account: number, sku: string) => {

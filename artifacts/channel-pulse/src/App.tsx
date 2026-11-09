@@ -8,7 +8,6 @@ import { FilterProvider } from '@/context/filter-context';
 import NotFound from '@/pages/not-found';
 
 import Dashboard from '@/pages/dashboard';
-import Insights from '@/pages/insights';
 import Explorer from '@/pages/explorer';
 import Trends from '@/pages/trends';
 import Alerts from '@/pages/alerts';
@@ -24,8 +23,7 @@ function Router() {
       <AppLayout>
         <Switch>
           <Route path="/" component={Dashboard} />
-          <Route path="/sell-through" component={Dashboard} />
-          <Route path="/insights" component={Insights} />
+          <Route path="/sell-through" component={Explorer} />
           <Route path="/explorer" component={Explorer} />
           <Route path="/trends" component={Trends} />
           <Route path="/alerts" component={Alerts} />

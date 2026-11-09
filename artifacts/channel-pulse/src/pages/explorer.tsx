@@ -1,300 +1,342 @@
-import { formatWeekLabel, formatWeekRange } from "@/lib/week-display";
-import { useState, useMemo, useCallback } from "react";
-import { AgGridReact } from "ag-grid-react";
-import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-alpine.css";
-
-ModuleRegistry.registerModules([AllCommunityModule]);
-import { useGetExplorerData, useGetExplorerTrend } from "@workspace/api-client-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, ArrowUp, ArrowDown, BarChart2 } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ComposedChart } from "recharts";
+import { useMemo, useState } from "react";
+import {
+  exportExplorerView,
+  getGetExplorerAnalyticsQueryKey,
+  useGetExplorerAnalytics,
+  useGetParts,
+} from "@workspace/api-client-react";
+import type { ExplorerAnalyticsRow } from "@workspace/api-client-react";
 import { useFilters } from "@/context/filter-context";
+import { customerLabel } from "@/lib/customer-display";
+import { formatWeekLabel } from "@/lib/week-display";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertCircle, ChevronRight, Download, RotateCcw, TableProperties } from "lucide-react";
 
-const CATEGORIES = ["All", "SSD", "Monitor", "Mobility"];
+type Dimension = "Category" | "SKU" | "Customer" | "Week";
+type Measure = "Sold" | "SOH" | "WOI" | "Serials reported" | "DD sell-in";
+type DrillEntry = { dimension: Dimension; key: string; label: string };
+type GroupedRow = {
+  key: string;
+  label: string;
+  dimension: Dimension;
+  values: Record<Measure, number | null>;
+  woiState: string | null;
+  sourceRows: ExplorerAnalyticsRow[];
+  drill?: DrillEntry;
+};
 
-function ValueWithDelta({ value, delta }: { value: number | null | undefined, delta: number | null | undefined }) {
-  if (value === null || value === undefined) return <span className="text-muted-foreground">—</span>;
-  
-  return (
-    <div className="flex items-center gap-2 justify-end w-full">
-      <span>{value.toLocaleString()}</span>
-      {delta !== null && delta !== undefined && delta !== 0 && (
-        <span className={`text-[10px] flex items-center ${delta > 0 ? "text-emerald-500" : "text-rose-500"}`}>
-          {delta > 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-          {Math.abs(delta)}
-        </span>
-      )}
-    </div>
-  );
+const DIMENSION_ORDER: Dimension[] = ["Category", "SKU", "Customer", "Week"];
+const MEASURE_KEYS: Record<Measure, keyof ExplorerAnalyticsRow | "woi"> = {
+  Sold: "sold",
+  SOH: "soh",
+  WOI: "woi",
+  "Serials reported": "serials_reported",
+  "DD sell-in": "dd_sell_in",
+};
+const DIMENSION_LABELS: Record<Dimension, string> = {
+  Category: "Category",
+  SKU: "Stock code",
+  Customer: "Customer",
+  Week: "Week",
+};
+
+function groupField(dimension: Dimension, row: ExplorerAnalyticsRow): string {
+  if (dimension === "Category") return row.category;
+  if (dimension === "SKU") return String(row.part_id ?? row.part_no);
+  if (dimension === "Customer") return String(row.reseller_id);
+  return row.week_iso;
+}
+
+function groupLabel(dimension: Dimension, row: ExplorerAnalyticsRow): string {
+  if (dimension === "Category") return row.category || "Uncategorized";
+  if (dimension === "SKU") return row.part_no;
+  if (dimension === "Customer") return customerLabel(row.reseller_code);
+  return formatWeekLabel(row.week_iso);
+}
+
+function latestRows(rows: ExplorerAnalyticsRow[]): ExplorerAnalyticsRow[] {
+  const latestWeek = rows.reduce((latest, row) => row.week_iso > latest ? row.week_iso : latest, "");
+  return rows.filter((row) => row.week_iso === latestWeek);
+}
+
+function aggregate(rows: ExplorerAnalyticsRow[]): GroupedRow["values"] & { woiState: string | null } {
+  const sum = (key: "sold" | "serials_reported" | "dd_sell_in") => {
+    const values = rows.map((row) => row[key]).filter((value): value is number => value != null);
+    return values.length ? values.reduce((total, value) => total + value, 0) : null;
+  };
+  const latest = latestRows(rows);
+  const sohValues = latest.map((row) => row.soh).filter((value): value is number => value != null);
+  const averageValues = latest.map((row) => row.avg_weekly_sold).filter((value): value is number => value != null);
+  const soh = sohValues.length ? sohValues.reduce((total, value) => total + value, 0) : null;
+  const average = averageValues.length ? averageValues.reduce((total, value) => total + value, 0) : null;
+  const rowWoi = latest.find((row) => row.woi != null);
+  const woi = average != null && average > 0 && soh != null ? soh / average : rowWoi?.woi ?? null;
+  const woiState = woi != null ? "value" : latest.find((row) => row.woi_state)?.woi_state ?? null;
+  return {
+    Sold: sum("sold"),
+    SOH: soh,
+    WOI: woi,
+    "Serials reported": sum("serials_reported"),
+    "DD sell-in": sum("dd_sell_in"),
+    woiState,
+  };
+}
+
+function formatValue(value: number | null, measure: Measure, woiState: string | null): string {
+  if (value != null) return measure === "WOI" ? value.toFixed(1) : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (measure === "WOI" && woiState === "no_sales") return "No sales";
+  return "—";
 }
 
 export default function Explorer() {
-  const [category, setCategory] = useState<string>("All");
-  const [pivot, setPivot] = useState<"category_model_reseller" | "reseller_model" | "model_week">("category_model_reseller");
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [selectedRow, setSelectedRow] = useState<any>(null);
-
-  const { apiParams, mode } = useFilters();
+  const { apiParams } = useFilters();
+  const [category, setCategory] = useState("All");
+  const [woiWeeks, setWoiWeeks] = useState<4 | 8 | 13>(4);
+  const [dimensions, setDimensions] = useState<Dimension[]>(["Category", "SKU", "Customer"]);
+  const [measures, setMeasures] = useState<Measure[]>(["Sold", "SOH", "WOI"]);
+  const [path, setPath] = useState<DrillEntry[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const { data: parts = [] } = useGetParts();
   const queryCategory = category === "All" ? undefined : category;
-
-  const { data: rows, isLoading } = useGetExplorerData({ 
+  const params = {
     ...apiParams,
     category: queryCategory,
-    pivot,
-  });
+    woi_weeks: woiWeeks,
+  };
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+  } = useGetExplorerAnalytics(params, { query: { queryKey: getGetExplorerAnalyticsQueryKey(params) } });
 
-  const toggleExpand = useCallback((id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
+  const categoryOptions = useMemo(() => {
+    const fromParts = parts.filter((part) => part.active !== false).map((part) => part.category).filter((value) => value && value !== "HDD & Memory");
+    return ["All", ...Array.from(new Set(fromParts)).sort((a, b) => a.localeCompare(b))];
+  }, [parts]);
+  const availableDimensions: Dimension[] = dimensions.length ? dimensions : ["Category"];
+  const currentDimension: Dimension = availableDimensions[Math.min(path.length, availableDimensions.length - 1)] ?? "Category";
+  const filteredRows = useMemo(() => {
+    let rows = data?.rows ?? [];
+    for (const entry of path) rows = rows.filter((row) => groupField(entry.dimension, row) === entry.key);
+    return rows;
+  }, [data, path]);
 
   const visibleRows = useMemo(() => {
-    if (!rows) return [];
-    return rows.filter(row => {
-      if (!row.parent_id) return true;
-      let parent = rows.find(r => r.id === row.parent_id);
-      while (parent) {
-        if (!expandedIds.has(parent.id)) return false;
-        parent = parent.parent_id ? rows.find(r => r.id === parent?.parent_id) : undefined;
-      }
-      return true;
+    if (!filteredRows.length || !currentDimension) return [];
+    const buckets = new Map<string, ExplorerAnalyticsRow[]>();
+    for (const row of filteredRows) {
+      const key = groupField(currentDimension, row);
+      const bucket = buckets.get(key) ?? [];
+      bucket.push(row);
+      buckets.set(key, bucket);
+    }
+    return Array.from(buckets.entries()).map(([key, rows]) => {
+      const representative = rows[0];
+      const metrics = aggregate(rows);
+      const label = groupLabel(currentDimension, representative);
+      const nextDimension = availableDimensions[path.length + 1];
+      const hasNext = Boolean(nextDimension);
+      return {
+        key,
+        label,
+        dimension: currentDimension,
+        values: metrics,
+        woiState: metrics.woiState,
+        sourceRows: rows,
+        drill: hasNext ? { dimension: currentDimension, key, label } : undefined,
+      } satisfies GroupedRow;
+    }).sort((a, b) => {
+      if (currentDimension === "Week") return a.key.localeCompare(b.key);
+      return a.label.localeCompare(b.label, undefined, { numeric: true });
     });
-  }, [rows, expandedIds]);
+  }, [filteredRows, currentDimension, availableDimensions, path.length]);
 
-  const hasChildren = useCallback((id: string) => rows?.some(r => r.parent_id === id) || false, [rows]);
+  const toggleDimension = (dimension: Dimension) => {
+    setDimensions((current) => {
+      const next = current.includes(dimension) ? current.filter((item) => item !== dimension) : [...current, dimension];
+      const ordered = DIMENSION_ORDER.filter((item) => next.includes(item));
+      setPath([]);
+      return ordered.length ? ordered : ["Category"];
+    });
+  };
+  const toggleMeasure = (measure: Measure) => {
+    setMeasures((current) => current.includes(measure) ? current.filter((item) => item !== measure) : [...current, measure]);
+  };
+  const resetDrill = () => setPath([]);
+  const drillInto = (row: GroupedRow) => {
+    if (row.drill) setPath((current) => [...current.slice(0, path.length), row.drill!]);
+  };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const colDefs: any[] = useMemo(() => [
-    { 
-      field: "label", 
-      headerName: "Hierarchy", 
-      flex: 2,
-      cellRenderer: (params: any) => {
-        const row = params.data;
-        const isExpanded = expandedIds.has(row.id);
-        const childrenExist = hasChildren(row.id);
-        const isTopLevel = pivot === "reseller_model" ? row.level === "reseller" : pivot === "model_week" ? row.level === "model" : row.level === "category";
-        const padLeft = isTopLevel ? 0 : row.level === "week" ? 48 : 24;
-        
-        return (
-          <div 
-            className="flex items-center gap-1 cursor-pointer w-full h-full"
-            style={{ paddingLeft: `${padLeft}px` }}
-            onClick={() => childrenExist ? toggleExpand(row.id) : setSelectedRow(row)}
-          >
-            {childrenExist ? (
-              <span className="text-muted-foreground hover:text-foreground">
-                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              </span>
-            ) : <span className="w-4" />}
-            <span className={isTopLevel ? "font-semibold" : ""}>
-              {row.level === "week" ? formatWeekLabel(row.label) : row.label}
-            </span>
-            {!childrenExist && row.level !== "week" && (
-              <BarChart2 className="h-3 w-3 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100" />
-            )}
-          </div>
-        );
-      }
-    },
-    { field: "level", headerName: "Level", width: 100 },
-    { 
-      headerName: "SOH", field: "soh", width: 120,
-      cellRenderer: (params: any) => <ValueWithDelta value={params.data.soh} delta={params.data.soh_delta} />
-    },
-    { 
-      headerName: "ST", field: "st", width: 120,
-      cellRenderer: (params: any) => <ValueWithDelta value={params.data.st} delta={params.data.st_delta} />
-    },
-    { 
-      headerName: "WOI", field: "woi", width: 100,
-      cellRenderer: (params: any) => {
-        const val = params.value;
-        if (val === null || val === undefined) return <span className="text-muted-foreground">—</span>;
-        let color = "text-foreground";
-        if (val <= 8) color = "text-[hsl(var(--heatmap-green))]";
-        else if (val <= 15) color = "text-amber-600 dark:text-amber-500";
-        else color = "text-[hsl(var(--heatmap-red))]";
-        return <div className={`text-right w-full font-medium ${color}`}>{val.toFixed(1)}</div>;
-      }
-    },
-    { 
-      headerName: "Sold MTD", field: "sold_mtd", width: 100,
-      cellRenderer: (params: any) => <div className="text-right w-full">{params.value?.toLocaleString() || '—'}</div>
-    },
-    { 
-      headerName: "On Order", field: "on_order", width: 100,
-      cellRenderer: (params: any) => <div className="text-right w-full">{params.value?.toLocaleString() || '—'}</div>
-    },
-  ], [expandedIds, hasChildren, toggleExpand, pivot]);
+  const exportRows = async () => {
+    setExporting(true);
+    setExportError("");
+    const columns = [...availableDimensions.slice(0, path.length).map((dimension) => DIMENSION_LABELS[dimension]), DIMENSION_LABELS[currentDimension], ...measures];
+    const rows = visibleRows.map((row) => {
+      const drillValues = path.map((entry) => entry.label);
+      const dimensionValue = row.dimension === "Customer" ? row.label : row.dimension === "Week" ? row.key : row.label;
+      return [...drillValues, dimensionValue, ...measures.map((measure) => row.values[measure])];
+    });
+    try {
+      const blob = await exportExplorerView({ columns, rows });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = "channelpulse-explorer.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Export could not be completed.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
-  const { data: trendData, isLoading: isLoadingTrend } = useGetExplorerTrend(
-    { part_id: selectedRow?.part_id, reseller_id: selectedRow?.reseller_id, weeks: 12 },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { query: { enabled: !!selectedRow } as any }
-  );
-
+  const hasRows = visibleRows.length > 0;
   return (
-    <div className="flex flex-col h-full bg-background">
-      <header className="flex-none border-b px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Explorer</h1>
-          <p className="text-sm text-muted-foreground">Drill down through inventory hierarchy</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex bg-muted p-1 rounded-md">
-            <Button 
-              variant={pivot === "category_model_reseller" ? "secondary" : "ghost"} 
-              size="sm"
-              onClick={() => setPivot("category_model_reseller")}
-              className="text-xs h-7"
-            >
-              Cat → Model → Reseller
-            </Button>
-            <Button 
-              variant={pivot === "reseller_model" ? "secondary" : "ghost"} 
-              size="sm"
-              onClick={() => setPivot("reseller_model")}
-              className="text-xs h-7"
-            >
-              Reseller → Model
-            </Button>
-            {mode === "period" && (
-              <Button 
-                variant={pivot === "model_week" ? "secondary" : "ghost"} 
-                size="sm"
-                onClick={() => setPivot("model_week")}
-                className="text-xs h-7"
-              >
-                Model → Week
-              </Button>
-            )}
+    <div className="flex min-h-0 flex-1 flex-col bg-muted/20">
+      <header className="flex-none border-b bg-background px-4 py-4 md:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <TableProperties className="h-5 w-5 text-primary" />
+              <h1 className="text-2xl font-semibold tracking-tight">Explorer</h1>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">Reconcile sell-through, inventory and distributor sell-in by dimension.</p>
           </div>
-
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={category} onValueChange={(next) => { setCategory(next); setPath([]); }}>
+              <SelectTrigger className="w-[170px]" aria-label="Filter Explorer by category" data-testid="select-explorer-category"><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectContent>{categoryOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={String(woiWeeks)} onValueChange={(value) => setWoiWeeks(Number(value) as 4 | 8 | 13)}>
+              <SelectTrigger className="w-[130px]" aria-label="WOI calculation window" data-testid="select-explorer-woi-window"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="4">WOI · 4 weeks</SelectItem><SelectItem value="8">WOI · 8 weeks</SelectItem><SelectItem value="13">WOI · 13 weeks</SelectItem></SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => void exportRows()} disabled={!hasRows || exporting || measures.length === 0} data-testid="button-export-explorer">
+              <Download className="mr-1.5 h-4 w-4" />{exporting ? "Preparing…" : "Export XLSX"}
+            </Button>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 p-6 relative">
-        <div className="h-full border rounded-md overflow-hidden bg-card shadow-sm ag-theme-alpine w-full">
-          {isLoading ? (
-            <div className="p-8 space-y-4">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-[80%]" />
-              <Skeleton className="h-8 w-[90%]" />
-            </div>
-          ) : !rows || rows.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-              <BarChart2 className="h-12 w-12 mb-4 opacity-20" />
-              <p className="text-base">No data for this selection.</p>
-              <p className="text-sm mt-1">Try adjusting the filters in the bar above.</p>
-            </div>
-          ) : (
-            <AgGridReact
-              rowData={visibleRows}
-              columnDefs={colDefs}
-              animateRows={true}
-              rowHeight={40}
-              headerHeight={40}
-              suppressCellFocus={true}
-              getRowClass={(params) => `group ${params.data?.level === "category" || (params.data?.level === "reseller" && pivot === "reseller_model") || (params.data?.level === "model" && pivot === "model_week") ? "bg-muted/30" : ""}`}
-            />
-          )}
+      <div className="min-h-0 flex-1 overflow-auto p-4 pb-10 md:p-6 md:pb-12">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+          <Card className="shadow-xs">
+            <CardContent className="flex flex-col gap-4 p-4">
+              <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+                <div className="min-w-[220px] flex-1">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Dimensions</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DIMENSION_ORDER.map((dimension) => {
+                      const active = dimensions.includes(dimension);
+                      return <Button key={dimension} variant={active ? "secondary" : "outline"} size="sm" className="h-7 text-xs" aria-pressed={active} onClick={() => toggleDimension(dimension)} data-testid={`dimension-${dimension.toLowerCase()}`}>{dimension}</Button>;
+                    })}
+                  </div>
+                </div>
+                <div className="min-w-[320px] flex-[2]">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Measures</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(MEASURE_KEYS) as Measure[]).map((measure) => {
+                      const active = measures.includes(measure);
+                      return <Button key={measure} variant={active ? "default" : "outline"} size="sm" className="h-7 text-xs" aria-pressed={active} onClick={() => toggleMeasure(measure)} data-testid={`measure-${measure.toLowerCase().replaceAll(" ", "-")}`}>{measure}</Button>;
+                    })}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-end text-xs text-muted-foreground">
+                  <Badge variant="outline">Window: {apiParams.week_from && apiParams.week_to ? `${apiParams.week_from} – ${apiParams.week_to}` : formatWeekLabel(apiParams.week_iso)}</Badge>
+                  <Button variant="ghost" size="sm" className="h-7" onClick={resetDrill} disabled={!path.length} data-testid="button-reset-explorer-drill"><RotateCcw className="mr-1 h-3 w-3" />Reset drill</Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="min-h-[420px] shadow-xs">
+            <CardHeader className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/10 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-1 text-sm">
+                <button type="button" className="font-medium text-primary hover:underline" onClick={resetDrill} data-testid="breadcrumb-explorer-root">All data</button>
+                {path.map((entry, index) => (
+                  <span key={`${entry.dimension}-${entry.key}`} className="inline-flex items-center gap-1">
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    <button type="button" className={`hover:underline ${index === path.length - 1 ? "font-semibold" : "text-muted-foreground"}`} onClick={() => setPath((current) => current.slice(0, index + 1))} data-testid={`breadcrumb-${entry.dimension.toLowerCase()}`}>{entry.label}</button>
+                  </span>
+                ))}
+              </div>
+              <span className="text-xs text-muted-foreground">{visibleRows.length.toLocaleString()} visible {currentDimension.toLowerCase()} rows</span>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="space-y-3 p-5"><Skeleton className="h-9 w-full" /><Skeleton className="h-9 w-full" /><Skeleton className="h-9 w-4/5" /></div>
+              ) : isError ? (
+                <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 p-6 text-center">
+                  <AlertCircle className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Explorer data could not be loaded.</p>
+                  <Button variant="outline" size="sm" onClick={() => void refetch()} data-testid="button-retry-explorer">Try again</Button>
+                </div>
+              ) : !dimensions.length || !measures.length ? (
+                <div className="flex min-h-[300px] items-center justify-center p-6 text-sm text-muted-foreground">Select at least one dimension and one measure.</div>
+              ) : !hasRows ? (
+                <div className="flex min-h-[300px] flex-col items-center justify-center gap-2 p-6 text-center">
+                  <TableProperties className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm font-medium">No rows match this selection.</p>
+                  <p className="text-xs text-muted-foreground">Try a different category or adjust the global filters above.</p>
+                </div>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="w-full min-w-max text-xs" data-testid="table-explorer">
+                    <thead className="sticky top-0 z-10 bg-muted/60">
+                      <tr>
+                        <th className="min-w-[240px] border-b px-4 py-2.5 text-left font-semibold">{DIMENSION_LABELS[currentDimension]}</th>
+                        {measures.map((measure) => <th key={measure} className="min-w-[130px] border-b px-4 py-2.5 text-right font-semibold">{measure}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleRows.map((row) => (
+                        <tr
+                          key={row.key}
+                          className={`border-b last:border-0 hover:bg-muted/30 ${row.drill ? "cursor-pointer" : ""}`}
+                          onClick={() => drillInto(row)}
+                          onKeyDown={(event) => {
+                            if (row.drill && (event.key === "Enter" || event.key === " ")) {
+                              event.preventDefault();
+                              drillInto(row);
+                            }
+                          }}
+                          tabIndex={row.drill ? 0 : undefined}
+                          data-testid={`row-explorer-${row.dimension.toLowerCase()}-${row.key}`}
+                        >
+                          <th scope="row" className="px-4 py-2.5 text-left font-medium">
+                            <span className="flex items-center gap-2">
+                              <span className={row.drill ? "text-primary" : ""}>{row.label}</span>
+                              {row.drill && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                            </span>
+                          </th>
+                          {measures.map((measure) => (
+                            <td key={measure} className="px-4 py-2.5 text-right tabular-nums">
+                              <span className={measure === "WOI" && row.woiState === "no_sales" ? "text-muted-foreground" : ""}>
+                                {formatValue(row.values[measure], measure, row.woiState)}
+                              </span>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {exportError && <p className="border-t px-4 py-3 text-xs text-rose-700" role="alert">{exportError}</p>}
+              {data?.pronto_note && <p className="border-t px-4 py-2 text-xs text-muted-foreground">{data.pronto_note}</p>}
+            </CardContent>
+          </Card>
         </div>
       </div>
-
-      <Sheet open={!!selectedRow} onOpenChange={(open) => !open && setSelectedRow(null)}>
-        <SheetContent className="w-[500px] sm:w-[600px] border-l p-0 flex flex-col">
-          <SheetHeader className="p-6 border-b bg-muted/20">
-            <div className="flex items-start justify-between">
-              <div>
-                <SheetTitle className="text-lg">{selectedRow?.label}</SheetTitle>
-                <SheetDescription className="mt-1">12-Week Trend Analysis</SheetDescription>
-              </div>
-              <div className="flex gap-2">
-                {selectedRow?.level && <Badge variant="outline">{selectedRow.level}</Badge>}
-                {selectedRow?.category && <Badge variant="secondary">{selectedRow.category}</Badge>}
-              </div>
-            </div>
-          </SheetHeader>
-          
-          <div className="flex-1 p-6 overflow-y-auto">
-            {isLoadingTrend ? (
-              <div className="space-y-4">
-                <Skeleton className="h-[300px] w-full" />
-                <div className="grid grid-cols-2 gap-4">
-                  <Skeleton className="h-24 w-full" />
-                  <Skeleton className="h-24 w-full" />
-                </div>
-              </div>
-            ) : trendData && trendData.length > 0 ? (
-              <div className="space-y-8">
-                <div className="h-[350px] w-full border rounded-lg p-4 pt-6 bg-card shadow-sm">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={trendData.slice().reverse()} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                      <XAxis dataKey="week_iso" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} height={64} minTickGap={35}
-                        tickFormatter={week => `${String(week).slice(5)} · ${formatWeekRange(String(week))}`} angle={-15} textAnchor="end" />
-                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                      <RechartsTooltip 
-                        labelFormatter={label => formatWeekLabel(String(label))}
-                        contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '6px', fontSize: '12px' }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                      <Bar yAxisId="left" dataKey="soh" name="SOH" fill="hsl(var(--chart-2))" radius={[2, 2, 0, 0]} barSize={20} />
-                      <Line yAxisId="left" type="monotone" dataKey="st" name="ST" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={{ r: 3 }} />
-                      <Line yAxisId="right" type="stepAfter" dataKey="woi" name="WOI" stroke="hsl(var(--chart-5))" strokeWidth={2} strokeDasharray="4 4" dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="border rounded-lg p-4 bg-muted/20">
-                    <div className="text-sm font-medium text-muted-foreground mb-1">Latest SOH</div>
-                    <div className="text-2xl font-bold">{selectedRow?.soh?.toLocaleString() || 0}</div>
-                  </div>
-                  <div className="border rounded-lg p-4 bg-muted/20">
-                    <div className="text-sm font-medium text-muted-foreground mb-1">Latest ST</div>
-                    <div className="text-2xl font-bold">{selectedRow?.st?.toLocaleString() || 0}</div>
-                  </div>
-                  <div className="border rounded-lg p-4 bg-muted/20">
-                    <div className="text-sm font-medium text-muted-foreground mb-1">Sold MTD</div>
-                    <div className="text-2xl font-bold">{selectedRow?.sold_mtd?.toLocaleString() || 0}</div>
-                  </div>
-                  <div className="border rounded-lg p-4 bg-muted/20">
-                    <div className="text-sm font-medium text-muted-foreground mb-1">On Order</div>
-                    <div className="text-2xl font-bold">{selectedRow?.on_order?.toLocaleString() || 0}</div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-[300px] text-muted-foreground">
-                <BarChart2 className="h-12 w-12 mb-4 opacity-20" />
-                <p>No trend data available for this selection.</p>
-              </div>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }

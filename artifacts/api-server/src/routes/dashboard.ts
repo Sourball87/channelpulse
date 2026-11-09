@@ -1,10 +1,18 @@
 import { Router, type IRouter } from "express";
 import { db, inventorySnapshots, parts, resellers, uploads } from "@workspace/db";
 import { sql, eq, and, inArray, desc } from "drizzle-orm";
-import { previousWeekIso } from "../lib/dates";
-import { GetDashboardKpisQueryParams, GetDashboardHeatmapQueryParams } from "@workspace/api-zod";
+import { isValidWeekIso, previousWeekIso } from "../lib/dates";
+import {
+  GetDashboardKpisQueryParams,
+  GetDashboardHeatmapQueryParams,
+  GetWoiHeatmapQueryParams,
+  GetWoiHeatmapResponse,
+} from "@workspace/api-zod";
 import { parseFilterParams, resolveRange, buildConditions } from "../lib/filter-params";
 import weeklySalesRouter from "./weekly-sales";
+import { loadSalesReconciliation } from "../lib/load-sales-reconciliation";
+import { calculateWoi } from "../lib/woi";
+import { weeklySalesWeeks } from "../lib/weekly-sales";
 
 const router: IRouter = Router();
 router.use(weeklySalesRouter);
@@ -243,7 +251,8 @@ router.get("/dashboard/heatmap", async (req, res) => {
       .where(buildConditions([
         eq(inventorySnapshots.weekIso, latestWeek),
         catParts ? eq(parts.category, category!) : undefined,
-      ], filters));
+      ], filters))
+      .orderBy(parts.sortOrder, parts.category, parts.partNo, resellers.code);
 
     // ── Avg weekly ST across weekList ─────────────────────────────────────────
     const stRows = await db
@@ -303,6 +312,108 @@ router.get("/dashboard/heatmap", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get heatmap");
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/dashboard/woi-heatmap", async (req, res): Promise<void> => {
+  const query = GetWoiHeatmapQueryParams.safeParse({
+    ...req.query,
+    weeks: typeof req.query.weeks === "string" ? Number(req.query.weeks) : req.query.weeks,
+  });
+  if (!query.success) {
+    res.status(400).json({ error: "Select a valid reporting week, customer/SKU filter and 4, 8 or 13-week window." });
+    return;
+  }
+  if (query.data.week_iso && !isValidWeekIso(query.data.week_iso)) {
+    res.status(400).json({ error: "Select a valid ISO reporting week." });
+    return;
+  }
+
+  try {
+    const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const weekIso = query.data.week_iso ?? await getLatestWeek();
+    const windowWeeks = query.data.weeks ?? 4;
+    const weeks = weekIso ? weeklySalesWeeks(weekIso, windowWeeks) : [];
+    if (!weekIso) {
+      res.json(GetWoiHeatmapResponse.parse({ week_iso: null, window_weeks: windowWeeks, weeks, customers: [], rows: [] }));
+      return;
+    }
+
+    const customersQuery = db.select({ id: resellers.id, code: resellers.code })
+      .from(resellers)
+      .where(and(
+        eq(resellers.active, true),
+        filters.resellerIds.length ? inArray(resellers.id, filters.resellerIds) : undefined,
+      ))
+      .orderBy(resellers.code);
+    const partsQuery = db.select({
+      part_id: parts.id,
+      part_no: parts.partNo,
+      category: parts.category,
+    }).from(parts).where(and(
+      eq(parts.active, true),
+      query.data.category && query.data.category !== "All" ? eq(parts.category, query.data.category) : undefined,
+      filters.partIds.length ? inArray(parts.id, filters.partIds) : undefined,
+    )).orderBy(parts.sortOrder, parts.category, parts.partNo);
+    const [customers, selectedParts, reconciliation] = await Promise.all([
+      customersQuery,
+      partsQuery,
+      loadSalesReconciliation(weekIso, {
+        partIds: filters.partIds,
+        resellerIds: filters.resellerIds,
+        category: query.data.category,
+        weeks,
+      }),
+    ]);
+
+    const rowsByPairWeek = new Map<string, (typeof reconciliation.rows)[number]>();
+    for (const row of reconciliation.rows) {
+      if (row.part_id == null) continue;
+      rowsByPairWeek.set(`${row.part_id}:${row.reseller_id}:${row.week_iso}`, row);
+    }
+
+    const rows = selectedParts.map(part => {
+      const cells = customers.map(customer => {
+        const current = rowsByPairWeek.get(`${part.part_id}:${customer.id}:${weekIso}`);
+        const observations = weeks.map(week => rowsByPairWeek.get(`${part.part_id}:${customer.id}:${week}`))
+          .filter((row): row is NonNullable<typeof row> => row != null)
+          .map(row => ({ sold: row.soh_sold, soldColumnPresent: row.sold_column_present }));
+        const value = calculateWoi(current?.soh ?? null, observations, windowWeeks);
+        return {
+          reseller_id: customer.id,
+          reseller_code: customer.code,
+          soh: current?.soh ?? null,
+          avg_weekly_sales: value.avgWeeklySales,
+          woi: value.woi,
+          weeks_observed: value.weeksObserved,
+          window_weeks: value.windowWeeks,
+          state: value.state,
+        };
+      });
+      const sohValues = cells.map(cell => cell.soh).filter((value): value is number => value != null);
+      const salesValues = cells.map(cell => cell.avg_weekly_sales).filter((value): value is number => value != null);
+      const totalSoh = sohValues.length ? sohValues.reduce((sum, value) => sum + value, 0) : null;
+      const totalAverageSales = salesValues.length ? salesValues.reduce((sum, value) => sum + value, 0) : null;
+      const totalState = totalSoh == null ? "no_soh" :
+        totalAverageSales == null ? "no_sales_data" :
+        totalAverageSales === 0 ? "no_sales" : "value";
+      const channelTotal = {
+        reseller_id: null,
+        reseller_code: "Channel total",
+        soh: totalSoh,
+        avg_weekly_sales: totalAverageSales,
+        woi: totalState === "value" ? totalSoh! / totalAverageSales! : null,
+        weeks_observed: cells.reduce((max, cell) => Math.max(max, cell.weeks_observed), 0),
+        window_weeks: windowWeeks,
+        state: totalState,
+      };
+      return { ...part, cells, channel_total: channelTotal };
+    });
+
+    res.json(GetWoiHeatmapResponse.parse({ week_iso: weekIso, window_weeks: windowWeeks, weeks, customers, rows }));
+  } catch (err) {
+    req.log.error({ err }, "Failed to get WOI heatmap");
+    res.status(500).json({ error: "Unable to load weeks of inventory." });
   }
 });
 

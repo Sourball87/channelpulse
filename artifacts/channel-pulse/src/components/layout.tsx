@@ -13,13 +13,11 @@ import {
 import { FocusSidebar } from "@/components/focus-sidebar";
 import {
   LayoutDashboard,
-  BarChart3,
   TableProperties,
   TrendingUp,
   AlertCircle,
   UploadCloud,
   Settings,
-  Lightbulb,
   Activity,
   ReceiptText,
   LogOut,
@@ -30,9 +28,7 @@ import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 
 const navigation = [
-  { name: "SOH", href: "/", icon: LayoutDashboard },
-  { name: "Sell Through", href: "/sell-through", icon: BarChart3 },
-  { name: "Insights", href: "/insights", icon: Lightbulb },
+  { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Explorer", href: "/explorer", icon: TableProperties },
   { name: "Trends", href: "/trends", icon: TrendingUp },
   { name: "Alerts", href: "/alerts", icon: AlertCircle },
@@ -42,7 +38,7 @@ const navigation = [
 ];
 
 // Pages that show the global filter bar
-const FILTER_PATHS = ["/", "/sell-through", "/insights", "/explorer", "/trends", "/alerts"];
+const FILTER_PATHS = ["/", "/explorer", "/sell-through", "/trends", "/alerts"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -103,7 +99,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 })}
               </SidebarMenu>
             </div>
-            {focusView && <FocusSidebar />}
+            {location === "/explorer" && focusView && <FocusSidebar />}
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border px-3 py-3">
             <Button
