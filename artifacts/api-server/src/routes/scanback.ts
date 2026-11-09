@@ -10,7 +10,7 @@ import {
 import { parseSheets, suggestMapping, detectImportKind, mapImport, prontoRangeCovers } from "../lib/scanback-import";
 import { evidenceKey, serialKey, validDate } from "../lib/scanback-engine";
 import { indexProntoSource, prontoCreditIdentity, splitSerials } from "../lib/scanback-pronto";
-import { dateStringToWeekIso, isValidWeekIso } from "../lib/parser";
+import { dateStringToWeekIso, isValidWeekIso, mostCommonWeek } from "../lib/dates";
 import { buildScanbackWorkbook, XLSX_MIME } from "../lib/scanback-export";
 import { listWeeklyExports, readWeeklyExport } from "../lib/scanback-export-storage";
 import { validateProgramReferences } from "../lib/program-table";
@@ -120,7 +120,7 @@ router.post("/scanback/imports/preview", upload.single("file"), route(async (c, 
   requireThat(req.file, "Choose a CSV, XLS or XLSX file.");
   requireThat(/\.(csv|xlsx|xls)$/i.test(req.file.originalname), "Use a CSV, XLS or XLSX file.");
    const requestedKind = req.body.kind ?? "auto";
-   requireThat(["auto", "evidence", "claim", "history"].includes(requestedKind), "Choose auto-detect, evidence, claim or history.");
+   requireThat(["auto", "evidence", "claim"].includes(requestedKind), "Choose auto-detect, evidence or customer claim.");
   let raw;
   try { raw = parseSheets(req.file.buffer); }
   catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not read this spreadsheet."); }
@@ -128,6 +128,7 @@ router.post("/scanback/imports/preview", upload.single("file"), route(async (c, 
    let kind: ScanbackImport["kind"];
    try { kind = requestedKind === "auto" ? detectImportKind(headers) : requestedKind; }
    catch (e) { throw new ScanbackError(e instanceof Error ? e.message : "Could not detect spreadsheet type."); }
+   requireThat(kind !== "history", "Historical approved claims uploads are retired. Existing approvals remain readable in Claims History.", 400);
    const key = createHash("sha256").update(kind).update(req.file.buffer).digest("hex");
    const existing = await c.query("SELECT payload FROM scanback_imports WHERE content_key=$1", [key]);
    if (existing.rowCount) return publicImport({ ...existing.rows[0].payload, duplicate: true }, true);
@@ -145,6 +146,7 @@ router.post("/scanback/imports/preview", upload.single("file"), route(async (c, 
 }));
 router.post("/scanback/imports/:id/remap", route(async (c, req, res) => {
   const base = await get<ScanbackImport>(c, "scanback_imports", idParam(req));
+  requireThat(base.kind !== "history", "Historical approved claims imports are retired. Existing approvals remain readable.");
   const options = parse(RemapScanbackImportBody, req.body);
   if (base.state === "committed" || base.state === "superseded") {
     requireThat(options.sheet === base.sheet && options.dateFormat === base.dateFormat &&
@@ -235,6 +237,7 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
   const base = await get<ScanbackImport>(c, "scanback_imports", idParam(req));
   requireThat(base.state !== "superseded", "A superseded report cannot be committed.");
   if (base.state === "committed") return publicImport(base, true);
+  requireThat(base.kind !== "history", "Historical approved claims imports are retired. Existing approvals remain readable.");
   const raw = (await c.query("SELECT raw_sheets FROM scanback_imports WHERE id=$1", [base.id])).rows[0].raw_sheets;
   const value = await rebuildImport(c, base, raw, base);
   if (value.kind === "evidence" && value.pronto) {
@@ -273,45 +276,35 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
       const ids = [...new Set(value.rows.map(r => r.accountId).filter(id => id != null))];
       const accountId = value.accountId ?? (ids.length === 1 ? ids[0] : registry.accountId);
       const dates = value.rows.map(r => r.date).filter(Boolean);
-      const weeks = [...new Set(dates.map(dateStringToWeekIso))];
-      const week = registry.weekIso ?? (weeks.length === 1 ? weeks[0] : null);
+      const contentWeek = mostCommonWeek(dates).weekIso;
+      const week = registry.weekSource === "manual"
+        ? registry.weekIso
+        : registry.weekSource === "file_dates"
+          ? registry.weekIso
+          : contentWeek ?? registry.weekIso;
       requireThat(accountId != null, "Choose this serial report's reseller in Upload Center before committing.");
       requireThat(week && isValidWeekIso(week), "Choose this serial report's reporting week in Upload Center before committing.");
       requireThat(ids.every(id => id === accountId), "A weekly customer report must belong to one reseller. Split reports containing several customers.");
       value.accountId = accountId;
       await c.query("UPDATE center_uploads SET payload=payload || $2::jsonb WHERE id=$1",
-        [registry.id, JSON.stringify({ accountId, weekIso: week })]);
+        [registry.id, JSON.stringify({ accountId, weekIso: week,
+          weekSource: registry.weekSource === "manual" ? "manual" : contentWeek ? "file_dates" : registry.weekSource ?? "unknown" })]);
     }
   }
   requireThat(value.errors.length === 0, "Resolve every preview error before committing.");
-  // Rebuild while holding the same lock as approvals: a history import cannot
-  // bypass the duplicate-serial rule, even if its preview was created earlier.
-  if (value.kind === "history") {
+  if (value.kind === "claim" && value.accountId != null && value.mapping.account &&
+      /customer|channel|accountcode/i.test(value.mapping.account)) {
     const cat = await catalog(c);
-    const groups = new Map<string, typeof value.rows>();
-    for (const row of value.rows) {
-      const key = JSON.stringify([row.accountId, row.program, row.reference, row.date]);
-      groups.set(key, [...(groups.get(key) ?? []), row]);
-    }
-    for (const rows of groups.values()) {
-      const account = cat.accounts.find(a => a.id === rows[0].accountId)!;
-      const results: ScanbackResult[] = rows.map(r => ({
-        rowIndex: r.rowIndex, serial: r.serial, sku: r.sku, date: "", invoice: r.invoice, invoiceDate: "",
-        unitPriceCents: null, gtmBuyCents: null, amountCents: r.amountCents!, quantity: 1, status: "eligible",
-        reason: "Historical approved claim imported — not a new payment", include: true, selectable: false,
-        source: `${value.name} [${value.id}], original approval date ${r.date}`,
-      }));
-      const batch: ScanbackBatch = {
-        id: randomUUID(), reference: rows[0].reference, programName: rows[0].program, accountCode: account.code,
-        createdAt: rows.map(r => r.date).sort()[0] + "T00:00:00.000Z", totalCents: total(results),
-        approvedCount: rows.length, historical: true, basis: "Historical approval dates (source)", from: "", to: "", rows: results,
-      };
-      await c.query("INSERT INTO scanback_batches(id,payload) VALUES($1,$2::jsonb)", [batch.id, JSON.stringify(batch)]);
-      // An exact program-name match makes historical units count against that
-      // promotion cap. Global serial uniqueness does not depend on this match.
-      const programs = await all<ScanbackProgram>(c, "scanback_programs");
-      const matches = programs.filter(p => p.name.toUpperCase() === rows[0].program.toUpperCase());
-      await recordApprovedSerials(c, batch, account.id, cat.parts, matches.length === 1 ? matches[0].id : null);
+    const selected = cat.accounts.find(account => account.id === value.accountId);
+    const channelCodes = [...new Set((raw[value.sheet] ?? [])
+      .map((row: Record<string, unknown>) => String(row[value.mapping.account!] ?? "").trim().toUpperCase())
+      .filter((code: string) => code.length >= 4 && code.length <= 32 && /\d/.test(code) && /^[A-Z0-9_-]+$/.test(code)))];
+    const learnable = channelCodes.filter(code => !cat.accounts.some(account =>
+      account.id !== value.accountId &&
+      [account.code, account.name, ...(account.aliases ?? [])].some(alias => alias.toUpperCase() === code)));
+    if (selected && learnable.length) {
+      const aliases = [...new Set([...(selected.aliases ?? []), ...learnable])];
+      await c.query("UPDATE resellers SET aliases=$2::text[] WHERE id=$1", [selected.id, aliases]);
     }
   }
   value.state = "committed";

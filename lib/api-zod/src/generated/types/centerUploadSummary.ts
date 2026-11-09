@@ -15,4 +15,7 @@ export type CenterUploadSummary = {
   to: string;
   ddRangeCount: number;
   invoicedCount: number;
+  nonSerialCount: number;
+  nonSerialIdentifiers: string[];
+  historyRowsSkipped: number;
 };

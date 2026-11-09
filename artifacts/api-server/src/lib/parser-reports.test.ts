@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
 import {
-  parseFile, detectWeekFromFilename, isValidWeekIso, isAutoCommitEligible,
+  detectWeekFromFilename, isValidWeekIso, isAutoCommitEligible,
   applyMappingsToRows, mapHeaders, type ResellerProfile,
 } from "./parser";
+import { parseFile } from "./file-parser";
 
 const profiles: ResellerProfile[] = [
   [1, "CA", "Computer Alliance"], [2, "centrecom", "Centrecom"],
@@ -27,7 +28,7 @@ const fixtures = [
   { filename: "Samsung HDD Weekly.xlsx", code: "jw", week: null, sheet: "Sheet1",
     headers: ["Model Code", "SOH", "Sold Last 7 Days", "Sold MTD", "Qty On PO", "Avg Cost"],
     row: ["MZ-V9P1T0BW", 12, 3, 7, 2, 99], soh: 12, sold: 3 },
-  { filename: "Samsung Monitor + SSD SOH 29.06.2026.xls", code: "centrecom", week: "2026-W27", sheet: "Forecast",
+  { filename: "Samsung Monitor + SSD SOH 29.06.2026.xls", code: "pccg", week: "2026-W27", sheet: "Forecast",
     headers: ["Product Name", "Product Model", "30 D", "14 D", "7 D", "Stock", "Avg Stock Value"],
     row: ["Samsung monitor", "LS24F320GAEXXY", 20, 10, 5, 8, 99], soh: 8, sold: 5 },
   { filename: "ReportingProcurementCustom--Samsung-SSD.csv", code: "ple", week: null, sheet: "CSV",
@@ -110,12 +111,12 @@ describe("week safety", () => {
 });
 
 describe("no silent data corruption", () => {
-  it("requires review when filename conflicts with format/sheet", async () => {
+  it("trusts a unique filename customer over a conflicting format/sheet hint", async () => {
     const result = await parseFile(workbook(shared, ["MZ-V9P1T0BW", 10, 0, 2, 4, 100, null], "ComputerAlliance"),
       "2026 WK 27 report KS.xlsx", profiles);
-    expect(result.detectedResellerId).toBeNull();
-    expect(result.detectionReasoning).toContain("different resellers");
-    expect(isAutoCommitEligible(result)).toBe(false);
+    expect(result.detectedResellerId).toBe(7);
+    expect(result.detectedCandidates.map(candidate => candidate.code)).toEqual(["ks"]);
+    expect(result.detectionReasoning).not.toContain("different resellers");
   });
   it("blocks auto-commit for flags, overwrite, learned results or duplicate SKUs", async () => {
     const result = await parseFile(workbook(umart, [1, "MZ-V9P1T0BW", 10, 0, 10, 0, 2, 10, 10]),

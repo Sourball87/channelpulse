@@ -1,6 +1,7 @@
 import type { ScanbackMapping, ScanbackProntoPreview, ScanbackImportIssue } from "@workspace/api-zod";
 import { serialKey } from "./scanback-engine";
 import type { Account } from "./scanback-import";
+import { parseDateValue } from "./dates";
 
 // Suggestions are visible proposals, never applied as customer identity until
 // the user explicitly maps/reviews them. No fuzzy matching or account creation.
@@ -37,21 +38,7 @@ export const unmatchedCreditReason = "Unmatched credit — no serial number";
 export const serialCountExceedsQuantityReason = "More serials than Ship Qty";
 export const unmatchedCreditKey = (accountId: number, sku: string) => `${accountId}|${sku.trim().toUpperCase()}`;
 function normalizeCreditDate(value: unknown, mode: "dmy" | "mdy" = "dmy"): string {
-  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString().slice(0, 10);
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86_400_000);
-    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : String(value).trim();
-  }
-  const text = String(value ?? "").trim();
-  const iso = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
-  const dmy = text.match(/^(\d{1,2})[/. -](\d{1,2})[/. -](\d{4})$/);
-  if (dmy) {
-    const day = mode === "dmy" ? dmy[1] : dmy[2];
-    const month = mode === "dmy" ? dmy[2] : dmy[1];
-    return `${dmy[3]}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  }
-  return text.toUpperCase();
+  return parseDateValue(value, mode) || String(value ?? "").trim().toUpperCase();
 }
 /** Stable identity for a Pronto credit, independent of its import file and row. */
 export const prontoCreditIdentity = (

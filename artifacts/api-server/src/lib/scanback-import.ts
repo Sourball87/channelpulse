@@ -6,7 +6,7 @@ import { parseCsvBuffer } from "./csv-stream";
 import { isPronto, prontoColumns, prontoMapping, scopePronto, splitSerials, unmatchedCreditReason } from "./scanback-pronto";
 
 export type Sheets = Record<string, Record<string, unknown>[]>;
-export interface Account { id: number; code: string; name: string; active?: boolean }
+export interface Account { id: number; code: string; name: string; aliases?: string[]; active?: boolean }
 const fields: Record<string, string[]> = {
   serial: ["serial", "serials", "serialno", "serialnumber", "sn", "imei"],
   sku: ["sku", "model", "modelnumber", "stockcode", "part", "partnumber", "productcode"],
@@ -62,7 +62,8 @@ export async function parseCsvSheets(buffer: Buffer): Promise<Sheets> {
   const rows = parsed.rows.map((row, index) => ({
     ...Object.fromEntries(retained.map(h => [h, row[h] ?? ""])),
     __sourceRow: index + 2,
-  })).filter(row => Object.entries(row).some(([key, value]) => key !== "__sourceRow" && value !== "" && value != null));
+  })).filter(row => Object.entries(row).some(([key, value]) =>
+    key !== "__sourceRow" && value != null && String(value).trim() !== ""));
   if (!rows.length) throw new Error("The CSV contains no serial rows.");
   return { CSV: rows };
 }
@@ -165,22 +166,37 @@ export function mapImport(
   if (base.kind === "evidence" && mapping.unitPrice && /cost|rrp|inc(?:l|gst)|total/i.test(mapping.unitPrice))
     errors.push({ row: 0, message: "Rename/select the invoiced UNIT PRICE EX GST column. Cost, total and GST-inclusive columns are not valid evidence prices." });
   const rows: ScanbackImportRow[] = [];
+  let nonSerialCount = 0;
+  const nonSerialIdentifiers = new Set<string>();
   rawRows.forEach((row, i) => {
     if (scope && !scope.include.has(i)) return;
     const value = (key: string) => mapping[key] ? row[mapping[key]] : "";
     const text = (key: string) => String(value(key) ?? "").trim();
-    const serials = scope ? splitSerials(value("serial")) : text("serial").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
+    let serials = scope ? splitSerials(value("serial")) : text("serial").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
     if (rows.length + serials.length > 1_000_000)
       throw new Error("Limit each import to 1,000,000 serial events; split this extract.");
     const sku = text("sku").toUpperCase();
     const date = parseDate(value("date"), options.dateFormat);
     const name = text("account").toUpperCase();
-    const matches = accounts.filter(a => a.code.toUpperCase() === name || a.name.toUpperCase() === name);
+    const matches = accounts.filter(a => a.code.toUpperCase() === name || a.name.toUpperCase() === name ||
+      (a.aliases ?? []).some(alias => alias.toUpperCase() === name));
     let accountId = scope ? scope.include.get(i)! : matches.length === 1 ? matches[0].id : options.accountId ?? null;
+    let nonSerialOnlyRow = false;
     const error = (message: string) => errors.push({ row: i + 2, message });
+    const account = accounts.find(a => a.id === accountId);
+    if (base.kind === "claim" && account?.code.toLowerCase() === "digi") {
+      const invalidSerials = serials.filter(s => /^(?:880|887)\d{10}$/.test(s) || /^[A-Z]{2}\d{2}-\d{5}[A-Z]$/.test(s));
+      nonSerialCount += invalidSerials.length;
+      invalidSerials.forEach(identifier => nonSerialIdentifiers.add(identifier));
+      nonSerialOnlyRow = invalidSerials.length > 0 && invalidSerials.length === serials.length;
+      serials = serials.filter(s => !invalidSerials.includes(s));
+    }
     if (typeof value("serial") === "number")
       error("Store serial numbers as text, not numeric cells, to preserve leading zeros and long identifiers.");
-    if (!serials.length) { error("Serial is required; remove totals/non-serial rows."); return; }
+    if (!serials.length) {
+      if (!nonSerialOnlyRow) error("Serial is required; remove totals/non-serial rows.");
+      return;
+    }
     if (base.kind === "claim" && serials.length !== 1)
       error("Use exactly one serial per customer claim row; split serial lists into separate rows.");
     if (serials.some(s => !/^[A-Z0-9._/-]{3,100}$/.test(s))) error("Serial has unsupported characters or length.");
@@ -224,14 +240,16 @@ export function mapImport(
     });
   });
   const unmatchedCreditCount = scope?.preview.excludedCounts[unmatchedCreditReason] ?? 0;
-  if (!rows.length && !unmatchedCreditCount) errors.push({ row: 0, message: "No serial records found." });
+  if (!rows.length && !unmatchedCreditCount && !nonSerialCount)
+    errors.push({ row: 0, message: "No serial records found." });
   const unlistedSkus = [...new Set(rows.map(row => row.sku).filter(sku => !skuCodes.has(sku)))];
   return {
     ...base, ...options, accountId: options.accountId ?? null, headers,
     pronto: scope?.preview, prontoAccounts: scope ? options.prontoAccounts ?? {} : undefined,
-    rows, errors, recordCount: rows.length, warnings: [
+    rows, errors, recordCount: rows.length, nonSerialCount, nonSerialIdentifiers: [...nonSerialIdentifiers], warnings: [
       "Review dates and column mappings before committing. No AI is used.",
       ...(base.kind === "evidence" ? ["Unit price must be the amount invoiced to the reseller, excluding GST—not purchase cost."] : []),
+      ...(nonSerialCount ? [`Not a serial — looks like a barcode: ${nonSerialCount} DigiDirect barcode or part-label row(s) excluded from serial matching.`] : []),
       ...(scope ? [
         "Pronto POS: Invoice Date, Ship Qty and Item Price are used. Cost, RRP, contact and address fields are not retained.",
         `${scope.preview.includedSourceRows} source rows included; ${scope.preview.excludedSourceRows} excluded. Excluded rows are not evidence and cannot make a serial payable.`,

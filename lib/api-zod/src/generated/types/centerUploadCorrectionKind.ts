@@ -13,7 +13,6 @@ export const CenterUploadCorrectionKind = {
   soh: 'soh',
   claim: 'claim',
   evidence: 'evidence',
-  history: 'history',
   price: 'price',
   program: 'program',
   unknown: 'unknown',

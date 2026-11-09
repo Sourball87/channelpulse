@@ -5,10 +5,11 @@
  * ChannelPulse - Reseller SOH & Sell-Through Monitoring API
  * OpenAPI spec version: 0.1.0
  */
+import type { CenterFilesInputKind } from './centerFilesInputKind';
 
 export interface CenterFilesInput {
   files: (Blob | File)[];
-  kind?: string;
+  kind?: CenterFilesInputKind;
   accountId?: number;
   weekIso?: string;
   ai_assist?: boolean;

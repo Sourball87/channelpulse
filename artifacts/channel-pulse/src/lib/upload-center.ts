@@ -9,7 +9,7 @@ export interface CenterUpload {
   name: string;
   accountId: number | null;
   weekIso: string | null;
-  weekSource?: "filename" | "file_dates" | "manual" | "unknown";
+  weekSource?: "filename" | "file_dates" | "manual" | "ai_suggested" | "unknown";
   sourceId: string | null;
   state: "preview" | "committed" | "superseded";
   createdAt: string;
@@ -18,9 +18,11 @@ export interface CenterUpload {
     skuCount: number; soh: number; unitsSold: number; serialCount: number;
     from: string; to: string; ddRangeCount: number; invoicedCount: number;
     nonSerialCount: number; historyRowsSkipped: number;
+    nonSerialIdentifiers: string[];
   };
   errors: string[];
   warnings?: string[];
+  sohReview?: Record<string, unknown>;
   headers: string[];
   mapping: Record<string, string>;
   preview: Record<string, unknown>[];
@@ -53,7 +55,7 @@ export const KIND_LABEL: Record<CenterKind, string> = {
 export const KIND_SHORT: Record<CenterKind, string> = {
   soh: "SOH", claim: "Serials", evidence: "DD serials", history: "History", price: "Prices", program: "Program", unknown: "Unknown",
 };
-export const CENTER_KINDS = Object.keys(KIND_LABEL) as CenterKind[];
+export const CENTER_KINDS: CenterKind[] = ["soh", "claim", "evidence", "price", "program", "unknown"];
 
 export const UPLOAD_CENTER_KEY = ["/api/upload-center"] as const;
 

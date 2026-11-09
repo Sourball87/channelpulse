@@ -184,7 +184,6 @@ export const ScanbackUploadKind = {
   auto: 'auto',
   evidence: 'evidence',
   claim: 'claim',
-  history: 'history',
 } as const;
 
 export interface ScanbackUpload {
@@ -342,6 +341,8 @@ export interface ScanbackImport {
   errors: ScanbackImportIssue[];
   warnings: string[];
   duplicate: boolean;
+  nonSerialCount?: number;
+  nonSerialIdentifiers?: string[];
   recordCount: number;
 }
 
@@ -926,7 +927,7 @@ export interface UploadFilesInput {
   ai_assist?: boolean;
 }
 
-export interface CommitUploadInput {
+export interface CenterUploadCommitInput {
   reseller_id: number;
   week_iso: string;
   /** @nullable */
@@ -988,9 +989,21 @@ export interface ResellerUpdate {
   sends_serial_reports?: boolean;
 }
 
+export type CenterFilesInputKind = typeof CenterFilesInputKind[keyof typeof CenterFilesInputKind];
+
+
+export const CenterFilesInputKind = {
+  soh: 'soh',
+  claim: 'claim',
+  evidence: 'evidence',
+  price: 'price',
+  program: 'program',
+  unknown: 'unknown',
+} as const;
+
 export interface CenterFilesInput {
   files: (Blob | File)[];
-  kind?: string;
+  kind?: CenterFilesInputKind;
   accountId?: number;
   weekIso?: string;
   ai_assist?: boolean;
@@ -1003,7 +1016,6 @@ export const CenterUploadCorrectionKind = {
   soh: 'soh',
   claim: 'claim',
   evidence: 'evidence',
-  history: 'history',
   price: 'price',
   program: 'program',
   unknown: 'unknown',
@@ -1033,6 +1045,17 @@ export const CenterUploadKind = {
   unknown: 'unknown',
 } as const;
 
+export type CenterUploadWeekSource = typeof CenterUploadWeekSource[keyof typeof CenterUploadWeekSource];
+
+
+export const CenterUploadWeekSource = {
+  filename: 'filename',
+  file_dates: 'file_dates',
+  manual: 'manual',
+  ai_suggested: 'ai_suggested',
+  unknown: 'unknown',
+} as const;
+
 export type CenterUploadState = typeof CenterUploadState[keyof typeof CenterUploadState];
 
 
@@ -1051,7 +1074,12 @@ export type CenterUploadSummary = {
   to: string;
   ddRangeCount: number;
   invoicedCount: number;
+  nonSerialCount: number;
+  nonSerialIdentifiers: string[];
+  historyRowsSkipped: number;
 };
+
+export type CenterUploadSohReview = { [key: string]: unknown };
 
 export type CenterUploadMapping = {[key: string]: string};
 
@@ -1066,6 +1094,7 @@ export interface CenterUpload {
   accountId: number | null;
   /** @nullable */
   weekIso: string | null;
+  weekSource?: CenterUploadWeekSource;
   /** @nullable */
   sourceId: string | null;
   state: CenterUploadState;
@@ -1073,6 +1102,8 @@ export interface CenterUpload {
   rowCount: number;
   summary: CenterUploadSummary;
   errors: string[];
+  warnings?: string[];
+  sohReview?: CenterUploadSohReview;
   headers: string[];
   mapping: CenterUploadMapping;
   preview: CenterUploadPreviewItem[];
@@ -1256,11 +1287,6 @@ export const GetTrendsMetric = {
 export type GetAlertsParams = {
 week_iso?: string;
 type?: string;
-};
-
-export type GetUploadsParams = {
-limit?: number;
-offset?: number;
 };
 
 export type GetPartsParams = {

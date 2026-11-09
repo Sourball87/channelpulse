@@ -6,7 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetUploadsParams = {
-limit?: number;
-offset?: number;
-};
+export type CenterUploadSohReview = { [key: string]: unknown };

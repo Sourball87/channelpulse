@@ -11,8 +11,8 @@ it does not send payments or issue credits in Pronto.
    unlimited; zero makes that customer ineligible for the SKU.
 3. In **Upload Center**, upload Pronto invoice/credit evidence. Review the worksheet,
    column mappings, date format and account attribution, then commit.
-4. Import **historical approved claims** before approving new claims, so previous
-   payouts are included in duplicate checks and applicable promotion caps.
+4. Previously committed historical approvals remain included in duplicate
+   checks and applicable promotion caps. New historical-claim uploads are retired.
 
 Existing account and SKU records are reused. Unknown accounts/SKUs must be
 resolved, not automatically created from an unverified financial file.
@@ -145,12 +145,10 @@ tracking and pending-file corrections.
   selected for a single-account file. Credits have negative quantities.
 - **Customer claim:** Serial is required. Date is needed for the customer-sale-date
   eligibility basis; SKU, account and quantity are checked when supplied.
-- **Historical approved claims:** Serial, SKU, original approval Date, Account,
-  Amount, Promotion and Claim Reference. Amount is the previously approved
-  claim amount, not a new rebate calculation.
+Previously committed historical approvals remain visible in Claims History.
 
 Store serials as text to preserve leading zeros and long identifiers. Put one
-serial per claim/history row. An invoice row can contain a semicolon-separated
+serial per claim row. An invoice row can contain a semicolon-separated
 serial list, but the signed quantity must match the number of serials. SKU codes
 not in the product catalogue can still be entered directly on promotion lines;
 invoice and claim evidence must use the same code. No product-catalogue row is

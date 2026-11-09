@@ -30,9 +30,9 @@ import type {
   AuthSession,
   CenterFilesInput,
   CenterUpload,
+  CenterUploadCommitInput,
   CenterUploadCorrection,
   ColumnMapping,
-  CommitUploadInput,
   DashboardKpis,
   DeleteCenterUpload200,
   DeleteResult,
@@ -46,7 +46,6 @@ import type {
   GetPartsParams,
   GetSerialReconciliationParams,
   GetTrendsParams,
-  GetUploadsParams,
   HealthStatus,
   HeatmapData,
   Part,
@@ -59,7 +58,6 @@ import type {
   Reseller,
   ResellerInput,
   ResellerUpdate,
-  SaveMappingInput,
   ScanbackApprovalInput,
   ScanbackBatch,
   ScanbackDraft,
@@ -75,11 +73,7 @@ import type {
   StageCenterFiles200,
   TrendPoint,
   TrendSeries,
-  Upload,
   UploadCenterWorkspace,
-  UploadFilesInput,
-  UploadRecheckInput,
-  UploadReviewCard,
   WeekSummary,
   WeeklySalesData,
   WeeklyScanbackExport
@@ -719,7 +713,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getDeleteCenterUploadMutationOptions(options), queryClient);
     }
 
-export const getCommitCenterReferenceUrl = (id: string,) => {
+export const getCommitCenterUploadUrl = (id: string,) => {
 
 
 
@@ -727,14 +721,29 @@ export const getCommitCenterReferenceUrl = (id: string,) => {
   return `/api/upload-center/${id}/commit`
 }
 
-export const commitCenterReference = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<CenterUpload> => {
+export const commitCenterUpload = async (id: string,
+    centerUploadCommitInput?: CenterUploadCommitInput, options?: Parameters<typeof customFetch>[1]): Promise<CenterUpload> => {
 
-  return customFetch<CenterUpload>(getCommitCenterReferenceUrl(id),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<CenterUpload>(getCommitCenterUploadUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(centerUploadCommitInput)
   }
 );}
 
@@ -742,13 +751,13 @@ export const commitCenterReference = async (id: string, options?: Parameters<typ
 
 
 
-export const getCommitCenterReferenceMutationKey = () => ['commitCenterReference'] as const;
+export const getCommitCenterUploadMutationKey = () => ['commitCenterUpload'] as const;
 
-export const getCommitCenterReferenceMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitCenterReference>>, TError,CommitCenterReferenceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof commitCenterReference>>, TError,CommitCenterReferenceMutationVariables, TContext> => {
+export const getCommitCenterUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitCenterUpload>>, TError,CommitCenterUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof commitCenterUpload>>, TError,CommitCenterUploadMutationVariables, TContext> => {
 
-const mutationKey = getCommitCenterReferenceMutationKey();
+const mutationKey = getCommitCenterUploadMutationKey();
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -758,10 +767,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitCenterReference>>, CommitCenterReferenceMutationVariables> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitCenterUpload>>, CommitCenterUploadMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  commitCenterReference(id,requestOptions)
+          return  commitCenterUpload(id,data,requestOptions)
         }
 
 
@@ -771,20 +780,20 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CommitCenterReferenceMutationResult = NonNullable<Awaited<ReturnType<typeof commitCenterReference>>>
+    export type CommitCenterUploadMutationResult = NonNullable<Awaited<ReturnType<typeof commitCenterUpload>>>
+    export type CommitCenterUploadMutationBody = BodyType<CenterUploadCommitInput> | undefined
+    export type CommitCenterUploadMutationError = ErrorType<unknown>
+    export type CommitCenterUploadMutationVariables = {id: string;data?: BodyType<CenterUploadCommitInput>}
 
-    export type CommitCenterReferenceMutationError = ErrorType<unknown>
-    export type CommitCenterReferenceMutationVariables = {id: string}
-
-    export const useCommitCenterReference = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitCenterReference>>, TError,CommitCenterReferenceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+    export const useCommitCenterUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitCenterUpload>>, TError,CommitCenterUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof commitCenterReference>>,
+        Awaited<ReturnType<typeof commitCenterUpload>>,
         TError,
-        CommitCenterReferenceMutationVariables,
+        CommitCenterUploadMutationVariables,
         TContext
       > => {
-      return useMutation(getCommitCenterReferenceMutationOptions(options), queryClient);
+      return useMutation(getCommitCenterUploadMutationOptions(options), queryClient);
     }
 
 export const getGetAuthSessionUrl = () => {
@@ -3188,537 +3197,6 @@ export function useGetAlerts<TData = Awaited<ReturnType<typeof getAlerts>>, TErr
 
 
 
-
-export const getGetUploadsUrl = (params?: GetUploadsParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/uploads?${stringifiedParams}` : `/api/uploads`
-}
-
-/**
- * @summary Get upload history
- */
-export const getUploads = async (params?: GetUploadsParams, options?: Parameters<typeof customFetch>[1]): Promise<Upload[]> => {
-
-  return customFetch<Upload[]>(getGetUploadsUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getGetUploadsQueryKey = (params?: GetUploadsParams,) => {
-    return [
-    `/api/uploads`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getGetUploadsQueryOptions = <TData = Awaited<ReturnType<typeof getUploads>>, TError = ErrorType<unknown>>(params?: GetUploadsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploads>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetUploadsQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUploads>>> = ({ signal }) => getUploads(params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUploads>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetUploadsQueryResult = NonNullable<Awaited<ReturnType<typeof getUploads>>>
-export type GetUploadsQueryError = ErrorType<unknown>
-
-
-export function useGetUploads<TData = Awaited<ReturnType<typeof getUploads>>, TError = ErrorType<unknown>>(
- params: undefined |  GetUploadsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploads>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getUploads>>,
-          TError,
-          Awaited<ReturnType<typeof getUploads>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetUploads<TData = Awaited<ReturnType<typeof getUploads>>, TError = ErrorType<unknown>>(
- params?: GetUploadsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploads>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getUploads>>,
-          TError,
-          Awaited<ReturnType<typeof getUploads>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetUploads<TData = Awaited<ReturnType<typeof getUploads>>, TError = ErrorType<unknown>>(
- params?: GetUploadsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploads>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get upload history
- */
-
-export function useGetUploads<TData = Awaited<ReturnType<typeof getUploads>>, TError = ErrorType<unknown>>(
- params?: GetUploadsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUploads>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetUploadsQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-
-export const getCreateUploadUrl = () => {
-
-
-
-
-  return `/api/uploads`
-}
-
-/**
- * @summary Upload one or more reseller files (multipart/form-data)
- */
-export const createUpload = async (uploadFilesInput: UploadFilesInput, options?: Parameters<typeof customFetch>[1]): Promise<UploadReviewCard[]> => {
-    const formData = new FormData();
-formData.append(`files`, uploadFilesInput.files);
-if(uploadFilesInput.batch_week !== undefined) {
- formData.append(`batch_week`, uploadFilesInput.batch_week);
- }
-if(uploadFilesInput.ai_assist !== undefined) {
- formData.append(`ai_assist`, uploadFilesInput.ai_assist.toString())
- }
-
-  return customFetch<UploadReviewCard[]>(getCreateUploadUrl(),
-  {
-    ...options,
-    method: 'POST'
-    ,
-    body: formData
-  }
-);}
-
-
-
-
-
-export const getCreateUploadMutationKey = () => ['createUpload'] as const;
-
-export const getCreateUploadMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUpload>>, TError,CreateUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createUpload>>, TError,CreateUploadMutationVariables, TContext> => {
-
-const mutationKey = getCreateUploadMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createUpload>>, CreateUploadMutationVariables> = (props) => {
-          const {data} = props ?? {};
-
-          return  createUpload(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateUploadMutationResult = NonNullable<Awaited<ReturnType<typeof createUpload>>>
-    export type CreateUploadMutationBody = BodyType<UploadFilesInput>
-    export type CreateUploadMutationError = ErrorType<unknown>
-    export type CreateUploadMutationVariables = {data: BodyType<UploadFilesInput>}
-
-    /**
- * @summary Upload one or more reseller files (multipart/form-data)
- */
-export const useCreateUpload = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUpload>>, TError,CreateUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createUpload>>,
-        TError,
-        CreateUploadMutationVariables,
-        TContext
-      > => {
-      return useMutation(getCreateUploadMutationOptions(options), queryClient);
-    }
-
-export const getRecheckUploadUrl = (id: number,) => {
-
-
-
-
-  return `/api/uploads/${id}/recheck`
-}
-
-/**
- * @summary Recheck a pending upload without changing analytics
- */
-export const recheckUpload = async (id: number,
-    uploadRecheckInput: UploadRecheckInput, options?: Parameters<typeof customFetch>[1]): Promise<Upload> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return customFetch<Upload>(getRecheckUploadUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(uploadRecheckInput)
-  }
-);}
-
-
-
-
-
-export const getRecheckUploadMutationKey = () => ['recheckUpload'] as const;
-
-export const getRecheckUploadMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recheckUpload>>, TError,RecheckUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof recheckUpload>>, TError,RecheckUploadMutationVariables, TContext> => {
-
-const mutationKey = getRecheckUploadMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recheckUpload>>, RecheckUploadMutationVariables> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  recheckUpload(id,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RecheckUploadMutationResult = NonNullable<Awaited<ReturnType<typeof recheckUpload>>>
-    export type RecheckUploadMutationBody = BodyType<UploadRecheckInput>
-    export type RecheckUploadMutationError = ErrorType<unknown>
-    export type RecheckUploadMutationVariables = {id: number;data: BodyType<UploadRecheckInput>}
-
-    /**
- * @summary Recheck a pending upload without changing analytics
- */
-export const useRecheckUpload = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recheckUpload>>, TError,RecheckUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof recheckUpload>>,
-        TError,
-        RecheckUploadMutationVariables,
-        TContext
-      > => {
-      return useMutation(getRecheckUploadMutationOptions(options), queryClient);
-    }
-
-export const getDeleteUploadUrl = (id: number,) => {
-
-
-
-
-  return `/api/uploads/${id}`
-}
-
-/**
- * @summary Delete an upload and roll back its inventory snapshots
- */
-export const deleteUpload = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<DeleteResult> => {
-
-  return customFetch<DeleteResult>(getDeleteUploadUrl(id),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-);}
-
-
-
-
-
-export const getDeleteUploadMutationKey = () => ['deleteUpload'] as const;
-
-export const getDeleteUploadMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUpload>>, TError,DeleteUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteUpload>>, TError,DeleteUploadMutationVariables, TContext> => {
-
-const mutationKey = getDeleteUploadMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUpload>>, DeleteUploadMutationVariables> = (props) => {
-          const {id} = props ?? {};
-
-          return  deleteUpload(id,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeleteUploadMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUpload>>>
-
-    export type DeleteUploadMutationError = ErrorType<unknown>
-    export type DeleteUploadMutationVariables = {id: number}
-
-    /**
- * @summary Delete an upload and roll back its inventory snapshots
- */
-export const useDeleteUpload = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUpload>>, TError,DeleteUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deleteUpload>>,
-        TError,
-        DeleteUploadMutationVariables,
-        TContext
-      > => {
-      return useMutation(getDeleteUploadMutationOptions(options), queryClient);
-    }
-
-export const getCommitUploadUrl = (id: number,) => {
-
-
-
-
-  return `/api/uploads/${id}/commit`
-}
-
-/**
- * @summary Commit a reviewed upload (confirm reseller, date, column mapping)
- */
-export const commitUpload = async (id: number,
-    commitUploadInput: CommitUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<Upload> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return customFetch<Upload>(getCommitUploadUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(commitUploadInput)
-  }
-);}
-
-
-
-
-
-export const getCommitUploadMutationKey = () => ['commitUpload'] as const;
-
-export const getCommitUploadMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitUpload>>, TError,CommitUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof commitUpload>>, TError,CommitUploadMutationVariables, TContext> => {
-
-const mutationKey = getCommitUploadMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof commitUpload>>, CommitUploadMutationVariables> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  commitUpload(id,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CommitUploadMutationResult = NonNullable<Awaited<ReturnType<typeof commitUpload>>>
-    export type CommitUploadMutationBody = BodyType<CommitUploadInput>
-    export type CommitUploadMutationError = ErrorType<unknown>
-    export type CommitUploadMutationVariables = {id: number;data: BodyType<CommitUploadInput>}
-
-    /**
- * @summary Commit a reviewed upload (confirm reseller, date, column mapping)
- */
-export const useCommitUpload = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof commitUpload>>, TError,CommitUploadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof commitUpload>>,
-        TError,
-        CommitUploadMutationVariables,
-        TContext
-      > => {
-      return useMutation(getCommitUploadMutationOptions(options), queryClient);
-    }
-
-export const getSaveUploadMappingUrl = (id: number,) => {
-
-
-
-
-  return `/api/uploads/${id}/mapping`
-}
-
-/**
- * @summary Save confirmed column mapping for future use
- */
-export const saveUploadMapping = async (id: number,
-    saveMappingInput: SaveMappingInput, options?: Parameters<typeof customFetch>[1]): Promise<ColumnMapping> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return customFetch<ColumnMapping>(getSaveUploadMappingUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveMappingInput)
-  }
-);}
-
-
-
-
-
-export const getSaveUploadMappingMutationKey = () => ['saveUploadMapping'] as const;
-
-export const getSaveUploadMappingMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveUploadMapping>>, TError,SaveUploadMappingMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof saveUploadMapping>>, TError,SaveUploadMappingMutationVariables, TContext> => {
-
-const mutationKey = getSaveUploadMappingMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveUploadMapping>>, SaveUploadMappingMutationVariables> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  saveUploadMapping(id,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type SaveUploadMappingMutationResult = NonNullable<Awaited<ReturnType<typeof saveUploadMapping>>>
-    export type SaveUploadMappingMutationBody = BodyType<SaveMappingInput>
-    export type SaveUploadMappingMutationError = ErrorType<unknown>
-    export type SaveUploadMappingMutationVariables = {id: number;data: BodyType<SaveMappingInput>}
-
-    /**
- * @summary Save confirmed column mapping for future use
- */
-export const useSaveUploadMapping = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveUploadMapping>>, TError,SaveUploadMappingMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof saveUploadMapping>>,
-        TError,
-        SaveUploadMappingMutationVariables,
-        TContext
-      > => {
-      return useMutation(getSaveUploadMappingMutationOptions(options), queryClient);
-    }
 
 export const getGetResellersUrl = () => {
 

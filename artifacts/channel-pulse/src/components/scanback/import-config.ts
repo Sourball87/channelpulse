@@ -31,8 +31,8 @@ export const KIND_META: Record<ScanbackImport["kind"], { label: string; blurb: s
     needsAccount: false,
   },
   history: {
-    label: "Historical approved claims",
-    blurb: "Earlier approved claims so the once-across-all-promotions rule includes them. Never becomes a new payable approval.",
+    label: "Historical approved claims (legacy)",
+    blurb: "Read-only legacy import data. New historical-claim uploads are retired.",
     required: ["serial", "sku", "date", "amount", "program", "reference"],
     needsAccount: true,
   },

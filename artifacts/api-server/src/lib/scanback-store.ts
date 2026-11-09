@@ -54,7 +54,7 @@ export async function put(c: Client, table: Table, id: string, value: unknown) {
   await c.query(`UPDATE ${table} SET payload=$2::jsonb WHERE id=$1`, [id, JSON.stringify(value)]);
 }
 export async function catalog(c: Client): Promise<{ accounts: Account[]; parts: CatalogPart[] }> {
-  const accounts = (await c.query("SELECT id,code,name,active FROM resellers ORDER BY code")).rows as Account[];
+  const accounts = (await c.query("SELECT id,code,name,aliases,active FROM resellers ORDER BY code")).rows as Account[];
   const parts = (await c.query("SELECT id, part_no AS code FROM parts ORDER BY part_no")).rows as CatalogPart[];
   return { accounts, parts };
 }

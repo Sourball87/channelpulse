@@ -130,11 +130,15 @@ paths:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
     post:
-      operationId: commitCenterReference
+      operationId: commitCenterUpload
       tags: [uploads]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CenterUploadCommitInput" }
       responses:
         "200":
-          description: Validated price list or program table committed
+          description: Validated SOH report, price list or program table committed
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CenterUpload" }
@@ -599,146 +603,6 @@ paths:
                 items:
                   $ref: "#/components/schemas/Alert"
 
-  # Uploads
-  /uploads:
-    get:
-      operationId: getUploads
-      tags: [uploads]
-      summary: Get upload history
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-      responses:
-        "200":
-          description: Upload history
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Upload"
-    post:
-      operationId: createUpload
-      tags: [uploads]
-      summary: Upload one or more reseller files (multipart/form-data)
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: "#/components/schemas/UploadFilesInput"
-      responses:
-        "200":
-          description: Per-file detection and review cards
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/UploadReviewCard"
-
-  /uploads/{id}/recheck:
-    post:
-      operationId: recheckUpload
-      tags: [uploads]
-      summary: Recheck a pending upload without changing analytics
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UploadRecheckInput"
-      responses:
-        "200":
-          description: Updated upload review
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Upload"
-
-  /uploads/{id}:
-    delete:
-      operationId: deleteUpload
-      tags: [uploads]
-      summary: Delete an upload and roll back its inventory snapshots
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeleteResult"
-
-  /uploads/{id}/commit:
-    post:
-      operationId: commitUpload
-      tags: [uploads]
-      summary: Commit a reviewed upload (confirm reseller, date, column mapping)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CommitUploadInput"
-      responses:
-        "200":
-          description: Committed upload
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Upload"
-
-  /uploads/{id}/mapping:
-    post:
-      operationId: saveUploadMapping
-      tags: [uploads]
-      summary: Save confirmed column mapping for future use
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SaveMappingInput"
-      responses:
-        "200":
-          description: Saved
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ColumnMapping"
-
   # Resellers
   /resellers:
     get:
@@ -1061,7 +925,7 @@ components:
       required: [file, kind]
       properties:
         file: { type: string, format: binary }
-        kind: { type: string, enum: [auto, evidence, claim, history] }
+        kind: { type: string, enum: [auto, evidence, claim] }
     ScanbackMapping:
       type: object
       required: [mapping, dateFormat, sheet]
@@ -1163,6 +1027,8 @@ components:
         errors: { type: array, items: { $ref: "#/components/schemas/ScanbackImportIssue" } }
         warnings: { type: array, items: { type: string } }
         duplicate: { type: boolean }
+        nonSerialCount: { type: integer }
+        nonSerialIdentifiers: { type: array, items: { type: string } }
         recordCount: { type: integer }
     ScanbackVerificationInput:
       type: object
@@ -1774,7 +1640,7 @@ components:
           type: boolean
           default: true
 
-    CommitUploadInput:
+    CenterUploadCommitInput:
       type: object
       required: [reseller_id, week_iso, mappings]
       properties:
@@ -1901,7 +1767,7 @@ components:
       required: [files]
       properties:
         files: { type: array, items: { type: string, format: binary } }
-        kind: { type: string }
+        kind: { type: string, enum: [soh, claim, evidence, price, program, unknown] }
         accountId: { type: integer }
         weekIso: { type: string }
         ai_assist: { type: boolean, default: true }
@@ -1910,7 +1776,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [soh, claim, evidence, history, price, program, unknown]
+          enum: [soh, claim, evidence, price, program, unknown]
         accountId: { type: [integer, "null"] }
         weekIso: { type: [string, "null"] }
         mapping:
@@ -1928,14 +1794,14 @@ components:
         weekIso: { type: [string, "null"] }
         weekSource:
           type: string
-          enum: [filename, file_dates, manual, unknown]
+          enum: [filename, file_dates, manual, ai_suggested, unknown]
         sourceId: { type: [string, "null"] }
         state: { type: string, enum: [preview, committed, superseded] }
         createdAt: { type: string }
         rowCount: { type: integer }
         summary:
           type: object
-          required: [skuCount, soh, unitsSold, serialCount, from, to, ddRangeCount, invoicedCount]
+          required: [skuCount, soh, unitsSold, serialCount, from, to, ddRangeCount, invoicedCount, nonSerialCount, nonSerialIdentifiers, historyRowsSkipped]
           properties:
             skuCount: { type: integer }
             soh: { type: integer }
@@ -1946,9 +1812,13 @@ components:
             ddRangeCount: { type: integer }
             invoicedCount: { type: integer }
             nonSerialCount: { type: integer }
+            nonSerialIdentifiers: { type: array, items: { type: string } }
             historyRowsSkipped: { type: integer }
         errors: { type: array, items: { type: string } }
         warnings: { type: array, items: { type: string } }
+        sohReview:
+          type: object
+          additionalProperties: true
         headers: { type: array, items: { type: string } }
         mapping: { type: object, additionalProperties: { type: string } }
         preview: { type: array, items: { type: object, additionalProperties: true } }

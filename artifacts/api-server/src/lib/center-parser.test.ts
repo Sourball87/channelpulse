@@ -7,7 +7,7 @@ describe("unified intake detection", () => {
     [["SKU", "SOH", "Sold Last 7 Days"], "soh"],
     [["Customer", "Model", "QTY", "Serial", "Date"], "claim"],
     [["Invoice", "Invoice Date", "Account", "SKU", "Quantity", "Serial", "Unit Price"], "evidence"],
-    [["SKU", "Serial", "Date", "Claim Amount", "Promotion", "Reference"], "history"],
+    [["SKU", "Serial", "Date", "Claim Amount", "Promotion", "Reference"], "unknown"],
     [["SKU", "Description", "RRP Inc", "DD Cost Ex", "T1 Buy Ex"], "price"],
     [["SKU", "GTM Buy Ex", "CA", "CC"], "program"],
     [["mystery", "value"], "unknown"],

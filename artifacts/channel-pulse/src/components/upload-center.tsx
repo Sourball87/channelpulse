@@ -182,6 +182,17 @@ export function WeeklyView({
     const ending = formatDay(sunday);
     for (const r of missingSoh) lines.push(`${i++}. ${customerLabel(r.code)} - SOH report, week ending ${ending}`);
     for (const r of missingSer) lines.push(`${i++}. ${customerLabel(r.code)} - serial report, week ending ${ending}`);
+    const nonSerialReports = uploads.filter((u) => u.state === "committed" && u.kind === "claim" && u.weekIso === week && u.summary.nonSerialCount > 0);
+    for (const report of nonSerialReports) {
+      const code = resellers.find((r) => r.id === report.accountId)?.code;
+      const identifiers = report.summary.nonSerialIdentifiers ?? [];
+      if (identifiers.length) {
+        for (const identifier of identifiers)
+          lines.push(`${i++}. ${customerLabel(code ?? "Unknown")} - verify non-serial barcode/part label ${identifier} from ${report.name}`);
+      } else {
+        lines.push(`${i++}. ${customerLabel(code ?? "Unknown")} - verify ${report.summary.nonSerialCount} non-serial barcode/part-label entries from ${report.name}`);
+      }
+    }
     const text = lines.length ? lines.join("\n") : `All expected reports received for week ending ${ending}.`;
     try { await navigator.clipboard.writeText(text); toast({ title: "Chase list copied", description: `${lines.length} outstanding report${lines.length === 1 ? "" : "s"}.` }); }
     catch { toast({ title: "Could not copy", description: text, variant: "destructive" }); }
@@ -304,6 +315,11 @@ function SerialSummary({ u, reseller, programs, week }: { u: CenterUpload; resel
       <p className="font-mono text-[11px] text-slate-600">
         {n(s.serialCount)} serials &middot; {n(s.skuCount)} SKUs &middot; {shortDate(s.from)} - {shortDate(s.to)}
       </p>
+      {!!s.nonSerialCount && (
+        <p className="text-[11px] text-amber-800">
+          {n(s.nonSerialCount)} DigiDirect barcodes or part labels excluded from serial matching and added to the chase list.
+        </p>
+      )}
       <p className="text-[11px] text-slate-600"><span className="font-semibold tabular-nums">{n(s.invoicedCount)}</span> of {n(s.ddRangeCount)} reported serials in DD range invoiced to this customer <span className="text-muted-foreground">(coverage only, not eligibility)</span></p>
       <div className="flex flex-wrap items-center gap-1.5">
         {applicable.length > 1 && (

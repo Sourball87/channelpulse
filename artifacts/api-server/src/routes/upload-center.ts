@@ -4,29 +4,41 @@ import { randomUUID, createHash } from "node:crypto";
 import type { CenterUpload, ScanbackImport, CenterUploadCorrection } from "@workspace/api-zod";
 import { CorrectCenterUploadBody } from "@workspace/api-zod";
 import {
-  parseFile, hashBuffer, detectWeekFromFilename, detectResellerFromFilename,
+  hashBuffer, detectWeekFromFilename, detectResellerFromFilename,
   isValidWeekIso, dateStringToWeekIso, applyMappingsToRows, type MappingField,
 } from "../lib/parser";
+import { parseFile } from "../lib/file-parser";
 import { parseDate, parseSheets, suggestMapping, type Sheets } from "../lib/scanback-import";
+import { parseCsvSheets, filterFullHistorySerialRows } from "../lib/scanback-import";
+import { isWeekOutsideWindow, mostCommonWeek } from "../lib/dates";
 import { serialKey } from "../lib/scanback-engine";
 import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
 import { indexProntoSource, isPronto, pendingProntoCredits } from "../lib/scanback-pronto";
 import { transaction, catalog, rebuildImport, requireThat, ScanbackError, type Client } from "../lib/scanback-store";
-import { detectCenterKind, readCenterWorkbook, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
+import { detectCenterKind, readCenterWorkbook, readCenterCsv, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
 import { aiAssistEnabled, suggestFileType, suggestRecognition } from "../lib/upload-ai";
 import type { AiNote } from "../lib/upload-review";
+import { UploadCommitConflict, commitSohUpload } from "../lib/soh-upload-commit";
+import { CommitCenterUploadBody } from "@workspace/api-zod";
 
 const router = Router();
 // The UI batches an arbitrary selection into requests. Bound each request's
 // memory without imposing a total file-count limit on the user.
-const intake = multer({ storage: multer.memoryStorage(), limits: { files: 20, fileSize: 10 * 1024 * 1024 } });
+const intake = multer({ storage: multer.memoryStorage(), limits: { files: 20, fileSize: 50 * 1024 * 1024 } });
 const emptySummary = (): CenterUpload["summary"] => ({
   skuCount: 0, soh: 0, unitsSold: 0, serialCount: 0, from: "", to: "", ddRangeCount: 0, invoicedCount: 0,
+  nonSerialCount: 0, nonSerialIdentifiers: [], historyRowsSkipped: 0,
 });
 const wrap = (fn: (c: Client, req: Request) => Promise<unknown>) => async (req: Request, res: Response) => {
   try { res.json(await transaction(c => fn(c, req))); }
   catch (e) {
-    if (e instanceof ScanbackError) res.status(e.status).json({ error: e.message });
+    if (e instanceof UploadCommitConflict) res.status(409).json({
+      error: "conflict",
+      message: `This would overwrite ${e.existingCount} existing snapshots. Confirm to proceed.`,
+      existing_count: e.existingCount,
+      part_count: e.partCount,
+    });
+    else if (e instanceof ScanbackError) res.status(e.status).json({ error: e.message });
     else {
       req.log.error({ err: e }, "Upload Center operation failed");
       res.status(500).json({ error: "Could not complete the upload operation. Nothing was committed." });
@@ -61,6 +73,7 @@ async function createSource(c: Client, entry: CenterUpload, raw: Sheets, buffer?
     if (allowAi) {
       const suggestion = await suggestRecognition(result, entry.name, accounts);
       result = suggestion.result; ai = suggestion.note;
+      if (result.detectedWeekIso && result.detectedWeekIso !== originalWeek) entry.weekSource = "ai_suggested";
     }
     const accountId = entry.accountId ?? result.detectedResellerId;
     const week = entry.weekIso ?? result.detectedWeekIso;
@@ -76,8 +89,12 @@ async function createSource(c: Client, entry: CenterUpload, raw: Sheets, buffer?
       accountId, entry.name, key, result.detectedReportDate, week, result.parserUsed,
       result.overallConfidence, result.rowsParsed, result.rowsFlagged, JSON.stringify(result.headers),
       JSON.stringify(result.rawRows), JSON.stringify(mappings),
-      JSON.stringify({ version: 1, sheetName: result.sheetName, weekSource: week ? "manual" : null,
-        confirmedWeek: entry.weekIso ?? originalWeek, confirmedResellerId: entry.accountId ?? result.detectedResellerId, ai,
+      JSON.stringify({ version: 1, sheetName: result.sheetName,
+        weekSource: entry.weekSource === "manual" ? "manual" : entry.weekSource === "ai_suggested" ? "ai_suggested" : result.detectedWeekIso ? "filename" : null,
+        confirmedWeek: entry.weekSource === "manual" ? entry.weekIso : null,
+        confirmedResellerId: entry.weekSource === "manual" ? entry.accountId : null, ai,
+        candidates: result.detectedCandidates.map(candidate => ({ id: candidate.id, name: candidate.name, code: candidate.code })),
+        detectedFormatId: result.detectedFormatId, detectionReasoning: result.detectionReasoning,
         ...(ai?.status === "suggested" && !originalWeek && !entry.weekIso ? { weekSource: "ai_suggested" } : {}) }),
     ]);
     entry.sourceId = String(inserted.rows[0].id);
@@ -85,16 +102,42 @@ async function createSource(c: Client, entry: CenterUpload, raw: Sheets, buffer?
   } else if (["claim", "history", "evidence"].includes(entry.kind)) {
     // Reuse the strict existing financial parser (including Pronto redaction,
     // native account scoping, credits and original-price validation).
-    const financial = parseSheets(data);
+    requireThat(entry.kind !== "history", "Historical approved claims can no longer be uploaded. Existing history remains readable.", 400);
+    let financial = /\.csv$/i.test(entry.name) ? await parseCsvSheets(data) : parseSheets(data);
     const sheet = Object.keys(financial)[0];
-    const headers = Object.keys(financial[sheet][0] ?? {});
+    let sourceRows = financial[sheet] ?? [];
+    const headers = Object.keys(sourceRows[0] ?? {}).filter(h => h !== "__sourceRow");
+    const mapping = suggestMapping(headers);
+    if (entry.kind === "claim" && entry.weekSource !== "manual") {
+      const detected = mostCommonWeek(mapping.date ? sourceRows.map(row => row[mapping.date]) : []);
+      if (detected.weekIso) {
+        entry.weekIso = detected.weekIso;
+        entry.weekSource = "file_dates";
+      }
+    }
+    if (entry.kind === "claim" && /\.csv$/i.test(entry.name) && entry.accountId != null) {
+      const customer = (await profiles(c)).find(account => account.id === entry.accountId);
+      if (customer?.code?.toLowerCase() === "ple" && (data.length > 10 * 1024 * 1024 || sourceRows.length > 100_000)) {
+        const known = (await loadReportedSales(c)).map(row => row.serial);
+        const filtered = filterFullHistorySerialRows(sourceRows, mapping, known, entry.weekIso);
+        sourceRows = filtered.rows;
+        financial[sheet] = sourceRows;
+        if (entry.weekSource !== "manual" && filtered.weekIso) {
+          entry.weekIso = filtered.weekIso;
+          entry.weekSource = "file_dates";
+        }
+        entry.summary.historyRowsSkipped = filtered.skippedKnownHistory;
+        if (filtered.skippedKnownHistory)
+          entry.warnings = [...(entry.warnings ?? []), `${filtered.skippedKnownHistory.toLocaleString()} older rows skipped as already-known history.`];
+      }
+    }
     const key = createHash("sha256").update(entry.kind).update(data).digest("hex");
     const duplicate = await c.query("SELECT payload FROM scanback_imports WHERE content_key=$1", [key]);
     requireThat(!duplicate.rowCount, "This financial file is already in Upload Center. Open its existing history entry.", 409);
     const base: ScanbackImport = {
       id: randomUUID(), kind: entry.kind as ScanbackImport["kind"], name: entry.name, state: "preview",
       createdAt: entry.createdAt, sheets: Object.keys(financial), sheet, headers,
-      mapping: suggestMapping(headers), dateFormat: "dmy", accountId: isPronto(headers) ? null : entry.accountId,
+      mapping, dateFormat: "dmy", accountId: isPronto(headers) ? null : entry.accountId,
       rows: [], errors: [], warnings: [], duplicate: false, recordCount: 0,
     };
     const value = await rebuildImport(c, base, financial, base);
@@ -143,6 +186,7 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
     const r = (await c.query("SELECT * FROM uploads WHERE id=$1", [e.sourceId])).rows[0];
     if (!r) return;
     e.accountId = r.reseller_id; e.weekIso = r.week_iso;
+    e.weekSource = e.weekSource ?? r.recognition?.weekSource ?? (r.week_iso ? "filename" : "unknown");
     e.state = r.status === "committed" ? "committed" : "preview";
     const rows = applyMappingsToRows(r.raw_rows ?? [], (r.detected_mappings ?? []) as MappingField[]);
     e.rowCount = r.rows_parsed ?? rows.length;
@@ -150,6 +194,27 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
       soh: rows.reduce((s, x) => s + x.soh, 0), unitsSold: rows.reduce((s, x) => s + x.sell_through_7d, 0) };
     e.headers = r.raw_headers ?? [];
     e.preview = (r.raw_rows ?? []).slice(0, 8);
+    const mappings = Array.isArray(r.detected_mappings) ? r.detected_mappings as MappingField[] : [];
+    const readyToCommit = !!r.reseller_id && !!r.week_iso &&
+      mappings.some(mapping => mapping.canonical_field === "part_no") &&
+      mappings.some(mapping => mapping.canonical_field === "soh");
+    e.sohReview = {
+      upload_id: Number(r.id), filename: r.filename, status: r.status,
+      detected_reseller_id: r.reseller_id, detected_reseller_name: null,
+      detected_week_iso: r.week_iso, detected_report_date: r.report_date,
+      confidence: Number(r.confidence ?? 0), rows_parsed: r.rows_parsed ?? rows.length,
+      rows_flagged: r.rows_flagged ?? rows.filter(row => row.flagged).length,
+      mappings, preview_rows: (r.raw_rows ?? []).slice(0, 8),
+      raw_headers: r.raw_headers ?? [], week_not_detected: !r.week_iso,
+      candidates: r.recognition?.candidates ?? [],
+      detected_format_id: r.recognition?.detectedFormatId ?? null,
+      detection_reasoning: r.recognition?.detectionReasoning ?? null,
+      diagnostics: {
+        review_reasons: [], ready_to_commit: readyToCommit, auto_eligible: false,
+        week_source: e.weekSource ?? "unknown",
+        metadata_missing: !r.reseller_id || !r.week_iso,
+      },
+    };
   } else if (e.sourceId && ["claim", "evidence", "history"].includes(e.kind)) {
     const r = (await c.query("SELECT payload FROM scanback_imports WHERE id=$1", [e.sourceId])).rows[0]?.payload as ScanbackImport | undefined;
     if (!r) return;
@@ -163,10 +228,18 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
     const accountIds = [...new Set(r.rows.map(x => x.accountId).filter(x => x != null))];
     e.accountId = r.accountId ?? (accountIds.length === 1 ? accountIds[0]! : e.accountId);
     const dates = r.rows.map(x => x.date).filter(Boolean).sort();
-    if (!e.weekIso && dates.length && dateStringToWeekIso(dates[0]) === dateStringToWeekIso(dates.at(-1)!))
-      e.weekIso = dateStringToWeekIso(dates[0]);
+    if (e.kind === "claim" && e.weekSource !== "manual" && dates.length) {
+      const detected = mostCommonWeek(dates);
+      if (detected.weekIso) { e.weekIso = detected.weekIso; e.weekSource = "file_dates"; }
+    } else if (!e.weekIso && dates.length) {
+      const detected = mostCommonWeek(dates);
+      if (detected.weekIso) { e.weekIso = detected.weekIso; e.weekSource = "file_dates"; }
+    }
     e.summary = { ...emptySummary(), serialCount: new Set(r.rows.map(x => x.serial)).size,
-      skuCount: new Set(r.rows.map(x => x.sku).filter(Boolean)).size, from: dates[0] ?? "", to: dates.at(-1) ?? "" };
+      skuCount: new Set(r.rows.map(x => x.sku).filter(Boolean)).size, from: dates[0] ?? "", to: dates.at(-1) ?? "",
+      nonSerialCount: Number(r.nonSerialCount ?? 0),
+      nonSerialIdentifiers: Array.isArray(r.nonSerialIdentifiers) ? r.nonSerialIdentifiers : [],
+      historyRowsSkipped: e.summary.historyRowsSkipped ?? 0 };
     if (e.kind === "claim") {
       const first = firstReportedSales(cachedSales ?? await loadReportedSales(c));
         const repeated = r.rows.filter(row =>
@@ -187,6 +260,9 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
       }
     }
   }
+  e.warnings = (e.warnings ?? []).filter(w => !w.startsWith("Detected report week is more than 8 weeks"));
+  if (e.weekIso && isWeekOutsideWindow(e.weekIso))
+    e.warnings.push("Detected report week is more than 8 weeks from today. Confirm the reporting period before committing.");
   return e;
 }
 async function workspace(c: Client) {
@@ -252,21 +328,27 @@ router.post("/upload-center/files", intake.array("files"), async (req, res) => {
       const result = await transaction(async c => {
         await validateMeta(c, options.data);
         requireThat(/\.(csv|xlsx|xls)$/i.test(file.originalname), "Use CSV, XLS or XLSX.");
-        const workbook = readCenterWorkbook(file.buffer);
+        const workbook = /\.csv$/i.test(file.originalname)
+          ? { sheets: await readCenterCsv(file.buffer), programSources: {} }
+          : readCenterWorkbook(file.buffer);
         let raw = workbook.sheets;
         const sheets = Object.keys(raw);
         const detected = sheets.map(sheet => ({ sheet, kind: detectCenterKind(Object.keys(raw[sheet][0] ?? {}), sheet, file.originalname) }));
         const selected = detected.find(d => d.kind !== "unknown") ?? detected[0];
         const kind = options.data.kind ?? selected.kind;
-        if (["claim", "evidence", "history"].includes(kind)) raw = parseSheets(file.buffer);
+        requireThat(kind !== "history", "Historical approved claims can no longer be uploaded. Existing history remains readable.", 400);
+        if (["claim", "evidence"].includes(kind))
+          raw = /\.csv$/i.test(file.originalname) ? await parseCsvSheets(file.buffer) : parseSheets(file.buffer);
         else raw = { [selected.sheet]: raw[selected.sheet] };
         const filenameAccount = detectResellerFromFilename(file.originalname, await profiles(c)).resellerId;
+        const filenameWeek = detectWeekFromFilename(file.originalname).weekIso;
+        const weekSource = options.data.weekIso != null ? "manual" : filenameWeek ? "filename" : "unknown";
         const entry: CenterUpload = {
           id: randomUUID(), name: file.originalname, kind, sourceId: null, state: "preview", createdAt: new Date().toISOString(),
           accountId: options.data.accountId ?? (kind === "soh" ? null : filenameAccount),
-          weekIso: options.data.kind ? options.data.weekIso ?? detectWeekFromFilename(file.originalname).weekIso
-            : detectWeekFromFilename(file.originalname).weekIso ?? options.data.weekIso ?? null,
-          summary: emptySummary(), headers: [], mapping: {}, errors: [], preview: [], rowCount: 0,
+          weekIso: options.data.weekIso ?? filenameWeek,
+          weekSource,
+          summary: emptySummary(), headers: [], mapping: {}, errors: [], warnings: [], preview: [], rowCount: 0,
           ...(kind === "program" && workbook.programSources[selected.sheet] ? { programSource: workbook.programSources[selected.sheet] } : {}),
         };
         raw = await createSource(c, entry, raw, file.buffer, aiAssistEnabled(req.body.ai_assist));
@@ -340,6 +422,22 @@ router.delete("/upload-center/:id", wrap(async (c, req) => {
 router.post("/upload-center/:id/commit", wrap(async (c, req) => {
   const { entry, raw } = await load(c, String(req.params.id));
   if (entry.state === "committed") return entry;
+  if (entry.kind === "soh") {
+    const input = CommitCenterUploadBody.safeParse(req.body);
+    requireThat(input.success, "Invalid SOH commit input.");
+    const sourceId = Number(entry.sourceId);
+    requireThat(Number.isSafeInteger(sourceId) && sourceId > 0, "SOH source is unavailable.", 404);
+    const committed = await commitSohUpload(c, sourceId, input.data!.reseller_id, input.data!.week_iso,
+      input.data!.mappings as MappingField[], input.data!.confirm_overwrite ?? false);
+    entry.state = "committed";
+    entry.accountId = input.data!.reseller_id;
+    entry.weekIso = input.data!.week_iso;
+    entry.weekSource = "manual";
+    entry.errors = [];
+    entry.summary = { ...entry.summary, ...committed };
+    await save(c, entry, raw);
+    return hydrate(c, entry);
+  }
   requireThat(entry.kind === "price" || entry.kind === "program", "Review the SOH or financial column mapping before committing this source.");
   const data = parseReference(entry.kind, Object.values(raw)[0], entry.mapping);
   requireThat(!data.errors.length, data.errors.slice(0, 8).join(" "));
@@ -355,7 +453,7 @@ router.post("/upload-center/:id/commit", wrap(async (c, req) => {
   return entry;
 }));
 router.use("/upload-center", (err: unknown, _req: Request, res: Response, next: NextFunction) => {
-  if (err instanceof multer.MulterError) res.status(400).json({ error: "Use files up to 10 MB, at most 20 per request. You can add further batches." });
+  if (err instanceof multer.MulterError) res.status(400).json({ error: "Use files up to 50 MB, at most 20 per request. You can add further batches." });
   else next(err);
 });
 export default router;

@@ -7,7 +7,7 @@
  */
 import type { MappingField } from './mappingField';
 
-export interface CommitUploadInput {
+export interface CenterUploadCommitInput {
   reseller_id: number;
   week_iso: string;
   /** @nullable */

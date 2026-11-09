@@ -2,7 +2,7 @@ import { formatWeekLabel } from "@/lib/week-display";
 import { useState, useRef, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { useGetUploads, useGetResellers, type Reseller } from "@workspace/api-client-react";
+import { useGetResellers, type Reseller } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +82,7 @@ interface CommitData {
 }
 
 interface ConflictState {
+  centerUploadId: string;
   uploadId: number;
   resellerId: number;
   weekIso: string;
@@ -109,8 +110,6 @@ export default function UploadCenter() {
   const [isDragging, setIsDragging] = useState(false);
   const [defaultWeek, setDefaultWeek] = useState("");
   const [aiAssist, setAiAssist] = useState(true);
-  const [recheckingId, setRecheckingId] = useState<number | null>(null);
-  const [revision, setRevision] = useState(0);
   const [conflictInfo, setConflictInfo] = useState<ConflictState | null>(null);
   const [isConfirmingOverwrite, setIsConfirmingOverwrite] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CenterUpload | null>(null);
@@ -124,7 +123,6 @@ export default function UploadCenter() {
   const center = useUploadCenter();
   const sendFiles = useCenterUpload();
   const deleteCenter = useDeleteCenterUpload();
-  const { data: legacyUploads } = useGetUploads({ limit: 200 }, { query: { refetchOnMount: "always" } as never });
   const { data: resellerData } = useGetResellers();
   const ws = useScanbackWorkspace();
   const resellers: Reseller[] = resellerData ?? [];
@@ -134,17 +132,10 @@ export default function UploadCenter() {
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const pricesUpdated = (center.data?.prices ?? []).reduce<string | null>((m, p) => (!m || p.updatedAt > m ? p.updatedAt : m), null);
 
-  const reviewFromUpload = (u: any) => ({
-    ...u, upload_id: u.id, status: "needs_review",
-    detected_reseller_id: u.reseller_id ?? null,
-    detected_week_iso: u.week_not_detected ? "" : u.week_iso ?? "",
-    week_not_detected: u.week_not_detected ?? !u.week_iso,
-    mappings: u.detected_mappings ?? [], diagnostics: u.diagnostics,
-    candidates: u.candidates ?? [],
+  const reviewFromUpload = (u: CenterUpload) => ({
+    ...((u.sohReview ?? {}) as Record<string, any>),
+    center_upload_id: u.id,
   });
-  const sohLegacy = open?.kind === "soh" && open.sourceId
-    ? (legacyUploads as any[] | undefined)?.find((u) => String(u.id) === open.sourceId && u.status === "review")
-    : undefined;
 
   const openReview = (u: CenterUpload) => {
     setOpenId(u.id);
@@ -159,9 +150,9 @@ export default function UploadCenter() {
       return;
     }
     trackEvent("upload_started", { file_count: files.length });
-    const tooBig = files.filter((f) => f.size > 10 * 1024 * 1024);
-    if (tooBig.length) toast({ title: "Files over 10 MB skipped", description: tooBig.map((f) => f.name).join(", "), variant: "destructive" });
-    const ok = files.filter((f) => f.size <= 10 * 1024 * 1024);
+    const tooBig = files.filter((f) => f.size > 50 * 1024 * 1024);
+    if (tooBig.length) toast({ title: "Files over 50 MB skipped", description: tooBig.map((f) => f.name).join(", "), variant: "destructive" });
+    const ok = files.filter((f) => f.size <= 50 * 1024 * 1024);
     if (!ok.length) return;
     const batches: File[][] = [];
     for (let i = 0; i < ok.length; i += 20) batches.push(ok.slice(i, i + 20));
@@ -188,28 +179,6 @@ export default function UploadCenter() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleRecheck = async (id: number) => {
-    if (defaultWeek && !validWeek(defaultWeek)) {
-      toast({ title: "Invalid default week", description: "Enter a valid ISO week or leave it blank.", variant: "destructive" });
-      return;
-    }
-    setRecheckingId(id);
-    trackEvent("upload_recheck_started", { ai_enabled: aiAssist, batch_week_selected: !!defaultWeek });
-    try {
-      const response = await fetch(`/api/uploads/${id}/recheck`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify({ batch_week: defaultWeek || undefined, ai_assist: aiAssist }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Recheck failed");
-      await queryClient.invalidateQueries();
-      setRevision((r) => r + 1);
-      toast({ title: "Recognition refreshed", description: "Suggestions only. No data was changed. Review before committing." });
-    } catch (err) {
-      toast({ title: "Could not recheck", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
-    } finally { setRecheckingId(null); }
-  };
-
   const confirmDelete = () => {
     if (!deleteTarget) return;
     const target = deleteTarget;
@@ -224,11 +193,11 @@ export default function UploadCenter() {
     });
   };
 
-  const doCommit = async (uploadId: number, resellerId: number, weekIso: string, mappings: any[], confirmOverwrite: boolean) => {
+  const doCommit = async (centerUploadId: string, uploadId: number, resellerId: number, weekIso: string, mappings: any[], confirmOverwrite: boolean) => {
     trackEvent("upload_commit_started", { overwrite: confirmOverwrite, mapping_count: mappings.length });
     let response: Response;
     try {
-      response = await fetch(`/api/uploads/${uploadId}/commit`, {
+      response = await fetch(`/api/upload-center/${encodeURIComponent(centerUploadId)}/commit`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reseller_id: resellerId, week_iso: weekIso, mappings, confirm_overwrite: confirmOverwrite }),
@@ -240,7 +209,7 @@ export default function UploadCenter() {
     if (response.status === 409) {
       const data = await response.json();
       if (data.error === "conflict" && Number.isInteger(data.existing_count)) {
-        setConflictInfo({ uploadId, resellerId, weekIso, mappings, existingCount: data.existing_count, message: data.message });
+        setConflictInfo({ centerUploadId, uploadId, resellerId, weekIso, mappings, existingCount: data.existing_count, message: data.message });
       } else {
         toast({ title: "Upload changed", description: data.error ?? "Refresh and check this upload before continuing.", variant: "destructive" });
         queryClient.invalidateQueries();
@@ -262,7 +231,7 @@ export default function UploadCenter() {
       toast({ title: "Missing metadata", description: "Select a reseller and enter a week to commit.", variant: "destructive" });
       return;
     }
-    const ok = await doCommit(review.upload_id, resellerId, weekIso, mappings, false);
+    const ok = await doCommit(review.center_upload_id, review.upload_id, resellerId, weekIso, mappings, false);
     if (!ok) return;
     if (rememberPattern && review.filename) {
       const token = extractFileToken(review.filename);
@@ -288,9 +257,9 @@ export default function UploadCenter() {
   const handleConfirmOverwrite = async () => {
     if (!conflictInfo) return;
     setIsConfirmingOverwrite(true);
-    const { uploadId, resellerId, weekIso, mappings } = conflictInfo;
+    const { centerUploadId, uploadId, resellerId, weekIso, mappings } = conflictInfo;
     setConflictInfo(null);
-    const ok = await doCommit(uploadId, resellerId, weekIso, mappings, true);
+    const ok = await doCommit(centerUploadId, uploadId, resellerId, weekIso, mappings, true);
     setIsConfirmingOverwrite(false);
     if (ok) {
       toast({ title: "SOH report committed - existing data replaced" });
@@ -305,7 +274,7 @@ export default function UploadCenter() {
     <div className="flex flex-col h-full bg-muted/20">
       <header className="flex-none bg-background border-b px-6 py-4">
         <h1 className="text-2xl font-semibold tracking-tight">Upload Center</h1>
-        <p className="text-sm text-muted-foreground">Every file enters ChannelPulse here: customer SOH and serial reports, Pronto DD serials, historical claims, price lists and program tables.</p>
+        <p className="text-sm text-muted-foreground">Every file enters ChannelPulse here: customer SOH and serial reports, Pronto DD serials, price lists and program tables.</p>
       </header>
 
       <div className="flex-1 overflow-auto p-4 md:p-6 space-y-8">
@@ -400,7 +369,7 @@ export default function UploadCenter() {
                   <div className="flex items-center gap-2"><KindBadge kind={open.kind} /><StateBadge u={open} /></div>
                   <p className="mt-1 truncate font-semibold" data-testid="text-review-name">{open.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {KIND_LABEL[open.kind]} &middot; {open.accountId == null ? "No reseller" : customerLabel(resById.get(open.accountId)?.code ?? open.accountId)} &middot; {open.weekIso ? formatWeekLabel(open.weekIso) : "No week"}
+                     {KIND_LABEL[open.kind]} &middot; {open.accountId == null ? "No reseller" : customerLabel(resById.get(open.accountId)?.code ?? open.accountId)} &middot; {open.weekIso ? formatWeekLabel(open.weekIso) : "No week"} &middot; Week source: {open.weekSource === "file_dates" ? "dates in file" : open.weekSource === "manual" ? "manual selection" : open.weekSource === "ai_suggested" ? "AI suggestion" : open.weekSource === "filename" ? "filename" : "not detected"}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -411,6 +380,11 @@ export default function UploadCenter() {
               {open.errors.length > 0 && (
                 <div className="max-h-32 overflow-y-auto rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">{open.errors.map((e, i) => <p key={i}>{e}</p>)}</div>
               )}
+               {!!open.warnings?.length && (
+                 <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                   {open.warnings.map((warning, i) => <p key={i}>{warning}</p>)}
+                 </div>
+               )}
               <PreviewTable u={open} />
 
               {open.kind === "unknown" && (
@@ -420,25 +394,30 @@ export default function UploadCenter() {
               )}
 
               {open.kind === "soh" && (
-                sohLegacy ? (
+                open.state === "committed" ? (
+                  <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">This SOH report is committed and included in analytics.</p>
+                ) : open.sohReview ? (
                   <ReviewCard
-                    key={`${sohLegacy.id}-${revision}`}
-                    review={reviewFromUpload(sohLegacy)}
-                    onRecheck={() => handleRecheck(sohLegacy.id)}
-                    rechecking={recheckingId !== null}
-                    onCommit={(commitData) => handleCommitReview(reviewFromUpload(sohLegacy), commitData)}
+                    key={open.id}
+                    review={reviewFromUpload(open)}
+                    onCommit={(commitData) => handleCommitReview(reviewFromUpload(open), commitData)}
                     onDiscard={() => setDeleteTarget(open)}
                   />
                 ) : <p className="text-sm text-muted-foreground">SOH recognition details are loading or unavailable for this file. Refresh, or correct its type.</p>
               )}
 
-              {(open.kind === "claim" || open.kind === "evidence" || open.kind === "history") && (
+              {(open.kind === "claim" || open.kind === "evidence") && (
                 open.sourceId && ws.data ? (
                   <ImportPanel imports={ws.data.imports} resellers={resellers} selectedId={open.sourceId}
                     onCommitted={() => { queryClient.invalidateQueries(); }} />
                 ) : ws.isLoading ? <Skeleton className="h-40 w-full" /> : (
                   <p className="text-sm text-muted-foreground">This file is not yet linked to a financial import. Save its type again or refresh.</p>
                 )
+              )}
+              {open.kind === "history" && (
+                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  New historical-claim uploads are retired. Existing approved claims remain available in Claims History and still count toward duplicate checks.
+                </p>
               )}
 
               {(open.kind === "price" || open.kind === "program") && (
@@ -584,14 +563,10 @@ function ReviewCard({
   review,
   onCommit,
   onDiscard,
-  onRecheck,
-  rechecking,
 }: {
   review: any;
   onCommit: (data: CommitData) => Promise<void>;
   onDiscard: () => void;
-  onRecheck: () => Promise<void>;
-  rechecking: boolean;
 }) {
   const [mappings, setMappings] = useState<any[]>(review.mappings || []);
   const [resellerId, setResellerId] = useState<number | null>(review.detected_reseller_id ?? null);
@@ -637,11 +612,6 @@ function ReviewCard({
             </CardDescription>
             {review.detection_reasoning && <p className="mt-2 text-xs text-muted-foreground">{review.detection_reasoning}</p>}
             <UploadDiagnostics diagnostics={review.diagnostics} />
-            <Button type="button" variant="outline" size="sm" className="mt-3"
-              disabled={rechecking || isCommitting} onClick={onRecheck}>
-              {rechecking ? "Rechecking…" : "Recheck recognition"}
-            </Button>
-            <p className="mt-1 text-xs text-muted-foreground">Recheck refreshes saved recognition only. It resets unsaved edits in this card and never imports data.</p>
             {!review.detected_reseller_id && review.candidates?.length > 0 && (
               <p className="mt-2 text-sm text-amber-800">
                 Possible resellers: {review.candidates.map((c: any) => c.name).join(", ")}. Select the correct one.
@@ -700,7 +670,7 @@ function ReviewCard({
         {weekNotDetected && (
           <div className="mt-3 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-100/60 dark:bg-amber-900/30 rounded-md px-3 py-2">
             <TriangleAlert className="h-4 w-4 flex-shrink-0" />
-            Week could not be detected from the filename — please confirm the correct ISO week above before committing.
+            Week could not be detected from the filename or report dates — please confirm the correct ISO week above before committing.
           </div>
         )}
       </CardHeader>
@@ -784,7 +754,7 @@ function ReviewCard({
               </span>
             )}
             <Button
-              disabled={!readyToCommit || isCommitting || rechecking}
+              disabled={!readyToCommit || isCommitting}
               onClick={async () => {
                 setIsCommitting(true);
                 try { await onCommit({ mappings, resellerId, weekIso, rememberPattern }); }

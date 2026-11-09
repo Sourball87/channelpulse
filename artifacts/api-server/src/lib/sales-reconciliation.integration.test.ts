@@ -41,7 +41,7 @@ describe.skipIf(!base)("weekly serial reconciliation development API", () => {
           { source_col: "SOH", canonical_field: "soh", confidence: 1 },
           ...(sold ? [{ source_col: "Sold Last 7 Days", canonical_field: "sell_through_7d", confidence: 1 }] : []),
         ];
-        const r = await call(`/uploads/${entry.sourceId}/commit`,
+        const r = await call(`/upload-center/${entry.id}/commit`,
           { reseller_id: account.id, week_iso: week, mappings, confirm_overwrite: overwrite });
         expect(r.status, JSON.stringify(r.data)).toBe(200);
       };

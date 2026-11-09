@@ -1,5 +1,5 @@
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-import { excelSerialToDate } from "./dates";
+import { calendarDate, excelSerialToDate } from "./dates";
 interface DateParts { month: number; day: number; year?: number }
 function parts(value: string): DateParts | null {
   const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -10,9 +10,7 @@ function parts(value: string): DateParts | null {
   return { day: +m[1], month, ...(m[3] ? { year: +m[3] < 100 ? 2000 + +m[3] : +m[3] } : {}) };
 }
 function iso(p: DateParts, year: number): string | null {
-  if (p.month < 0 || p.month > 11 || p.day < 1 || p.day > 31) return null;
-  const d = new Date(Date.UTC(p.year ?? year, p.month, p.day));
-  return d.getUTCMonth() === p.month && d.getUTCDate() === p.day ? d.toISOString().slice(0, 10) : null;
+  return calendarDate(p.year ?? year, p.month, p.day);
 }
 export function programDates(preamble: unknown[][], now = new Date()) {
   let start: DateParts | null = null, end: DateParts | null = null;

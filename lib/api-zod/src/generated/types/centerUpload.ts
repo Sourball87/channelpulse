@@ -8,8 +8,10 @@
 import type { CenterUploadKind } from './centerUploadKind';
 import type { CenterUploadMapping } from './centerUploadMapping';
 import type { CenterUploadPreviewItem } from './centerUploadPreviewItem';
+import type { CenterUploadSohReview } from './centerUploadSohReview';
 import type { CenterUploadState } from './centerUploadState';
 import type { CenterUploadSummary } from './centerUploadSummary';
+import type { CenterUploadWeekSource } from './centerUploadWeekSource';
 import type { ProgramTableSource } from './programTableSource';
 
 export interface CenterUpload {
@@ -21,6 +23,7 @@ export interface CenterUpload {
   accountId: number | null;
   /** @nullable */
   weekIso: string | null;
+  weekSource?: CenterUploadWeekSource;
   /** @nullable */
   sourceId: string | null;
   state: CenterUploadState;
@@ -28,6 +31,8 @@ export interface CenterUpload {
   rowCount: number;
   summary: CenterUploadSummary;
   errors: string[];
+  warnings?: string[];
+  sohReview?: CenterUploadSohReview;
   headers: string[];
   mapping: CenterUploadMapping;
   preview: CenterUploadPreviewItem[];

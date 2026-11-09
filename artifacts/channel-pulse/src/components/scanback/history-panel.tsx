@@ -1,4 +1,3 @@
-import { Link } from "wouter";
 import { customerLabel } from "@/lib/customer-display";
 import { useMemo, useState } from "react";
 import { getExportScanbackBatchUrl, type Reseller, type ScanbackBatch } from "@workspace/api-client-react";
@@ -8,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { History, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { SectionEmpty, StatusPill, formatCents, formatDate, formatDateTime } from "./shared";
 
 const ALL = "__all";
@@ -52,7 +51,6 @@ export function HistoryPanel({ batches, resellers }: { batches: ScanbackBatch[];
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
           <Input className="pl-8" placeholder="Reference, serial or invoice" value={q} onChange={(e) => setQ(e.target.value)} data-testid="input-history-search" />
         </div>
-        <Button variant="outline" asChild data-testid="button-import-history"><Link href="/upload"><History className="mr-1.5 h-4 w-4" /> Import historical claims in Upload Center</Link></Button>
       </div>
 
       {filtered.length === 0 ? (

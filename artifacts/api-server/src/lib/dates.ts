@@ -11,8 +11,20 @@ export function isValidDateString(value: string): boolean {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+export function calendarDate(year: number, monthIndex: number, dayOfMonth: number): string | null {
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || !Number.isInteger(dayOfMonth) ||
+      monthIndex < 0 || monthIndex > 11 || dayOfMonth < 1 || dayOfMonth > 31) return null;
+  const date = new Date(Date.UTC(year, monthIndex, dayOfMonth));
+  const value = date.toISOString().slice(0, 10);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === monthIndex &&
+    date.getUTCDate() === dayOfMonth ? value : null;
+}
+
 export function parseDateValue(value: unknown, order: DateOrder = "dmy"): string {
   if (value == null || value === "") return "";
+  if (value instanceof Date)
+    return Number.isFinite(value.getTime()) && isValidDateString(value.toISOString().slice(0, 10))
+      ? value.toISOString().slice(0, 10) : "";
   if (typeof value === "number") {
     if (Number.isSafeInteger(value) && /^\d{8}$/.test(String(value))) {
       const digits = String(value);
@@ -118,7 +130,7 @@ function compactDate(value: string): string | null {
 
 export function detectWeekFromFilename(input: string): { weekIso: string | null; reportDate: string | null } {
   const filename = input.replace(/_\d{13}(?=\.[^.]+$)/, "");
-  const weekMatch = filename.match(/(?:^|[^\d])(\d{4})[\s_-]?WK[\s_-]?(\d{1,2})(?!\d)/i);
+  const weekMatch = filename.match(/(?:^|[^\d])((?:19|20)\d{2})(?:[\s_.-]*[A-Z][A-Z0-9]*)?[\s_.-]*WK[\s_.-]*(\d{1,2})(?!\d)/i);
   if (weekMatch) {
     const weekIso = `${weekMatch[1]}-W${weekMatch[2].padStart(2, "0")}`;
     if (isValidWeekIso(weekIso)) return { weekIso, reportDate: null };

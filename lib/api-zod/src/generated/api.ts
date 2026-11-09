@@ -164,6 +164,7 @@ export const GetUploadCenterResponse = zod.object({
   "name": zod.string(),
   "accountId": zod.int().nullable(),
   "weekIso": zod.string().nullable(),
+  "weekSource": zod.enum(['filename', 'file_dates', 'manual', 'ai_suggested', 'unknown']).optional(),
   "sourceId": zod.string().nullable(),
   "state": zod.enum(['preview', 'committed', 'superseded']),
   "createdAt": zod.string(),
@@ -176,9 +177,14 @@ export const GetUploadCenterResponse = zod.object({
   "from": zod.string(),
   "to": zod.string(),
   "ddRangeCount": zod.int(),
-  "invoicedCount": zod.int()
+  "invoicedCount": zod.int(),
+  "nonSerialCount": zod.int(),
+  "nonSerialIdentifiers": zod.array(zod.string()),
+  "historyRowsSkipped": zod.int()
 }),
   "errors": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()).optional(),
+  "sohReview": zod.record(zod.string(), zod.unknown()).optional(),
   "headers": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
   "preview": zod.array(zod.record(zod.string(), zod.unknown()))
@@ -210,7 +216,7 @@ export const stageCenterFilesBodyAiAssistDefault = true;
 
 export const StageCenterFilesBody = zod.object({
   "files": zod.array(zod.instanceof(Blob)),
-  "kind": zod.string().optional(),
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'price', 'program', 'unknown']).optional(),
   "accountId": zod.int().optional(),
   "weekIso": zod.string().optional(),
   "ai_assist": zod.boolean().default(stageCenterFilesBodyAiAssistDefault)
@@ -239,6 +245,7 @@ export const StageCenterFilesResponse = zod.object({
   "name": zod.string(),
   "accountId": zod.int().nullable(),
   "weekIso": zod.string().nullable(),
+  "weekSource": zod.enum(['filename', 'file_dates', 'manual', 'ai_suggested', 'unknown']).optional(),
   "sourceId": zod.string().nullable(),
   "state": zod.enum(['preview', 'committed', 'superseded']),
   "createdAt": zod.string(),
@@ -251,9 +258,14 @@ export const StageCenterFilesResponse = zod.object({
   "from": zod.string(),
   "to": zod.string(),
   "ddRangeCount": zod.int(),
-  "invoicedCount": zod.int()
+  "invoicedCount": zod.int(),
+  "nonSerialCount": zod.int(),
+  "nonSerialIdentifiers": zod.array(zod.string()),
+  "historyRowsSkipped": zod.int()
 }),
   "errors": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()).optional(),
+  "sohReview": zod.record(zod.string(), zod.unknown()).optional(),
   "headers": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
   "preview": zod.array(zod.record(zod.string(), zod.unknown()))
@@ -270,7 +282,7 @@ export const CorrectCenterUploadParams = zod.object({
 })
 
 export const CorrectCenterUploadBody = zod.object({
-  "kind": zod.enum(['soh', 'claim', 'evidence', 'history', 'price', 'program', 'unknown']).optional(),
+  "kind": zod.enum(['soh', 'claim', 'evidence', 'price', 'program', 'unknown']).optional(),
   "accountId": zod.int().nullish(),
   "weekIso": zod.string().nullish(),
   "mapping": zod.record(zod.string(), zod.string()).optional()
@@ -298,6 +310,7 @@ export const CorrectCenterUploadResponse = zod.object({
   "name": zod.string(),
   "accountId": zod.int().nullable(),
   "weekIso": zod.string().nullable(),
+  "weekSource": zod.enum(['filename', 'file_dates', 'manual', 'ai_suggested', 'unknown']).optional(),
   "sourceId": zod.string().nullable(),
   "state": zod.enum(['preview', 'committed', 'superseded']),
   "createdAt": zod.string(),
@@ -310,9 +323,14 @@ export const CorrectCenterUploadResponse = zod.object({
   "from": zod.string(),
   "to": zod.string(),
   "ddRangeCount": zod.int(),
-  "invoicedCount": zod.int()
+  "invoicedCount": zod.int(),
+  "nonSerialCount": zod.int(),
+  "nonSerialIdentifiers": zod.array(zod.string()),
+  "historyRowsSkipped": zod.int()
 }),
   "errors": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()).optional(),
+  "sohReview": zod.record(zod.string(), zod.unknown()).optional(),
   "headers": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
   "preview": zod.array(zod.record(zod.string(), zod.unknown()))
@@ -328,11 +346,26 @@ export const DeleteCenterUploadResponse = zod.object({
 })
 
 
-export const CommitCenterReferenceParams = zod.object({
+export const CommitCenterUploadParams = zod.object({
   "id": zod.coerce.string()
 })
 
-export const CommitCenterReferenceResponse = zod.object({
+export const commitCenterUploadBodyConfirmOverwriteDefault = false;
+
+export const CommitCenterUploadBody = zod.object({
+  "reseller_id": zod.int(),
+  "week_iso": zod.string(),
+  "report_date": zod.string().nullish(),
+  "mappings": zod.array(zod.object({
+  "source_col": zod.string(),
+  "canonical_field": zod.string().nullable(),
+  "confidence": zod.number(),
+  "sample_values": zod.array(zod.string()).optional()
+})),
+  "confirm_overwrite": zod.boolean().default(commitCenterUploadBodyConfirmOverwriteDefault)
+})
+
+export const CommitCenterUploadResponse = zod.object({
   "programSource": zod.object({
   "startDate": zod.string().nullable(),
   "endDate": zod.string().nullable(),
@@ -354,6 +387,7 @@ export const CommitCenterReferenceResponse = zod.object({
   "name": zod.string(),
   "accountId": zod.int().nullable(),
   "weekIso": zod.string().nullable(),
+  "weekSource": zod.enum(['filename', 'file_dates', 'manual', 'ai_suggested', 'unknown']).optional(),
   "sourceId": zod.string().nullable(),
   "state": zod.enum(['preview', 'committed', 'superseded']),
   "createdAt": zod.string(),
@@ -366,9 +400,14 @@ export const CommitCenterReferenceResponse = zod.object({
   "from": zod.string(),
   "to": zod.string(),
   "ddRangeCount": zod.int(),
-  "invoicedCount": zod.int()
+  "invoicedCount": zod.int(),
+  "nonSerialCount": zod.int(),
+  "nonSerialIdentifiers": zod.array(zod.string()),
+  "historyRowsSkipped": zod.int()
 }),
   "errors": zod.array(zod.string()),
+  "warnings": zod.array(zod.string()).optional(),
+  "sohReview": zod.record(zod.string(), zod.unknown()).optional(),
   "headers": zod.array(zod.string()),
   "mapping": zod.record(zod.string(), zod.string()),
   "preview": zod.array(zod.record(zod.string(), zod.unknown()))
@@ -513,6 +552,8 @@ export const GetScanbackWorkspaceResponse = zod.object({
 })),
   "warnings": zod.array(zod.string()),
   "duplicate": zod.boolean(),
+  "nonSerialCount": zod.int().optional(),
+  "nonSerialIdentifiers": zod.array(zod.string()).optional(),
   "recordCount": zod.int()
 })),
   "drafts": zod.array(zod.object({
@@ -684,7 +725,7 @@ export const SaveScanbackProgramResponse = zod.object({
 
 export const PreviewScanbackImportBody = zod.object({
   "file": zod.instanceof(Blob),
-  "kind": zod.enum(['auto', 'evidence', 'claim', 'history'])
+  "kind": zod.enum(['auto', 'evidence', 'claim'])
 })
 
 export const PreviewScanbackImportResponse = zod.object({
@@ -757,6 +798,8 @@ export const PreviewScanbackImportResponse = zod.object({
 })),
   "warnings": zod.array(zod.string()),
   "duplicate": zod.boolean(),
+  "nonSerialCount": zod.int().optional(),
+  "nonSerialIdentifiers": zod.array(zod.string()).optional(),
   "recordCount": zod.int()
 })
 
@@ -843,6 +886,8 @@ export const RemapScanbackImportResponse = zod.object({
 })),
   "warnings": zod.array(zod.string()),
   "duplicate": zod.boolean(),
+  "nonSerialCount": zod.int().optional(),
+  "nonSerialIdentifiers": zod.array(zod.string()).optional(),
   "recordCount": zod.int()
 })
 
@@ -921,6 +966,8 @@ export const CommitScanbackImportResponse = zod.object({
 })),
   "warnings": zod.array(zod.string()),
   "duplicate": zod.boolean(),
+  "nonSerialCount": zod.int().optional(),
+  "nonSerialIdentifiers": zod.array(zod.string()).optional(),
   "recordCount": zod.int()
 })
 
@@ -999,6 +1046,8 @@ export const SupersedeScanbackImportResponse = zod.object({
 })),
   "warnings": zod.array(zod.string()),
   "duplicate": zod.boolean(),
+  "nonSerialCount": zod.int().optional(),
+  "nonSerialIdentifiers": zod.array(zod.string()).optional(),
   "recordCount": zod.int()
 })
 
@@ -1372,287 +1421,6 @@ export const GetAlertsResponseItem = zod.object({
   "trailing_avg_st": zod.number().nullish()
 })
 export const GetAlertsResponse = zod.array(GetAlertsResponseItem)
-
-
-/**
- * @summary Get upload history
- */
-export const getUploadsQueryLimitDefault = 50;
-export const getUploadsQueryOffsetDefault = 0;
-
-export const GetUploadsQueryParams = zod.object({
-  "limit": zod.coerce.number().int().default(getUploadsQueryLimitDefault),
-  "offset": zod.coerce.number().int().default(getUploadsQueryOffsetDefault)
-})
-
-export const GetUploadsResponseItem = zod.object({
-  "diagnostics": zod.object({
-  "review_reasons": zod.array(zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-})),
-  "ready_to_commit": zod.boolean(),
-  "auto_eligible": zod.boolean(),
-  "week_source": zod.string().nullable(),
-  "metadata_missing": zod.boolean(),
-  "ai": zod.object({
-  "status": zod.string(),
-  "message": zod.string(),
-  "evidence": zod.array(zod.string()).optional()
-}).optional()
-}).optional(),
-  "id": zod.int(),
-  "reseller_id": zod.int().nullish(),
-  "reseller_name": zod.string().nullish(),
-  "filename": zod.string(),
-  "report_date": zod.string().nullish(),
-  "week_iso": zod.string().nullish(),
-  "uploaded_at": zod.string(),
-  "status": zod.enum(['pending', 'review', 'committed', 'failed', 'duplicate']),
-  "parser_used": zod.string().nullish(),
-  "confidence": zod.number().nullish(),
-  "rows_parsed": zod.int().nullish(),
-  "rows_flagged": zod.int().nullish(),
-  "raw_headers": zod.array(zod.string()).nullish(),
-  "detected_mappings": zod.array(zod.object({
-  "source_col": zod.string(),
-  "canonical_field": zod.string().nullable(),
-  "confidence": zod.number(),
-  "sample_values": zod.array(zod.string()).optional()
-})).nullish(),
-  "week_not_detected": zod.boolean().optional(),
-  "candidates": zod.array(zod.object({
-  "id": zod.int(),
-  "name": zod.string(),
-  "code": zod.string()
-})).optional(),
-  "detected_format_id": zod.string().nullish(),
-  "detection_reasoning": zod.string().nullish()
-})
-export const GetUploadsResponse = zod.array(GetUploadsResponseItem)
-
-
-/**
- * @summary Upload one or more reseller files (multipart/form-data)
- */
-export const createUploadBodyAiAssistDefault = true;
-
-export const CreateUploadBody = zod.object({
-  "files": zod.string().describe('Multipart file field (handled as FormData in client)'),
-  "batch_week": zod.string().optional().describe('Explicit user-selected ISO week, used only for otherwise undated files'),
-  "ai_assist": zod.boolean().default(createUploadBodyAiAssistDefault)
-})
-
-export const CreateUploadResponseItem = zod.object({
-  "diagnostics": zod.object({
-  "review_reasons": zod.array(zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-})),
-  "ready_to_commit": zod.boolean(),
-  "auto_eligible": zod.boolean(),
-  "week_source": zod.string().nullable(),
-  "metadata_missing": zod.boolean(),
-  "ai": zod.object({
-  "status": zod.string(),
-  "message": zod.string(),
-  "evidence": zod.array(zod.string()).optional()
-}).optional()
-}).optional(),
-  "upload_id": zod.int(),
-  "filename": zod.string(),
-  "status": zod.enum(['auto_committed', 'needs_review', 'failed', 'duplicate']),
-  "detected_reseller_id": zod.int().nullish(),
-  "detected_reseller_name": zod.string().nullish(),
-  "detected_week_iso": zod.string().nullish(),
-  "detected_report_date": zod.string().nullish(),
-  "confidence": zod.number(),
-  "rows_parsed": zod.int().nullish(),
-  "rows_flagged": zod.int().nullish(),
-  "mappings": zod.array(zod.object({
-  "source_col": zod.string(),
-  "canonical_field": zod.string().nullable(),
-  "confidence": zod.number(),
-  "sample_values": zod.array(zod.string()).optional()
-})).optional(),
-  "preview_rows": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
-  "error_message": zod.string().nullish(),
-  "overwrites_existing": zod.boolean().optional(),
-  "existing_snapshot_count": zod.int().nullish(),
-  "week_not_detected": zod.boolean().optional(),
-  "candidates": zod.array(zod.object({
-  "id": zod.int(),
-  "name": zod.string(),
-  "code": zod.string()
-})).optional(),
-  "detected_format_id": zod.string().nullish(),
-  "detection_reasoning": zod.string().nullish()
-})
-export const CreateUploadResponse = zod.array(CreateUploadResponseItem)
-
-
-/**
- * @summary Recheck a pending upload without changing analytics
- */
-export const RecheckUploadParams = zod.object({
-  "id": zod.coerce.number().int()
-})
-
-export const recheckUploadBodyAiAssistDefault = true;
-
-export const RecheckUploadBody = zod.object({
-  "batch_week": zod.string().optional(),
-  "ai_assist": zod.boolean().default(recheckUploadBodyAiAssistDefault)
-})
-
-export const RecheckUploadResponse = zod.object({
-  "diagnostics": zod.object({
-  "review_reasons": zod.array(zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-})),
-  "ready_to_commit": zod.boolean(),
-  "auto_eligible": zod.boolean(),
-  "week_source": zod.string().nullable(),
-  "metadata_missing": zod.boolean(),
-  "ai": zod.object({
-  "status": zod.string(),
-  "message": zod.string(),
-  "evidence": zod.array(zod.string()).optional()
-}).optional()
-}).optional(),
-  "id": zod.int(),
-  "reseller_id": zod.int().nullish(),
-  "reseller_name": zod.string().nullish(),
-  "filename": zod.string(),
-  "report_date": zod.string().nullish(),
-  "week_iso": zod.string().nullish(),
-  "uploaded_at": zod.string(),
-  "status": zod.enum(['pending', 'review', 'committed', 'failed', 'duplicate']),
-  "parser_used": zod.string().nullish(),
-  "confidence": zod.number().nullish(),
-  "rows_parsed": zod.int().nullish(),
-  "rows_flagged": zod.int().nullish(),
-  "raw_headers": zod.array(zod.string()).nullish(),
-  "detected_mappings": zod.array(zod.object({
-  "source_col": zod.string(),
-  "canonical_field": zod.string().nullable(),
-  "confidence": zod.number(),
-  "sample_values": zod.array(zod.string()).optional()
-})).nullish(),
-  "week_not_detected": zod.boolean().optional(),
-  "candidates": zod.array(zod.object({
-  "id": zod.int(),
-  "name": zod.string(),
-  "code": zod.string()
-})).optional(),
-  "detected_format_id": zod.string().nullish(),
-  "detection_reasoning": zod.string().nullish()
-})
-
-
-/**
- * @summary Delete an upload and roll back its inventory snapshots
- */
-export const DeleteUploadParams = zod.object({
-  "id": zod.coerce.number().int()
-})
-
-export const DeleteUploadResponse = zod.object({
-  "success": zod.boolean(),
-  "message": zod.string().nullish()
-})
-
-
-/**
- * @summary Commit a reviewed upload (confirm reseller, date, column mapping)
- */
-export const CommitUploadParams = zod.object({
-  "id": zod.coerce.number().int()
-})
-
-export const commitUploadBodyConfirmOverwriteDefault = false;
-
-export const CommitUploadBody = zod.object({
-  "reseller_id": zod.int(),
-  "week_iso": zod.string(),
-  "report_date": zod.string().nullish(),
-  "mappings": zod.array(zod.object({
-  "source_col": zod.string(),
-  "canonical_field": zod.string().nullable(),
-  "confidence": zod.number(),
-  "sample_values": zod.array(zod.string()).optional()
-})),
-  "confirm_overwrite": zod.boolean().default(commitUploadBodyConfirmOverwriteDefault)
-})
-
-export const CommitUploadResponse = zod.object({
-  "diagnostics": zod.object({
-  "review_reasons": zod.array(zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-})),
-  "ready_to_commit": zod.boolean(),
-  "auto_eligible": zod.boolean(),
-  "week_source": zod.string().nullable(),
-  "metadata_missing": zod.boolean(),
-  "ai": zod.object({
-  "status": zod.string(),
-  "message": zod.string(),
-  "evidence": zod.array(zod.string()).optional()
-}).optional()
-}).optional(),
-  "id": zod.int(),
-  "reseller_id": zod.int().nullish(),
-  "reseller_name": zod.string().nullish(),
-  "filename": zod.string(),
-  "report_date": zod.string().nullish(),
-  "week_iso": zod.string().nullish(),
-  "uploaded_at": zod.string(),
-  "status": zod.enum(['pending', 'review', 'committed', 'failed', 'duplicate']),
-  "parser_used": zod.string().nullish(),
-  "confidence": zod.number().nullish(),
-  "rows_parsed": zod.int().nullish(),
-  "rows_flagged": zod.int().nullish(),
-  "raw_headers": zod.array(zod.string()).nullish(),
-  "detected_mappings": zod.array(zod.object({
-  "source_col": zod.string(),
-  "canonical_field": zod.string().nullable(),
-  "confidence": zod.number(),
-  "sample_values": zod.array(zod.string()).optional()
-})).nullish(),
-  "week_not_detected": zod.boolean().optional(),
-  "candidates": zod.array(zod.object({
-  "id": zod.int(),
-  "name": zod.string(),
-  "code": zod.string()
-})).optional(),
-  "detected_format_id": zod.string().nullish(),
-  "detection_reasoning": zod.string().nullish()
-})
-
-
-/**
- * @summary Save confirmed column mapping for future use
- */
-export const SaveUploadMappingParams = zod.object({
-  "id": zod.coerce.number().int()
-})
-
-export const SaveUploadMappingBody = zod.object({
-  "reseller_id": zod.int(),
-  "fingerprint": zod.string(),
-  "mapping": zod.record(zod.string(), zod.unknown())
-})
-
-export const SaveUploadMappingResponse = zod.object({
-  "id": zod.int(),
-  "reseller_id": zod.int(),
-  "reseller_name": zod.string().nullish(),
-  "fingerprint": zod.string(),
-  "mapping": zod.record(zod.string(), zod.unknown()),
-  "created_at": zod.string()
-})
 
 
 /**

@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { detectImportKind, type Sheets } from "./scanback-import";
 import { cents } from "./scanback-engine";
 import { readProgramGrid, readProgramText } from "./program-source";
+import { parseCsvBuffer } from "./csv-stream";
 import type { ProgramTableSource } from "@workspace/api-zod";
 
 export const centerKinds = ["soh", "claim", "evidence", "history", "price", "program", "unknown"] as const;
@@ -29,9 +30,12 @@ export function detectCenterKind(headers: string[], sheetName = "", filename = "
   const mapping = referenceMapping(headers);
   if (mapping.sku && mapping.gtmBuyCents) return "program";
   if (mapping.sku && mapping.rrpIncCents && mapping.ddCostExCents && mapping.t1BuyExCents) return "price";
-  try { return detectImportKind(headers); } catch { /* Try inventory rules next, never guess financial evidence. */ }
+  try {
+    const detected = detectImportKind(headers);
+    return detected === "history" ? "unknown" : detected;
+  } catch { /* Try inventory rules next, never guess financial evidence. */ }
   const h = headers.map(normalizeHeading);
-  if (h.some(v => /^(soh|sohqty|stockonhand|totalonhand|quantityonhand|onhand)$/.test(v)) &&
+  if (h.some(v => /^(soh|sohqty|stock|stockonhand|totalonhand|quantityonhand|onhand)$/.test(v)) &&
       h.some(v => /^(sku|model|modelcode|partno|partnumber|manufacturermodel|itemcode|productcode|productmodel)$/.test(v))) return "soh";
   if (/itemfor[ec]astreport/i.test(sheetName) && h.includes("soldqty")) return "soh";
   // Names are hints only; a filename alone cannot establish financial columns.
@@ -40,6 +44,11 @@ export function detectCenterKind(headers: string[], sheetName = "", filename = "
 }
 export function readCenterSheets(buffer: Buffer): Sheets {
   return readCenterWorkbook(buffer).sheets;
+}
+export async function readCenterCsv(buffer: Buffer): Promise<Sheets> {
+  const table = await parseCsvBuffer(buffer);
+  if (!table.headers.length) throw new Error("No CSV headings found.");
+  return { CSV: table.rows };
 }
 export function readCenterWorkbook(buffer: Buffer): { sheets: Sheets; programSources: Record<string, ProgramTableSource> } {
   const programSources: Record<string, ProgramTableSource> = {};

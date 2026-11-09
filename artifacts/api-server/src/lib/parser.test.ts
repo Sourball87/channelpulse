@@ -222,10 +222,10 @@ describe("detectResellerFromHeaders", () => {
     expect(r.resolutionSource).toBe("format_unique");
   });
 
-  it("Centrecom: unique format → resolved", () => {
+  it("PCCG Forecast: unique format → resolved", () => {
     const r = detectResellerFromHeaders(CENTRECOM_HEADERS, null, RESELLERS);
-    expect(r.resellerId).toBe(6);
-    expect(r.formatId).toBe("centrecom_legacy");
+    expect(r.resellerId).toBe(7);
+    expect(r.formatId).toBe("pccg_forecast");
     expect(r.resolutionSource).toBe("format_unique");
   });
 

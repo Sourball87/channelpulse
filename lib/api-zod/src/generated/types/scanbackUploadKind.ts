@@ -13,5 +13,4 @@ export const ScanbackUploadKind = {
   auto: 'auto',
   evidence: 'evidence',
   claim: 'claim',
-  history: 'history',
 } as const;

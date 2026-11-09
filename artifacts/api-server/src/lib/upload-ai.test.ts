@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeReportData, type ResellerProfile } from "./parser";
 import { aiAssistEnabled, recognitionEvidence, suggestRecognition, validateAiSuggestion } from "./upload-ai";
-import { CreateUploadBody, RecheckUploadBody } from "@workspace/api-zod";
 import { diagnoseUpload } from "./upload-review";
 
 const profiles: ResellerProfile[] = [{ id: 1, name: "Umart", code: "umart", aliases: [], filenamePatterns: [] }];
@@ -13,11 +12,9 @@ describe("AI assistance defaults", () => {
   it.each([false, "false", null, "invalid"])("never treats an opt-out or invalid multipart flag as consent: %j", value => {
     expect(aiAssistEnabled(value)).toBe(false);
   });
-  it("defaults both API contracts to enabled while retaining explicit false", () => {
-    expect(CreateUploadBody.parse({ files: "fixture.csv" }).ai_assist).toBe(true);
-    expect(CreateUploadBody.parse({ files: "fixture.csv", ai_assist: false }).ai_assist).toBe(false);
-    expect(RecheckUploadBody.parse({}).ai_assist).toBe(true);
-    expect(RecheckUploadBody.parse({ ai_assist: false }).ai_assist).toBe(false);
+  it("defaults AI assistance to enabled and preserves explicit opt-out", () => {
+    expect(aiAssistEnabled(undefined)).toBe(true);
+    expect(aiAssistEnabled(false)).toBe(false);
   });
 });
 function report(filename = "unfamiliar.xlsx") {

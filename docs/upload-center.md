@@ -12,7 +12,7 @@ offering separate upload controls.
    150 columns per sheet, 50,000 rows overall.
 2. Review the detected type, reseller, reporting week, column mapping and sample.
    Types are Customer SOH, Customer serial/sales report, DD serial/invoice
-   evidence, Historical approved claims, Price list and Scanback program table.
+   evidence, Price list and Scanback program table.
    Unknown layouts remain pending until a type is chosen.
 3. Use **Correct type / reseller / week** to correct a pending file. The reporting
    week dropdown includes recent weeks, and the ISO field allows older weeks.
@@ -60,8 +60,9 @@ prepopulate verification. No claim is approved by this navigation.
 ## DD data, prices and programs
 
 The DD data panel shows the latest committed DD invoice/serial report, current
-price-list SKU count and last-updated date, and historical approved claims, each
-with upload history.
+price-list SKU count and last-updated date. Previously committed historical
+approvals remain readable in Claims History; new historical-claim uploads are
+retired.
 
 Price-list headings: **SKU, Description, RRP Inc, DD Cost Ex, T1 Buy Ex**.
 Description is optional; the three prices are required, validated and stored as

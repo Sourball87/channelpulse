@@ -36,5 +36,7 @@ export interface ScanbackImport {
   errors: ScanbackImportIssue[];
   warnings: string[];
   duplicate: boolean;
+  nonSerialCount?: number;
+  nonSerialIdentifiers?: string[];
   recordCount: number;
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { pool } from "@workspace/db";
 import type { CenterUpload } from "@workspace/api-zod";
+import { computeHeaderFingerprint } from "./parser";
 
 const base = process.env.UPLOAD_CENTER_INTEGRATION_URL;
 describe.skipIf(!base)("Upload Center development API", () => {
@@ -8,6 +9,13 @@ describe.skipIf(!base)("Upload Center development API", () => {
     if (base !== "http://localhost:80/api") throw new Error("Use the local development proxy only.");
     const prefix = `CENTERTEST${Date.now()}`;
     const ids = new Set<string>(), sources = new Set<string>(), sohIds = new Set<number>();
+    const testSkus = new Set<string>();
+    let accountId: number | null = null;
+    let originalAliases: string[] = [];
+    let originalFilenamePatterns: string[] = [];
+    let fingerprintWasPresent = false;
+    let fingerprintChecked = false;
+    const sohFingerprint = computeHeaderFingerprint(["SKU", "SOH", "Sold Last 7 Days"]);
     let cookie = "";
     const call = async (path: string, method = "GET", body?: unknown) => {
       const response = await fetch(base + path, {
@@ -37,7 +45,21 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect(login.status).toBe(200);
       cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
       const account = (await call("/resellers")).data.find((r: { active: boolean }) => r.active);
+      accountId = account.id;
+      originalAliases = [...(account.aliases ?? [])];
+      const originalReseller = (await pool.query(
+        "SELECT aliases,filename_patterns FROM resellers WHERE id=$1", [account.id],
+      )).rows[0];
+      originalAliases = [...(originalReseller.aliases ?? [])];
+      originalFilenamePatterns = [...(originalReseller.filename_patterns ?? [])];
+      fingerprintWasPresent = ((await pool.query(
+        "SELECT 1 FROM reseller_format_associations WHERE reseller_id=$1 AND fingerprint=$2",
+        [account.id, sohFingerprint],
+      )).rowCount ?? 0) > 0;
+      fingerprintChecked = true;
+      const channelCode = `${prefix.slice(-8)}CH`;
       const sku = `${prefix}-SKU`;
+      testSkus.add(sku);
       const pasted = await call("/scanback/programs/preview", "POST", {
         text: `SKU\tRRP Inc\tGTM Inc\tDiscount\tDD Cost Ex\tT1 Ex\tGTM Buy Ex\t${account.code}\n${sku}\t110.00\t99.00\t10%\t60.00\t85.00\t70.25\t0`,
         ai_assist: false,
@@ -59,15 +81,14 @@ describe.skipIf(!base)("Upload Center development API", () => {
         .filter((p: { name: string }) => p.name.includes(prefix));
       expect(noPromotionSideEffect).toEqual([]);
       const batch = await stage([
-        ["soh", `SKU,SOH,Sold Last 7 Days\nMZ-77E1T0BW,12,3\n`],
-        ["claim", `Customer,Model,Serial,Date\n${account.code},${sku},${prefix}A,01/01/2026\n`],
+        ["soh", `SKU,SOH,Sold Last 7 Days\n${sku},12,3\n`],
+        ["claim", `Customer,Model,Serial,Date\n${channelCode},${sku},${prefix}A,01/01/2026\n`],
         ["evidence", `Account,SKU,Serial,Date,Invoice,Quantity,Unit Price\n${account.code},${sku},${prefix}A|${prefix}B,01/01/2026,${prefix}INV,2,100.00\n`],
-        ["history", `Account,SKU,Serial,Date,Claim Amount,Promotion,Reference\n${account.code},${sku},${prefix}H,01/01/2026,10.00,${prefix}PROMO,${prefix}REF\n`],
         ["price", `SKU,Description,RRP Inc,DD Cost Ex,T1 Buy Ex\n${sku},Reference,110.01,65.27,90.99\n`],
         ["program", `SKU,GTM Buy Ex,${account.code}\n${sku},70.25,1\n`],
       ], account.id);
       expect(batch.errors).toEqual([]);
-      expect(batch.uploads.map((e: CenterUpload) => e.kind).sort()).toEqual(["soh", "claim", "evidence", "history", "price", "program"].sort());
+      expect(batch.uploads.map((e: CenterUpload) => e.kind).sort()).toEqual(["soh", "claim", "evidence", "price", "program"].sort());
       expect(batch.uploads.every((e: CenterUpload) => e.state === "preview")).toBe(true);
       const find = (kind: string) => batch.uploads.find((e: CenterUpload) => e.kind === kind) as CenterUpload;
       const soh = find("soh");
@@ -75,8 +96,24 @@ describe.skipIf(!base)("Upload Center development API", () => {
       const corrected = await call(`/upload-center/${soh.id}`, "PATCH", { weekIso: "2026-W02" });
       expect(corrected.status).toBe(200);
       expect(corrected.data.weekIso).toBe("2026-W02");
-      const legacy = (await call("/uploads?limit=1000")).data.find((u: any) => String(u.id) === soh.sourceId);
-      expect(legacy.week_iso).toBe("2026-W02");
+      const refreshed = (await call("/upload-center")).data.uploads.find((u: CenterUpload) => u.id === soh.id);
+      expect(refreshed.weekIso).toBe("2026-W02");
+      const sohCommit = await call(`/upload-center/${soh.id}/commit`, "POST", {
+        reseller_id: account.id, week_iso: "2026-W02", mappings: soh.sohReview?.mappings,
+      });
+      expect(sohCommit.status).toBe(200);
+      expect(sohCommit.data.state).toBe("committed");
+      const snapshot = await pool.query(
+        "SELECT soh,sell_through_7d FROM inventory_snapshots WHERE upload_id=$1",
+        [Number(soh.sourceId)],
+      );
+      expect(snapshot.rows).toHaveLength(1);
+      expect(Number(snapshot.rows[0].soh)).toBe(12);
+      expect(Number(snapshot.rows[0].sell_through_7d)).toBe(3);
+      expect((await pool.query(
+        "SELECT 1 FROM reseller_format_associations WHERE reseller_id=$1 AND fingerprint=$2",
+        [account.id, sohFingerprint],
+      )).rowCount).toBe(1);
       const evidence = find("evidence");
       expect(evidence.rowCount).toBe(1);
       expect(evidence.summary.serialCount).toBe(2);
@@ -85,6 +122,8 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect((await call(`/upload-center/${evidence.id}`, "DELETE")).status).toBe(409);
       const claim = find("claim");
       expect((await call(`/scanback/imports/${claim.sourceId}/commit`, "POST", {})).status).toBe(200);
+      const learnedAccount = (await call("/resellers")).data.find((r: { id: number }) => r.id === account.id);
+      expect(learnedAccount.aliases).toContain(channelCode);
       const price = find("price"), program = find("program");
       const uploadedProgram = await call("/scanback/programs/preview", "POST", { uploadId: program.id, ai_assist: false });
       expect(uploadedProgram.status).toBe(200);
@@ -101,16 +140,27 @@ describe.skipIf(!base)("Upload Center development API", () => {
       // Unsupported files remain pending; a user may explicitly reclassify.
       const unknown = await stage([["unknown", `Unrecognised,Value\nA,B\n`]], account.id);
       expect(unknown.uploads[0].kind).toBe("unknown");
+      expect((await call(`/upload-center/${unknown.uploads[0].id}`, "PATCH", { kind: "history" })).status).toBe(400);
       expect((await call(`/upload-center/${unknown.uploads[0].id}`, "PATCH", { kind: "program" })).status).toBe(200);
       expect((await call(`/upload-center/${unknown.uploads[0].id}/commit`, "POST", {})).status).toBe(400);
       expect((await call(`/upload-center/${unknown.uploads[0].id}`, "DELETE")).status).toBe(200);
-      expect((await call(`/upload-center/${soh.id}`, "DELETE")).status).toBe(200);
+      expect((await call(`/upload-center/${soh.id}`, "DELETE")).status).toBe(409);
     } finally {
       // Test-owned references/evidence only; never use broad business-data cleanup.
+      if (accountId != null) {
+        await pool.query("UPDATE resellers SET aliases=$2::text[],filename_patterns=$3::text[] WHERE id=$1",
+          [accountId, originalAliases, originalFilenamePatterns]);
+        if (fingerprintChecked && !fingerprintWasPresent)
+          await pool.query("DELETE FROM reseller_format_associations WHERE reseller_id=$1 AND fingerprint=$2",
+            [accountId, sohFingerprint]);
+      }
       await pool.query("DELETE FROM price_list WHERE upload_id=ANY($1::text[])", [[...ids]]);
       await pool.query("DELETE FROM center_uploads WHERE id=ANY($1::text[])", [[...ids]]);
       await pool.query("DELETE FROM scanback_imports WHERE id=ANY($1::text[])", [[...sources]]);
+      await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=ANY($1::int[])", [[...sohIds]]);
       await pool.query("DELETE FROM uploads WHERE id=ANY($1::int[])", [[...sohIds]]);
+      await pool.query(`DELETE FROM parts p WHERE p.part_no=ANY($1::text[])
+        AND NOT EXISTS (SELECT 1 FROM inventory_snapshots s WHERE s.part_id=p.id)`, [[...testSkus]]);
     }
   }, 60000);
 });

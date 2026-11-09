@@ -1,7 +1,5 @@
-import * as XLSX from "xlsx";
 import crypto from "crypto";
 import { detectWeekFromFilename, isValidWeekIso } from "./dates";
-import { parseCsvBuffer } from "./csv-stream";
 
 export {
   currentWeekIso, dateStringToWeekIso, detectWeekFromFilename, isValidWeekIso,
@@ -223,8 +221,8 @@ const REPORT_FORMATS: ReportFormat[] = [
   },
   {
     formatId: "scorptec_csv",
-    headers: ["model", "sohqty", "soldlast7days", "onorderqty", "unitcostexgst"],
-    optionalHeaders: ["brand", "category", "title", "active", "totalcostexgst", "stockage"],
+    headers: ["model", "onhand", "soldlast7days", "itemaveragecostexgst", "qtyonorder"],
+    optionalHeaders: ["brand", "category", "title", "active", "itemaveragecostincgst", "totalcostexgst", "stockage"],
     resellerCodes: ["scorptec"],
   },
   {
@@ -244,7 +242,7 @@ const REPORT_FORMATS: ReportFormat[] = [
     resellerCodes: ["jw"],
   },
   {
-    formatId: "centrecom_legacy",
+    formatId: "pccg_forecast",
     headers: ["productname", "productmodel", "30d", "14d", "7d", "stock", "avgstockvalue"],
     resellerCodes: ["pccg"],
   },
@@ -627,81 +625,6 @@ export function applyMappingsToRows(
   return results;
 }
 
-// ─── File reading ─────────────────────────────────────────────────────────────
-
-function readXlsx(
-  buf: Buffer,
-  filename: string,
-): { headers: string[]; rawRows: Record<string, unknown>[]; sheetName: string } {
-  const workbook = XLSX.read(buf, { type: "buffer" });
-
-  // Prefer specific sheet names
-  let sheetName = workbook.SheetNames[0];
-  for (const name of workbook.SheetNames) {
-    const nl = name.toLowerCase();
-    if (
-      nl.includes("soh") ||
-      nl.includes("forecast") ||
-      nl.includes("computeralliance") ||
-      nl.includes("sheet1") ||
-      nl.startsWith("itemforcast")
-    ) {
-      sheetName = name;
-      break;
-    }
-  }
-
-  const sheet = workbook.Sheets[sheetName];
-  // Use the stored numeric cells, not display formatting such as "$1,234.00".
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null, raw: true });
-
-  if (rows.length === 0) return { headers: [], rawRows: [], sheetName };
-
-  const headers = Object.keys(rows[0]).filter(
-    h => !/^__EMPTY(?:_\d+)?$/.test(h) || rows.some(r => r[h] != null && r[h] !== ""),
-  );
-  const rawRows = rows.map(row => Object.fromEntries(headers.map(h => [h, row[h]])));
-  return { headers, rawRows, sheetName };
-}
-
-async function readCsv(buf: Buffer): Promise<{ headers: string[]; rawRows: Record<string, unknown>[]; sheetName: string }> {
-  const result = await parseCsvBuffer(buf);
-  return { headers: result.headers, rawRows: result.rows, sheetName: "CSV" };
-}
-
-// ─── Main parse function ──────────────────────────────────────────────────────
-
-export async function parseFile(
-  buf: Buffer,
-  filename: string,
-  resellers: ResellerProfile[],
-  savedMappings?: Map<string, MappingField[]>,
-  /** Map of header fingerprint → resellerId from learned associations */
-  learnedFingerprints?: Map<string, number>,
-): Promise<ParseResult> {
-  const fileHash = hashBuffer(buf);
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-
-  let headers: string[] = [];
-  let rawRows: Record<string, unknown>[] = [];
-  let sheetName: string | null = null;
-
-  if (ext === "csv") {
-    const r = await readCsv(buf);
-    headers = r.headers;
-    rawRows = r.rawRows;
-    sheetName = null;
-  } else {
-    const r = readXlsx(buf, filename);
-    headers = r.headers;
-    rawRows = r.rawRows;
-    sheetName = r.sheetName;
-  }
-
-  return analyzeReportData({ filename, headers, rawRows, sheetName, fileHash,
-    parserUsed: ext === "csv" ? "papaparse" : "sheetjs" }, resellers, savedMappings, learnedFingerprints);
-}
-
 /** Re-run recognition on persisted source cells; absent workbook metadata stays absent. */
 export function analyzeReportData(
   source: { filename: string; headers: string[]; rawRows: Record<string, unknown>[];
@@ -733,12 +656,9 @@ export function analyzeReportData(
   let finalConfidence = 0;
   let headerResolutionSource: HeaderResolutionSource = headerResult.resolutionSource;
 
-  const conflict = filenameResult.resellerId !== null &&
-    ((headerResult.resellerId !== null && headerResult.resellerId !== filenameResult.resellerId) ||
-      (headerResult.resellerId === null && headerResult.candidates.length > 0 &&
-        !headerResult.candidates.some(r => r.id === filenameResult.resellerId))) ||
-    (filenameResult.candidates.length > 1 && headerResult.resellerId !== null &&
-      filenameResult.candidates.some(r => r.id !== headerResult.resellerId));
+  const conflict = filenameResult.resellerId === null && filenameResult.candidates.length > 0 &&
+    headerResult.resellerId !== null &&
+    !filenameResult.candidates.some(r => r.id === headerResult.resellerId);
 
   if (filenameResult.resellerId !== null) {
     finalResellerId = filenameResult.resellerId;
