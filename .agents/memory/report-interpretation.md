@@ -50,3 +50,9 @@ Enable AI upload assistance by default, retaining an explicit opt-out and the no
 **Why:** After reviewing the estimated per-upload cost, the user said "jsut default to it then".
 
 **How to apply:** Default the UI and omitted upload/recheck API options to enabled. Explicit false disables AI. Keep billing/data disclosure and all evidence, confirmation and overwrite safeguards.
+
+Never file a new upload in a week whose Sunday has not passed in Australia/Sydney. Clamp detected filename or in-file dates to the latest completed week with a warning; warn and block manual selection. For KS WK-number SOH filenames, compare the named week with the XLSX creation date (fall back to upload time); if the file predates that week's Sunday, use the last completed week before the creation date. Historical audits are read-only.
+
+**Why:** The user specified that “2026_WK_46…KS” uploaded Monday 9 November belongs to W45, while a WK42 file created Sunday 18 October remains W42; unfinished manual weeks must not be accepted.
+
+**How to apply:** Use Sydney-local calendar dates for completion checks, preserve adjustment warnings, validate on both client and server, and list existing anomalies for manual correction rather than silently rewriting them.

@@ -154,9 +154,10 @@ export function resolveWeekFromReportDates(
   if (!weekIso || isCompletedWeekAsOf(weekIso, now)) return { weekIso, warning: null };
   const completedWeek = previousCompletedWeekIso(now);
   const dateLabel = reportDate ? ` (${reportDate})` : "";
+  const predicate = label.endsWith("s") ? "fall" : "is";
   return {
     weekIso: completedWeek,
-    warning: `${label}${dateLabel} fall in an unfinished week. Filed as w/e ${weekEndingShortLabel(completedWeek)} — check.`,
+    warning: `${label}${dateLabel} ${predicate} in an unfinished week. Filed as w/e ${weekEndingShortLabel(completedWeek)} — check.`,
   };
 }
 

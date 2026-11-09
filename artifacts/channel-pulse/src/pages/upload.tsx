@@ -24,7 +24,7 @@ import {
 } from "@/components/upload-center";
 import {
   KIND_LABEL, useCenterUpload, useCommitCenterUpload, useDeleteCenterUpload, useDeleteCenterUploads, usePatchCenterUpload, useUploadCenter,
-  type CenterKind, type CenterUpload,
+  isUnfinishedWeek, latestCompletedWeekIso, type CenterKind, type CenterUpload,
 } from "@/lib/upload-center";
 import {
   Dialog,
@@ -153,6 +153,14 @@ export default function UploadCenter() {
     const weekIso = opts.weekIso ?? (defaultWeek || null);
     if (weekIso && !validWeek(weekIso)) {
       toast({ title: "Check the default week", description: "Enter a valid ISO week or leave it blank.", variant: "destructive" });
+      return;
+    }
+    if (weekIso && isUnfinishedWeek(weekIso)) {
+      toast({
+        title: "That reporting week has not ended",
+        description: `Choose a completed week. The latest completed week is ${latestCompletedWeekIso()}.`,
+        variant: "destructive",
+      });
       return;
     }
     trackEvent("upload_started", { file_count: files.length });
@@ -353,6 +361,11 @@ export default function UploadCenter() {
             </div>
           </div>
           {!!defaultWeek && !validWeek(defaultWeek) && <p className="mt-2 text-sm text-destructive">Enter a valid ISO week, for example 2026-W27.</p>}
+          {!!defaultWeek && validWeek(defaultWeek) && isUnfinishedWeek(defaultWeek) && (
+            <p className="mt-2 text-sm text-destructive" role="alert">
+              This manual week has not ended in Australia/Sydney. Latest completed week: {latestCompletedWeekIso()}.
+            </p>
+          )}
         </div>
 
         {/* Pending queue */}
@@ -406,9 +419,10 @@ export default function UploadCenter() {
                     aria-label={`Select ${u.name}`} data-testid={`checkbox-pending-${u.id}`} />
                   <KindBadge kind={u.kind} />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium" title={u.name}>{u.name}</span>
-                  <span className="font-mono text-xs text-muted-foreground">
+                  <span className={`font-mono text-xs ${u.weekIso && isUnfinishedWeek(u.weekIso) ? "font-semibold text-destructive" : "text-muted-foreground"}`}>
                     {u.accountId == null ? "no reseller" : customerLabel(resById.get(u.accountId)?.code ?? u.accountId)} &middot; {u.weekIso ?? "no week"} &middot; {u.rowCount.toLocaleString()} rows
                   </span>
+                  {!!u.warnings?.length && <Badge variant="destructive" className="bg-rose-500/10 text-rose-700 border-rose-500/20">{u.warnings.length} warnings</Badge>}
                   {u.errors.length > 0 && <Badge variant="destructive" className="bg-rose-500/10 text-rose-700 border-rose-500/20">{u.errors.length} issues</Badge>}
                   <div className="flex gap-1">
                     <Button size="sm" variant={openId === u.id ? "default" : "outline"} className="h-7" onClick={() => openReview(u)} data-testid={`button-open-${u.id}`}>Review</Button>
@@ -675,11 +689,13 @@ function ReviewCard({
   };
 
   const weekNotDetected = !!review.week_not_detected;
+  const weekUnfinished = validWeek(weekIso) && isUnfinishedWeek(weekIso);
   const hasSoldColumn = mappings.some(m => m.canonical_field === "sell_through_7d");
   const readyToCommit =
     !!resellerId &&
     !!weekIso &&
     validWeek(weekIso) &&
+    !weekUnfinished &&
     mappings.some(m => m.canonical_field === "part_no") &&
     mappings.some(m => m.canonical_field === "soh") &&
     new Set(mappings.map(m => m.canonical_field).filter(Boolean)).size ===
@@ -748,6 +764,9 @@ function ReviewCard({
               />
               {weekIso && !validWeek(weekIso) && <p className="text-xs text-destructive mt-1">Enter a valid ISO week.</p>}
               {weekIso && validWeek(weekIso) && <p className="text-xs text-muted-foreground mt-1">{formatWeekLabel(weekIso)} (Mon–Sun)</p>}
+              {weekUnfinished && <p className="mt-1 max-w-[220px] text-xs text-destructive" role="alert">
+                This manual week has not ended in Australia/Sydney. Choose a completed week; latest is {latestCompletedWeekIso()}.
+              </p>}
               {review.detected_week_iso && weekIso !== review.detected_week_iso && (
                 <p className="text-xs text-amber-700 mt-1 max-w-[200px]">
                   You are overriding {formatWeekLabel(review.detected_week_iso)}. Check the reporting period before committing.
@@ -835,7 +854,7 @@ function ReviewCard({
           <div className="flex items-center gap-3">
             {!readyToCommit && (
               <span className="text-sm text-amber-600">
-                {!resellerId ? "Select a reseller" : !weekIso ? "Enter a week (e.g. 2026-W27)" : "Map Part No and SOH once each"}
+                {!resellerId ? "Select a reseller" : !weekIso ? "Enter a week (e.g. 2026-W27)" : weekUnfinished ? "Choose a completed week" : "Map Part No and SOH once each"}
               </span>
             )}
             {readyToCommit && !hasSoldColumn && (

@@ -10,7 +10,10 @@ import {
 import { parseSheets, suggestMapping, detectImportKind, mapImport, prontoRangeCovers } from "../lib/scanback-import";
 import { evidenceKey, serialKey, validDate } from "../lib/scanback-engine";
 import { indexProntoSource, prontoCreditIdentity, splitSerials } from "../lib/scanback-pronto";
-import { dateStringToWeekIso, isValidWeekIso, mostCommonWeek } from "../lib/dates";
+import {
+  dateStringToWeekIso, isCompletedWeekAsOf, isValidWeekIso, mostCommonWeek,
+  resolveWeekFromReportDates, previousCompletedWeekIso, weekEndingShortLabel,
+} from "../lib/dates";
 import { buildScanbackWorkbook, XLSX_MIME } from "../lib/scanback-export";
 import { listWeeklyExports, readWeeklyExport } from "../lib/scanback-export-storage";
 import { validateProgramReferences } from "../lib/program-table";
@@ -278,19 +281,25 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
       const ids = [...new Set(value.rows.map(r => r.accountId).filter(id => id != null))];
       const accountId = value.accountId ?? (ids.length === 1 ? ids[0] : registry.accountId);
       const dates = value.rows.map(r => r.date).filter(Boolean);
-      const contentWeek = mostCommonWeek(dates).weekIso;
-      const week = registry.weekSource === "manual"
-        ? registry.weekIso
-        : registry.weekSource === "file_dates"
-          ? registry.weekIso
-          : contentWeek ?? registry.weekIso;
+      const content = mostCommonWeek(dates);
+      const rawWeek = content.weekIso ?? registry.weekIso;
+      const resolved = resolveWeekFromReportDates(
+        rawWeek, content.reportDate, new Date(), content.weekIso ? "Report dates" : "Report week",
+      );
+      const week = registry.weekSource === "manual" ? registry.weekIso : resolved.weekIso;
+      if (registry.weekSource === "manual" && week && !isCompletedWeekAsOf(week))
+        throw new ScanbackError(`Manual week ${week} has not ended in Australia/Sydney. Choose a completed week (latest: ${previousCompletedWeekIso()}, w/e ${weekEndingShortLabel(previousCompletedWeekIso())}).`);
       requireThat(accountId != null, "Choose this serial report's reseller in Upload Center before committing.");
       requireThat(week && isValidWeekIso(week), "Choose this serial report's reporting week in Upload Center before committing.");
+      if (resolved.warning && registry.weekSource !== "manual") {
+        registry.warnings = [...new Set([...(registry.warnings ?? []), resolved.warning])];
+      }
       requireThat(ids.every(id => id === accountId), "A weekly customer report must belong to one reseller. Split reports containing several customers.");
       value.accountId = accountId;
       await c.query("UPDATE center_uploads SET payload=payload || $2::jsonb WHERE id=$1",
         [registry.id, JSON.stringify({ accountId, weekIso: week,
-          weekSource: registry.weekSource === "manual" ? "manual" : contentWeek ? "file_dates" : registry.weekSource ?? "unknown" })]);
+          weekSource: registry.weekSource === "manual" ? "manual" : content.weekIso ? "file_dates" : registry.weekSource ?? "unknown",
+          warnings: registry.warnings })]);
     }
   }
   requireThat(value.errors.length === 0, "Resolve every preview error before committing.");

@@ -14,7 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { customerLabel } from "@/lib/customer-display";
 import { formatWeekLabel, isoWeekDates } from "@/lib/week-display";
 import {
-  CENTER_KINDS, KIND_LABEL, KIND_SHORT, formatDay, isoWeekOf, lastCompletedSunday, shiftSunday, shortDate,
+  CENTER_KINDS, KIND_LABEL, KIND_SHORT, formatDay, isUnfinishedWeek, isoWeekOf,
+  lastCompletedSunday, latestCompletedWeekIso, shiftSunday, shortDate,
   usePatchCenterUpload, useResolveCredit, type CenterKind, type CenterUpload,
 } from "@/lib/upload-center";
 import { ChevronLeft, ChevronRight, ClipboardCopy, FileSpreadsheet, Lock, Pencil, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
@@ -51,6 +52,7 @@ function MetaEditBody({ upload, resellers, onClose }: { upload: CenterUpload; re
   const [accountId, setAccountId] = useState<number | null>(upload.accountId);
   const [week, setWeek] = useState(upload.weekIso ?? "");
   const weekBad = !!week && !validIsoWeek(week);
+  const weekUnfinished = !!week && validIsoWeek(week) && isUnfinishedWeek(week);
   const save = () => patch.mutate(
     { id: upload.id, data: { kind, accountId, weekIso: week || null } },
     {
@@ -78,11 +80,14 @@ function MetaEditBody({ upload, resellers, onClose }: { upload: CenterUpload; re
           <WeekSelect value={week} onChange={setWeek} allowNone testId="select-edit-week" />
           <Input className="font-mono" placeholder="2026-W27" value={week} onChange={(e) => setWeek(e.target.value.trim().toUpperCase())} data-testid="input-edit-week" aria-invalid={weekBad} />
           {weekBad ? <span className="text-xs text-destructive">Enter a valid ISO week.</span> : week ? <span className="text-xs text-muted-foreground">{formatWeekLabel(week)}</span> : null}
+          {weekUnfinished && <span className="text-xs text-destructive" role="alert">
+            This manual week has not ended in Australia/Sydney. Latest completed week: {latestCompletedWeekIso()}.
+          </span>}
         </label>
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={save} disabled={patch.isPending || weekBad} data-testid="button-save-meta">{patch.isPending ? "Saving..." : "Save details"}</Button>
+        <Button onClick={save} disabled={patch.isPending || weekBad || weekUnfinished} data-testid="button-save-meta">{patch.isPending ? "Saving..." : "Save details"}</Button>
       </DialogFooter>
     </>
   );
@@ -569,8 +574,10 @@ export function AllUploadsTable({
               <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-5 w-full" /></TableCell></TableRow>
             )) : list.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="h-24 text-center text-sm text-muted-foreground">No uploads of this type yet. Drop files into the zone above.</TableCell></TableRow>
-            ) : list.map((u) => (
-              <TableRow key={u.id} data-testid={`row-upload-${u.id}`}>
+            ) : list.map((u) => {
+              const unfinished = !!u.weekIso && isUnfinishedWeek(u.weekIso);
+              return (
+              <TableRow key={u.id} data-testid={`row-upload-${u.id}`} className={unfinished ? "bg-rose-50/60" : undefined}>
                 <TableCell>
                   <Checkbox checked={selectedIds.includes(u.id)}
                     onCheckedChange={(checked) => setSelectedIds(ids => checked === true
@@ -580,7 +587,10 @@ export function AllUploadsTable({
                 </TableCell>
                 <TableCell><KindBadge kind={u.kind} /></TableCell>
                 <TableCell className="font-mono text-xs">{u.accountId == null ? "-" : customerLabel(resById.get(u.accountId)?.code ?? u.accountId)}</TableCell>
-                <TableCell className="font-mono text-xs">{u.weekIso ?? "-"}</TableCell>
+                <TableCell className={`font-mono text-xs ${unfinished ? "font-bold text-destructive" : ""}`}>
+                  {u.weekIso ?? "-"}
+                  {unfinished && <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-[10px]">Not finished</Badge>}
+                </TableCell>
                 <TableCell className="max-w-[280px] truncate text-sm" title={u.name}>{u.name}</TableCell>
                 <TableCell className="text-right font-mono text-xs tabular-nums">{n(u.rowCount)}</TableCell>
                 <TableCell className="font-mono text-xs">{shortDate(u.createdAt)}</TableCell>
@@ -597,7 +607,7 @@ export function AllUploadsTable({
                     onClick={() => onDelete(u)} data-testid={`button-delete-${u.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </TableCell>
               </TableRow>
-            ))}
+            );})}
           </TableBody>
         </Table>
       </div>

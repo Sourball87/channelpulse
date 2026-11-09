@@ -152,12 +152,38 @@ export function isoWeekOf(d: Date): string {
   return `${y}-W${String(wk).padStart(2, "0")}`;
 }
 
+function sydneyCalendarDate(now: Date): Date {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const field = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(part => part.type === type)?.value);
+  return new Date(Date.UTC(field("year"), field("month") - 1, field("day")));
+}
+
 /** Sunday that ends the last fully completed Mon-Sun week. */
 export function lastCompletedSunday(now = new Date()): Date {
-  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const today = sydneyCalendarDate(now);
   const dow = today.getUTCDay(); // 0 = Sunday
   const back = dow === 0 ? 7 : dow;
   return new Date(today.getTime() - back * DAY);
+}
+
+export function latestCompletedWeekIso(now = new Date()): string {
+  return isoWeekOf(lastCompletedSunday(now));
+}
+
+export function isUnfinishedWeek(weekIso: string, now = new Date()): boolean {
+  return validIsoWeekForDisplay(weekIso) && weekIso > latestCompletedWeekIso(now);
+}
+
+function validIsoWeekForDisplay(weekIso: string): boolean {
+  const match = /^(\d{4})-W(\d{2})$/.exec(weekIso);
+  if (!match) return false;
+  const year = Number(match[1]), week = Number(match[2]);
+  if (year < 1900 || year > 2100 || week < 1 || week > 53) return false;
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const monday = new Date(jan4.getTime() - ((jan4.getUTCDay() || 7) - 1) * DAY + (week - 1) * 7 * DAY);
+  return isoWeekOf(monday) === weekIso;
 }
 
 export function shiftSunday(d: Date, weeks: number): Date {

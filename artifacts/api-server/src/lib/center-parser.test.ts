@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { detectCenterKind, readCenterSheets, referenceMapping, parseReference, sheetsBuffer } from "./center-parser";
+import { detectCenterKind, readCenterSheets, readCenterWorkbook, referenceMapping, parseReference, sheetsBuffer } from "./center-parser";
 
 describe("unified intake detection", () => {
   it.each([
@@ -30,6 +30,14 @@ describe("unified intake detection", () => {
     ]), "Price list");
     const sheets = readCenterSheets(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
     expect(Object.values(sheets)[0][0].SKU).toBe("TEST");
+  });
+  it("reads the spreadsheet document creation date", () => {
+    const wb = XLSX.utils.book_new();
+    wb.Props = { CreatedDate: new Date("2026-10-18T02:00:00.000Z") };
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["SKU", "SOH"], ["TEST", 10]]), "SOH");
+    const parsed = readCenterWorkbook(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+    expect(parsed.fileCreatedAt).toBeTruthy();
+    expect(new Date(parsed.fileCreatedAt as Date | string).toISOString()).toBe("2026-10-18T02:00:00.000Z");
   });
 });
 describe("reference data validation", () => {

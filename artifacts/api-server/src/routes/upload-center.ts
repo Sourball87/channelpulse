@@ -348,8 +348,9 @@ router.post("/upload-center/files", intake.array("files"), async (req, res) => {
       const result = await transaction(async c => {
         await validateMeta(c, options.data);
         requireThat(/\.(csv|xlsx|xls)$/i.test(file.originalname), "Use CSV, XLS or XLSX.");
+        const uploadedAt = new Date();
         const workbook = /\.csv$/i.test(file.originalname)
-          ? { sheets: await readCenterCsv(file.buffer), programSources: {} }
+          ? { sheets: await readCenterCsv(file.buffer), programSources: {}, fileCreatedAt: null }
           : readCenterWorkbook(file.buffer);
         let raw = workbook.sheets;
         const sheets = Object.keys(raw);
@@ -361,14 +362,15 @@ router.post("/upload-center/files", intake.array("files"), async (req, res) => {
           raw = /\.csv$/i.test(file.originalname) ? await parseCsvSheets(file.buffer) : parseSheets(file.buffer);
         else raw = { [selected.sheet]: raw[selected.sheet] };
         const filenameAccount = detectResellerFromFilename(file.originalname, await profiles(c)).resellerId;
-        const filenameWeek = detectWeekFromFilename(file.originalname).weekIso;
-        const weekSource = options.data.weekIso != null ? "manual" : filenameWeek ? "filename" : "unknown";
+        const filenameWeek = resolveWeekFromFilename(file.originalname, workbook.fileCreatedAt, uploadedAt);
+        const weekSource = options.data.weekIso != null ? "manual" : filenameWeek.weekIso ? "filename" : "unknown";
         const entry: CenterUpload = {
-          id: randomUUID(), name: file.originalname, kind, sourceId: null, state: "preview", createdAt: new Date().toISOString(),
+          id: randomUUID(), name: file.originalname, kind, sourceId: null, state: "preview", createdAt: uploadedAt.toISOString(),
           accountId: options.data.accountId ?? (kind === "soh" ? null : filenameAccount),
-          weekIso: options.data.weekIso ?? filenameWeek,
+          weekIso: options.data.weekIso ?? filenameWeek.weekIso,
           weekSource,
-          summary: emptySummary(), headers: [], mapping: {}, errors: [], warnings: [], preview: [], rowCount: 0,
+          summary: emptySummary(), headers: [], mapping: {}, errors: [],
+          warnings: filenameWeek.warning ? [filenameWeek.warning] : [], preview: [], rowCount: 0,
           ...(kind === "program" && workbook.programSources[selected.sheet] ? { programSource: workbook.programSources[selected.sheet] } : {}),
         };
         raw = await createSource(c, entry, raw, file.buffer, aiAssistEnabled(req.body.ai_assist));
@@ -439,6 +441,7 @@ router.patch("/upload-center/:id", wrap(async (c, req) => {
     const value = await rebuildImport(c, base, stored.raw_sheets, next);
     await c.query("UPDATE scanback_imports SET payload=$2::jsonb WHERE id=$1", [base.id, JSON.stringify(value)]);
     Object.assign(entry, options);
+    if (options.weekIso !== undefined) entry.weekSource = "manual";
     await save(c, entry, raw);
     return hydrate(c, entry);
   }
@@ -450,6 +453,7 @@ router.patch("/upload-center/:id", wrap(async (c, req) => {
         options.weekIso === undefined ? entry.weekIso : options.weekIso]);
     requireThat(result.rowCount, "This source was committed or changed.", 409);
     Object.assign(entry, options);
+    if (options.weekIso !== undefined) entry.weekSource = "manual";
   } else {
     await removeSource(c, entry);
     Object.assign(entry, options, { sourceId: null, mapping: changedKind ? {} : options.mapping ?? entry.mapping });
@@ -474,6 +478,8 @@ router.post("/upload-center/:id/commit", wrap(async (c, req) => {
     requireThat(input.success, "Invalid SOH commit input.");
     const sourceId = Number(entry.sourceId);
     requireThat(Number.isSafeInteger(sourceId) && sourceId > 0, "SOH source is unavailable.", 404);
+    requireThat(isCompletedWeekAsOf(input.data!.week_iso),
+      unfinishedManualWeekMessage(input.data!.week_iso));
     const committed = await commitSohUpload(c, sourceId, input.data!.reseller_id, input.data!.week_iso,
       input.data!.mappings as MappingField[], input.data!.confirm_overwrite ?? false);
     entry.state = "committed";

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
+import * as XLSX from "xlsx";
 import { pool } from "@workspace/db";
 import type { CenterUpload } from "@workspace/api-zod";
 import { computeHeaderFingerprint } from "./parser";
+import { currentWeekIso } from "./dates";
 
 const base = process.env.UPLOAD_CENTER_INTEGRATION_URL;
 describe.skipIf(!base)("Upload Center development API", () => {
@@ -184,6 +186,57 @@ describe.skipIf(!base)("Upload Center development API", () => {
       await pool.query("DELETE FROM uploads WHERE id=ANY($1::int[])", [[...sohIds]]);
       await pool.query(`DELETE FROM parts p WHERE p.part_no=ANY($1::text[])
         AND NOT EXISTS (SELECT 1 FROM inventory_snapshots s WHERE s.part_id=p.id)`, [[...testSkus]]);
+    }
+  }, 60000);
+
+  it("files an unfinished WK filename under the last completed week and blocks manual unfinished weeks", async () => {
+    if (base !== "http://localhost:80/api") throw new Error("Use the local development proxy only.");
+    const prefix = `WEEKGUARD${Date.now()}`;
+    let cookie = "";
+    let centerId: string | null = null;
+    let sourceId: number | null = null;
+    try {
+      const login = await fetch(base + "/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: process.env.CHANNELPULSE_ADMIN_PASSWORD }),
+      });
+      expect(login.status).toBe(200);
+      cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+        ["SKU", "SOH", "Sold Last 7 Days"], [`${prefix}-SKU`, 12, 3],
+      ]), "SOH");
+      const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      const form = new FormData();
+      form.append("files", new Blob([new Uint8Array(bytes)]), "2026_WK_46_Samsung_SSD_SOH_reports_-_KS.xlsx");
+      form.append("ai_assist", "false");
+      const stagedResponse = await fetch(base + "/upload-center/files", {
+        method: "POST", headers: { Cookie: cookie }, body: form,
+      });
+      expect(stagedResponse.status).toBe(200);
+      const staged = await stagedResponse.json() as { uploads: CenterUpload[]; errors: { name: string; error: string }[] };
+      expect(staged.errors).toEqual([]);
+      const upload = staged.uploads[0];
+      expect(upload.weekIso).toBe("2026-W45");
+      expect(upload.warnings).toContain("Filename said WK 46 (not finished yet). Filed as w/e 8 Nov — check.");
+      centerId = upload.id;
+      sourceId = upload.sourceId ? Number(upload.sourceId) : null;
+
+      const manualResponse = await fetch(base + `/upload-center/${encodeURIComponent(upload.id)}`, {
+        method: "PATCH", headers: { Cookie: cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ weekIso: currentWeekIso() }),
+      });
+      expect(manualResponse.status).toBe(400);
+      const manual = await manualResponse.json() as { error: string };
+      expect(manual.error).toContain("has not ended in Australia/Sydney");
+    } finally {
+      if (centerId) await pool.query("DELETE FROM center_uploads WHERE id=$1", [centerId]);
+      if (sourceId != null) {
+        await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=$1", [sourceId]);
+        await pool.query("DELETE FROM uploads WHERE id=$1", [sourceId]);
+      }
+      await pool.query("DELETE FROM parts WHERE part_no=$1 AND NOT EXISTS (SELECT 1 FROM inventory_snapshots WHERE part_id=parts.id)", [`${prefix}-SKU`]);
     }
   }, 60000);
 });
