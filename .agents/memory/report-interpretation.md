@@ -15,11 +15,11 @@ Do not assume all files supplied together share a reporting week or reseller. Un
 
 **How to apply:** Match a format only to its actual reseller candidates, using verified sheet-name tie-breakers for shared signatures. Keep week confirmation and commit/overwrite safeguards separate from format recognition.
 
-For PLE serial uploads spanning more than three weeks, use the filename-derived week and keep only rows from that week. If the filename has no week, fall back to content dates; never keep older rows just because a serial is unseen, and show how many rows were skipped.
+Any customer serial report spanning more than three weeks is full history. Use the filename-derived week and keep only rows from that week. If the filename has no week, fall back to content dates; never keep older rows just because a serial is unseen, and show how many rows were skipped.
 
-**Why:** PLE's full-history serial export contains years of data, while its filename identifies the intended weekly period.
+**Why:** Multi-month history can appear in any reseller's report, including small files; customer identity and file size do not reliably indicate report scope.
 
-**How to apply:** Apply this rule to full-history serial uploads before building the preview, and surface the excluded historical-row count in Upload Center.
+**How to apply:** Apply this rule to every customer serial upload before building its preview, and surface the excluded historical-row count in Upload Center.
 
 Use the ISO calendar week of an explicit report date, or the ending date of a filename date range. Do not silently shift Monday-dated Centrecom reports into the preceding week.
 

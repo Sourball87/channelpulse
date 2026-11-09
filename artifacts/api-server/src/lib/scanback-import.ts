@@ -9,7 +9,7 @@ export type Sheets = Record<string, Record<string, unknown>[]>;
 export interface Account { id: number; code: string; name: string; aliases?: string[]; active?: boolean }
 const fields: Record<string, string[]> = {
   serial: ["serial", "serials", "serialno", "serialnumber", "sn", "imei"],
-  sku: ["sku", "model", "modelnumber", "stockcode", "part", "partnumber", "productcode"],
+  sku: ["sku", "model", "modelcode", "modelnumber", "manufacturermodel", "stockcode", "part", "partnumber", "productcode"],
   date: ["date", "saleday", "invoicedate", "selldate", "saledate", "orderdate", "approved"],
   account: ["accountcode", "customer", "customername", "account", "reseller", "prontoaccount"],
   quantity: ["qty", "quantity", "invoiceqty"],

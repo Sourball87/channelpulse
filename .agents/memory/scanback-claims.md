@@ -21,11 +21,11 @@ Claim per serial equals the Dicker Data/Pronto invoiced unit price to that resel
 
 **How to apply:** Match each serial to its active DD invoice event, use the customer-reported sold date to choose the promotion, and calculate with exact decimal arithmetic or integer cents.
 
-Customer serial reports drive claim drafts; customer SOH/ST reports feed Dashboard and Explorer only. Assign each serial to the unique active promotion for that customer and sold date, splitting reports across promotions. Never guess when there is no unique match.
+Customer serial reports drive claim drafts; customer SOH/ST reports feed Dashboard and Explorer only. Assign each serial to the unique active promotion for that customer, sold date, and SKU, splitting reports across promotions. If the customer row has no SKU, use the SKU from that serial's same-customer DD/Pronto invoice; if invoice evidence is conflicting or absent, do not guess.
 
-**Why:** The user specified separate report jobs and required automatic promotion selection from customer and sale date.
+**Why:** The user specified separate report jobs and required promotion matching to customer, sale date, and product. Customer serial exports can omit the model column, while the Pronto invoice has the authoritative SKU.
 
-**How to apply:** Generate per-customer/per-promotion drafts from committed serial reports. Leave unmatched or overlapping rows for explicit manual override; never make SOH/ST reports claim inputs.
+**How to apply:** Generate per-customer/per-promotion drafts from committed serial reports, resolving only missing SKUs from unique same-customer Pronto invoice evidence. Leave unmatched or overlapping rows for explicit manual override; never make SOH/ST reports claim inputs.
 
 Verification fingerprints must canonicalize JSON object keys before hashing.
 

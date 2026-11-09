@@ -5,7 +5,7 @@ import type {
   ScanbackResult, ScanbackBatch,
 } from "@workspace/api-zod";
 import { verifyClaim, evidenceKey, cents, type EvidenceRow, type ApprovedSerial, type CatalogPart } from "./scanback-engine";
-import { splitClaimRowsByPromotion } from "./scanback-auto-drafts";
+import { resolveMissingClaimSkus, splitClaimRowsByPromotion } from "./scanback-auto-drafts";
 import { mapImport, parseDate, prontoRangeCovers, type Sheets, type Account } from "./scanback-import";
 import { indexProntoSource, pendingProntoCredits, prontoCreditIdentity, type ProntoCreditReport } from "./scanback-pronto";
 import { maskCustomerText } from "./customer-display";
@@ -160,6 +160,8 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
     .rows.map(r => r.payload as ScanbackImport);
   const evidence: EvidenceRow[] = imports.flatMap(i =>
     i.rows.map(r => ({ ...r, source: `${i.name} [${i.id}], ${i.sheet}, row ${r.sourceRow ?? r.rowIndex + 2}` })));
+  const claimRows = resolveMissingClaimSkus(claim.rows, claim.accountId,
+    imports.filter(i => !!i.pronto).flatMap(i => i.rows));
   const approved = await ledger(c);
   const cat = await catalog(c);
   const programs = await all<ScanbackProgram>(c, "scanback_programs");
@@ -230,7 +232,7 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
   }
   const reportedSales = await loadReportedSales(c);
   const scopedIndices = scopeRowIndices ? new Set(scopeRowIndices) : null;
-  const scopedClaims = scopedIndices ? claim.rows.filter(row => scopedIndices.has(row.rowIndex)) : claim.rows;
+  const scopedClaims = scopedIndices ? claimRows.filter(row => scopedIndices.has(row.rowIndex)) : claimRows;
   const results = verifyClaim({ program: p, settings: canonicalSettings, claims: scopedClaims, evidence, approved, parts: cat.parts,
     restrictedSerials, unmatchedProntoCredits, reportedSales, accounts: cat.accounts, ddRangeSkus });
   const token = hash({
@@ -248,7 +250,13 @@ export async function calculateDraft(c: Client, settings: ScanbackVerificationIn
 export async function generateAutomaticClaimDrafts(c: Client, report: ScanbackImport): Promise<ScanbackDraft[]> {
   if (report.kind !== "claim" || report.state !== "committed") return [];
   const programs = await all<ScanbackProgram>(c, "scanback_programs");
-  const { groups, unmatched } = splitClaimRowsByPromotion(report.rows, report.accountId, programs);
+  const prontoImports = (await c.query(`SELECT payload FROM scanback_imports
+    WHERE payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded')
+      AND payload ? 'pronto'
+      AND jsonb_array_length(COALESCE(payload->'rows','[]'::jsonb)) > 0`))
+    .rows.map(row => row.payload as ScanbackImport);
+  const prontoInvoiceRows = prontoImports.flatMap(invoice => invoice.rows);
+  const { groups, unmatched } = splitClaimRowsByPromotion(report.rows, report.accountId, programs, prontoInvoiceRows);
 
   report.warnings = (report.warnings ?? []).filter(warning => !warning.startsWith("Automatic promotion matching:"));
   if (unmatched.length) {

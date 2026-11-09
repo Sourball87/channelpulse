@@ -108,17 +108,7 @@ async function createSource(c: Client, entry: CenterUpload, raw: Sheets, buffer?
     let sourceRows = financial[sheet] ?? [];
     const headers = Object.keys(sourceRows[0] ?? {}).filter(h => h !== "__sourceRow");
     const mapping = suggestMapping(headers);
-    const customer = entry.accountId != null ? (await profiles(c)).find(account => account.id === entry.accountId) : undefined;
-    const isLargePleHistory = entry.kind === "claim" && /\.csv$/i.test(entry.name) &&
-      customer?.code?.toLowerCase() === "ple" && (data.length > 10 * 1024 * 1024 || sourceRows.length > 100_000);
-    if (entry.kind === "claim" && entry.weekSource !== "manual" && !isLargePleHistory) {
-      const detected = mostCommonWeek(mapping.date ? sourceRows.map(row => row[mapping.date]) : []);
-      if (detected.weekIso) {
-        entry.weekIso = detected.weekIso;
-        entry.weekSource = "file_dates";
-      }
-    }
-    if (isLargePleHistory) {
+    if (entry.kind === "claim") {
       const known = (await loadReportedSales(c)).map(row => row.serial);
       const filenameWeek = detectWeekFromFilename(entry.name).weekIso;
       const targetWeek = entry.weekSource === "manual" ? entry.weekIso : filenameWeek;

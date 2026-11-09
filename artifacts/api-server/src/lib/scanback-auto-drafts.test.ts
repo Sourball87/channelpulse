@@ -54,4 +54,16 @@ describe("automatic promotion assignment", () => {
       .toEqual([["promotion-a", [0]], ["promotion-b", [1]]]);
     expect(result.unmatched).toEqual([]);
   });
+
+  it("uses a PLE serial's SKU from its Pronto invoice when ModelCode is blank", () => {
+    const claim = row(0, "2026-09-15", 7, "");
+    const prontoInvoice = row(0, "2026-09-14", 7, "MZ-PLE-SSD");
+    const result = splitClaimRowsByPromotion([claim], 7, [
+      promotion("ple-promo", "2026-09-01", "2026-09-30", [7], ["MZ-PLE-SSD"]),
+    ], [prontoInvoice]);
+
+    expect(result.groups.map(group => [group.program.id, group.rowIndices]))
+      .toEqual([["ple-promo", [0]]]);
+    expect(result.unmatched).toEqual([]);
+  });
 });
