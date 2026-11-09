@@ -1,6 +1,7 @@
 import type {
   ScanbackProgram, ScanbackImportRow, ScanbackVerificationInput, ScanbackResult,
 } from "@workspace/api-zod";
+import { isValidDateString } from "./dates";
 import { earlierReportReason, isSameCustomerReportRepeat, type ReportedSale } from "./serial-tracking";
 
 export const serialKey = (value: unknown) => String(value ?? "").replace(/\s/g, "").toUpperCase();
@@ -13,9 +14,7 @@ export function cents(value: unknown): number | null {
   return Number.isSafeInteger(n) && n <= 2_000_000_000 ? (negative ? -n : n) : null;
 }
 export function validDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(value + "T00:00:00Z");
-  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === value;
+  return isValidDateString(value);
 }
 export const evidenceKey = (r: ScanbackImportRow) => JSON.stringify([
   r.serial, r.accountId, r.sku, r.date, r.invoice, Math.sign(r.quantity), r.unitPriceCents,

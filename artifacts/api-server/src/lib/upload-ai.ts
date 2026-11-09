@@ -1,4 +1,5 @@
-import { detectWeekFromFilename, isValidWeekIso, type MappingField, type ParseResult, type ResellerProfile } from "./parser";
+import { detectWeekFromFilename, isValidWeekIso } from "./dates";
+import type { MappingField, ParseResult, ResellerProfile } from "./parser";
 import { withMappings, type AiNote } from "./upload-review";
 
 interface Evidence { id: string; text: string }

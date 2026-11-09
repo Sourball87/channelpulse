@@ -1,4 +1,5 @@
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+import { excelSerialToDate } from "./dates";
 interface DateParts { month: number; day: number; year?: number }
 function parts(value: string): DateParts | null {
   const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -18,7 +19,7 @@ export function programDates(preamble: unknown[][], now = new Date()) {
   const warnings: string[] = [];
   const dateCell = (value: unknown): DateParts | null => {
     if (typeof value === "number" && Number.isInteger(value) && value > 20000 && value < 100000) {
-      const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString().slice(0, 10);
+      const date = excelSerialToDate(value);
       return parts(date);
     }
     return parts(String(value ?? "").trim());

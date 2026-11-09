@@ -1,6 +1,12 @@
 import * as XLSX from "xlsx";
-import Papa from "papaparse";
 import crypto from "crypto";
+import { detectWeekFromFilename, isValidWeekIso } from "./dates";
+import { parseCsvBuffer } from "./csv-stream";
+
+export {
+  currentWeekIso, dateStringToWeekIso, detectWeekFromFilename, isValidWeekIso,
+  previousCompletedWeekIso, previousWeekIso,
+} from "./dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,10 +84,10 @@ const SYNONYMS: Record<string, string[]> = {
   ],
   soh: [
     "soh", "stockonhand", "onhand", "totalonhand", "quantityonhand",
-    "stock", "totalstock", "availablestock", "currentstock",
+    "sohqty", "stock", "totalstock", "availablestock", "currentstock",
   ],
   sell_through_7d: [
-    "soldlast7days", "soldqty", "7d", "invoicedquantity", "soldlastweek",
+    "sold", "soldlast7days", "soldqty", "7d", "invoicedquantity", "soldlastweek",
     "weeklysales", "saleslastweek",
   ],
   sold_mtd: ["soldmtd", "salesmtd", "monthtodatesales"],
@@ -93,7 +99,7 @@ const SYNONYMS: Record<string, string[]> = {
   ],
   avg_cost: [
     "avgcost", "averagecostexgst", "itemaveragecostexgst",
-    "averagecostextax", "avgstockvalue", "cost", "averagecost",
+    "averagecostextax", "unitcostexgst", "avgstockvalue", "cost", "averagecost",
     "unitcost",
   ],
 };
@@ -104,7 +110,11 @@ const SAMSUNG_PREFIXES = ["MZ-", "MU-", "MUF-", "LS", "LU", "LC", "LF", "LH", "S
 // ─── Utility functions ────────────────────────────────────────────────────────
 
 function normalize(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return s
+    .replace(/^products\s*\[\s*([^\]]+)\s*\]$/i, "$1")
+    .replace(/^\[\s*([^\]]+)\s*\]$/, "$1")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 function levenshtein(a: string, b: string): number {
@@ -188,106 +198,6 @@ export function stableCollapsedFilename(filename: string): string {
   return filtered.join("");
 }
 
-// ─── Date detection ───────────────────────────────────────────────────────────
-
-export function detectWeekFromFilename(filename: string): {
-  weekIso: string | null;
-  reportDate: string | null;
-} {
-  // Workspace attachments append a Unix-millisecond suffix, not a report date.
-  filename = filename.replace(/_\d{13}(?=\.[^.]+$)/, "");
-  const fromDate = (date: string) => {
-    const parsed = new Date(`${date}T00:00:00Z`);
-    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-      return { weekIso: null, reportDate: null };
-    }
-    return { weekIso: dateStringToWeekIso(date), reportDate: date };
-  };
-  // 2026_WK_27, 2026_WK27, "2026 WK 28", "2026-WK-27", etc.
-  const wkMatch = filename.match(/(\d{4})[\s_\-]?WK[\s_\-]?(\d{1,2})/i);
-  if (wkMatch) {
-    const year = wkMatch[1];
-    const week = wkMatch[2].padStart(2, "0");
-    const weekIso = `${year}-W${week}`;
-    return { weekIso: isValidWeekIso(weekIso) ? weekIso : null, reportDate: null };
-  }
-
-  // 2026-06-29_2026-07-05 (range: use end date)
-  const rangeMatch = filename.match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/);
-  if (rangeMatch) {
-    const endDate = rangeMatch[2];
-    return fromDate(endDate);
-  }
-
-  // 29.06.2026 or 29_06_2026
-  const dmy = [...filename.matchAll(/(\d{2})[._-](\d{2})[._-](\d{4})(?!\d)/g)].at(-1);
-  if (dmy) {
-    const dateStr = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
-    return fromDate(dateStr);
-  }
-
-  // 20260705060455 (yyyymmddHHMMSS)
-  const compact = filename.match(/(?:^|\D)((?:19|20)\d{2})(\d{2})(\d{2})\d{6}(?!\d)/);
-  if (compact) {
-    const dateStr = `${compact[1]}-${compact[2]}-${compact[3]}`;
-    return fromDate(dateStr);
-  }
-
-  // YYYY-MM-DD
-  const iso = filename.match(/(\d{4}-\d{2}-\d{2})/);
-  if (iso) {
-    return fromDate(iso[1]);
-  }
-
-  return { weekIso: null, reportDate: null };
-}
-
-export function isValidWeekIso(value: string): boolean {
-  const match = /^(\d{4})-W(\d{2})$/.exec(value);
-  if (!match) return false;
-  const year = Number(match[1]), week = Number(match[2]);
-  if (year < 1900 || year > 2100 || week < 1 || week > 53) return false;
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const monday = new Date(jan4.getTime() + ((week - 1) * 7 - ((jan4.getUTCDay() || 7) - 1)) * 86400000);
-  return dateStringToWeekIso(monday.toISOString().slice(0, 10)) === value;
-}
-
-export function dateStringToWeekIso(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00Z");
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  // Count whole calendar days. A noon timestamp can round a final-day
-  // Thursday up into the next week when the ISO year starts after Jan 1.
-  d.setUTCHours(0, 0, 0, 0);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-}
-
-export function currentWeekIso(): string {
-  return dateStringToWeekIso(new Date().toISOString().split("T")[0]);
-}
-
-/** Returns the most recently completed ISO week (the week that ended last Sunday). */
-export function previousCompletedWeekIso(): string {
-  const now = new Date();
-  const dow = now.getUTCDay() || 7; // 1=Mon..7=Sun
-  const lastSunday = new Date(now.getTime() - dow * 86400000);
-  return dateStringToWeekIso(lastSunday.toISOString().split("T")[0]);
-}
-
-/** Returns the ISO week immediately before weekIso, correctly handling 53-week years. */
-export function previousWeekIso(weekIso: string): string {
-  const [yearStr, weekStr] = weekIso.split("-W");
-  const year = parseInt(yearStr);
-  const week = parseInt(weekStr);
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const dow = jan4.getUTCDay() || 7;
-  const weekMonday = new Date(jan4.getTime() - (dow - 1) * 86400000 + (week - 1) * 7 * 86400000);
-  const prevMonday = new Date(weekMonday.getTime() - 7 * 86400000);
-  return dateStringToWeekIso(prevMonday.toISOString().split("T")[0]);
-}
-
 // ─── Report format definitions ────────────────────────────────────────────────
 
 interface ReportFormat {
@@ -313,7 +223,8 @@ const REPORT_FORMATS: ReportFormat[] = [
   },
   {
     formatId: "scorptec_csv",
-    headers: ["category", "model", "onhand", "soldlast7days", "itemaveragecostexgst", "itemaveragecostincgst", "qtyonorder"],
+    headers: ["model", "sohqty", "soldlast7days", "onorderqty", "unitcostexgst"],
+    optionalHeaders: ["brand", "category", "title", "active", "totalcostexgst", "stockage"],
     resellerCodes: ["scorptec"],
   },
   {
@@ -335,7 +246,23 @@ const REPORT_FORMATS: ReportFormat[] = [
   {
     formatId: "centrecom_legacy",
     headers: ["productname", "productmodel", "30d", "14d", "7d", "stock", "avgstockvalue"],
-    resellerCodes: ["centrecom"],
+    resellerCodes: ["pccg"],
+  },
+  {
+    formatId: "umart_csv",
+    headers: ["productmodel", "sold", "onhand"],
+    optionalHeaders: ["category", "brand", "productname", "promotion", "period"],
+    resellerCodes: ["umart"],
+  },
+  {
+    formatId: "jw_weekly",
+    headers: ["partnumber", "soh", "soldlast7days", "soldmtd", "avgcost"],
+    resellerCodes: ["jw"],
+  },
+  {
+    formatId: "digi_weekly",
+    headers: ["modelcode", "soh", "soldlast7days", "soldmtd", "qtyonpo", "avgcost"],
+    resellerCodes: ["digi"],
   },
 ];
 
@@ -530,9 +457,6 @@ export function detectResellerFromHeaders(
       if ((sl.includes("itemforcastreport") || sl.includes("itemforecastreport")) && code === "centrecom") {
         return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
       }
-      if (sl === "forecast" && code === "centrecom") {
-        return { resellerId: reseller.id, resellerName: reseller.name, confidence: bestSim, formatId: bestFormat.formatId, candidates: formatCandidates, resolutionSource: "sheet_name" };
-      }
     }
   }
 
@@ -666,7 +590,10 @@ export function applyMappingsToRows(
     }
 
     const partNo = String(canonical.part_no ?? "").trim().toUpperCase();
-    if (!partNo || /^(grand\s*)?totals?[:\s]*$/i.test(partNo)) continue;
+    const openedBox = /^(?:opened\s*box|open\s*box)$/i.test(partNo) ||
+      /-\d{5}$/.test(partNo) ||
+      Object.values(raw).some(value => /opened\s*box/i.test(String(value ?? "")));
+    if (!partNo || /^(grand\s*)?totals?[:\s]*$/i.test(partNo) || openedBox) continue;
 
     const flagged = !isSamsungPart(partNo);
     const soh = coerceInt(canonical.soh);
@@ -737,16 +664,9 @@ function readXlsx(
   return { headers, rawRows, sheetName };
 }
 
-function readCsv(buf: Buffer): { headers: string[]; rawRows: Record<string, unknown>[]; sheetName: string } {
-  const text = buf.toString("utf-8");
-  const result = Papa.parse<Record<string, unknown>>(text, {
-    header: true,
-    skipEmptyLines: true,
-    dynamicTyping: false,
-  });
-
-  const headers = result.meta.fields ?? [];
-  return { headers, rawRows: result.data, sheetName: "CSV" };
+async function readCsv(buf: Buffer): Promise<{ headers: string[]; rawRows: Record<string, unknown>[]; sheetName: string }> {
+  const result = await parseCsvBuffer(buf);
+  return { headers: result.headers, rawRows: result.rows, sheetName: "CSV" };
 }
 
 // ─── Main parse function ──────────────────────────────────────────────────────
@@ -767,7 +687,7 @@ export async function parseFile(
   let sheetName: string | null = null;
 
   if (ext === "csv") {
-    const r = readCsv(buf);
+    const r = await readCsv(buf);
     headers = r.headers;
     rawRows = r.rawRows;
     sheetName = null;
@@ -820,7 +740,18 @@ export function analyzeReportData(
     (filenameResult.candidates.length > 1 && headerResult.resellerId !== null &&
       filenameResult.candidates.some(r => r.id !== headerResult.resellerId));
 
-  if (conflict) {
+  if (filenameResult.resellerId !== null) {
+    finalResellerId = filenameResult.resellerId;
+    finalResellerName = filenameResult.resellerName;
+    finalCandidates = conflict
+      ? [...new Map([...headerResult.candidates, ...filenameResult.candidates].map(r => [r.id, r])).values()]
+      : filenameResult.candidates;
+    finalConfidence = filenameResult.confidence;
+    if (conflict) headerResolutionSource = null;
+    else if (headerResult.resellerId === filenameResult.resellerId)
+      headerResolutionSource = headerResult.resolutionSource ?? "filename_token";
+    else headerResolutionSource = "filename_token";
+  } else if (conflict) {
     finalCandidates = [...new Map(
       [...headerResult.candidates, ...filenameResult.candidates].map(r => [r.id, r]),
     ).values()];
@@ -865,7 +796,7 @@ export function analyzeReportData(
   }
 
   const detectionReasoning = conflict
-    ? "Filename and report format/sheet identify different resellers. Select the correct reseller before committing."
+    ? `Filename identifies ${filenameResult.resellerName}; it is selected over the conflicting report format/sheet. Confirm before committing.`
     : reasonParts.length > 0
     ? `Detected ${finalResellerName ?? "unknown"} via: ${reasonParts.join(" + ")}`
     : null;

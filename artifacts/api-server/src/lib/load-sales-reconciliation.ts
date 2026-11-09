@@ -1,6 +1,6 @@
 import { pool } from "@workspace/db";
 import type { ScanbackImport } from "@workspace/api-zod";
-import { dateStringToWeekIso, isValidWeekIso } from "./parser";
+import { dateStringToWeekIso, isValidWeekIso } from "./dates";
 import { validDate } from "./scanback-engine";
 import { weeklySalesWeeks } from "./weekly-sales";
 import { mappedSoldColumn, salesReconciliation, type SalesAccount, type SalesPart, type SalesScope, type SalesUpload } from "./sales-reconciliation";

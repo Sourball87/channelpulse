@@ -1,5 +1,5 @@
 import type { ScanbackImport, SerialReconciliation, SerialReconciliationRow } from "@workspace/api-zod";
-import { dateStringToWeekIso, isValidWeekIso } from "./parser";
+import { dateStringToWeekIso, isValidWeekIso, weekDates } from "./dates";
 import { evidenceKey, ownerFor, serialKey, validDate, type EvidenceRow } from "./scanback-engine";
 import { firstReportedSales, reportedSales } from "./serial-tracking";
 import { weeklySalesWeeks, type WeeklySalesCell } from "./weekly-sales";
@@ -26,10 +26,7 @@ export function mappedSoldColumn(mappings: unknown, sold?: number): boolean | nu
   return sold != null && sold > 0 ? true : null;
 }
 export function weekBounds(week: string): { start: string; end: string } {
-  const year = Number(week.slice(0, 4)), n = Number(week.slice(6));
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const monday = jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * 86_400_000 + (n - 1) * 7 * 86_400_000;
-  return { start: new Date(monday).toISOString().slice(0, 10), end: new Date(monday + 6 * 86_400_000).toISOString().slice(0, 10) };
+  return weekDates(week) ?? { start: "", end: "" };
 }
 export function reconcileSales(input: {
   sold: number | null; soldColumn: boolean | null; serials: number | null;

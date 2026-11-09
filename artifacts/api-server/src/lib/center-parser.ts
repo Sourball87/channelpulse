@@ -6,7 +6,10 @@ import type { ProgramTableSource } from "@workspace/api-zod";
 
 export const centerKinds = ["soh", "claim", "evidence", "history", "price", "program", "unknown"] as const;
 export type CenterKind = typeof centerKinds[number];
-export const normalizeHeading = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+export const normalizeHeading = (s: string) => s
+  .replace(/^products\s*\[\s*([^\]]+)\s*\]$/i, "$1")
+  .replace(/^\[\s*([^\]]+)\s*\]$/, "$1")
+  .toLowerCase().replace(/[^a-z0-9]/g, "");
 const aliases: Record<string, string[]> = {
   sku: ["sku", "stockcode", "partno", "partnumber", "model", "modelcode"],
   description: ["description", "stockdescription", "productdescription"],
@@ -28,8 +31,8 @@ export function detectCenterKind(headers: string[], sheetName = "", filename = "
   if (mapping.sku && mapping.rrpIncCents && mapping.ddCostExCents && mapping.t1BuyExCents) return "price";
   try { return detectImportKind(headers); } catch { /* Try inventory rules next, never guess financial evidence. */ }
   const h = headers.map(normalizeHeading);
-  if (h.some(v => /^(soh|stockonhand|totalonhand|quantityonhand|onhand)$/.test(v)) &&
-      h.some(v => /^(sku|model|modelcode|partno|partnumber|manufacturermodel|itemcode|productcode)$/.test(v))) return "soh";
+  if (h.some(v => /^(soh|sohqty|stockonhand|totalonhand|quantityonhand|onhand)$/.test(v)) &&
+      h.some(v => /^(sku|model|modelcode|partno|partnumber|manufacturermodel|itemcode|productcode|productmodel)$/.test(v))) return "soh";
   if (/itemfor[ec]astreport/i.test(sheetName) && h.includes("soldqty")) return "soh";
   // Names are hints only; a filename alone cannot establish financial columns.
   void filename;

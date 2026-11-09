@@ -1,6 +1,8 @@
 import * as XLSX from "xlsx";
 import type { ScanbackImport, ScanbackImportRow, ScanbackMapping } from "@workspace/api-zod";
 import { cents, serialKey, validDate } from "./scanback-engine";
+import { dateStringToWeekIso, mostCommonWeek, parseDateValue } from "./dates";
+import { parseCsvBuffer } from "./csv-stream";
 import { isPronto, prontoColumns, prontoMapping, scopePronto, splitSerials, unmatchedCreditReason } from "./scanback-pronto";
 
 export type Sheets = Record<string, Record<string, unknown>[]>;
@@ -8,7 +10,7 @@ export interface Account { id: number; code: string; name: string; active?: bool
 const fields: Record<string, string[]> = {
   serial: ["serial", "serials", "serialno", "serialnumber", "sn", "imei"],
   sku: ["sku", "model", "modelnumber", "stockcode", "part", "partnumber", "productcode"],
-  date: ["date", "invoicedate", "selldate", "saledate", "orderdate", "approved"],
+  date: ["date", "saleday", "invoicedate", "selldate", "saledate", "orderdate", "approved"],
   account: ["accountcode", "customer", "customername", "account", "reseller", "prontoaccount"],
   quantity: ["qty", "quantity", "invoiceqty"],
   invoice: ["invoice", "invoiceno", "invoicenumber", "invoicereference"],
@@ -33,8 +35,8 @@ export function detectImportKind(headers: string[]): ScanbackImport["kind"] {
     throw new Error("This sheet contains both invoice and approval columns. Choose its spreadsheet type explicitly.");
   if (history) return "history";
   if (evidence) return "evidence";
-  if (["invoice", "unitPrice", "amount", "program", "reference"].some(has))
-    throw new Error("Could not confidently detect this spreadsheet type. Choose Invoice / credit evidence, Customer claim or Historical approved claims.");
+    if (["invoice", "unitPrice", "amount", "program", "reference"].some(has))
+    throw new Error("Could not confidently detect this spreadsheet type. Choose Invoice / credit evidence or Customer claim.");
   if (has("serial")) return "claim";
   throw new Error("Could not detect the spreadsheet type. A serial-number heading is required.");
 }
@@ -43,11 +45,56 @@ export function suggestMapping(headers: string[]): Record<string, string> {
     const costs = headers.filter(h => fields.cost.includes(norm(h)));
     return { ...prontoMapping, cost: costs.length === 1 ? costs[0] : "" };
   }
+  const saleDay = headers.filter(h => norm(h) === "saleday");
   return Object.fromEntries(Object.entries(fields).map(([f, aliases]) => {
     const matches = headers.filter(h => matchesField(f, h));
+    if (f === "date" && saleDay.length === 1) return [f, saleDay[0]];
     // Multiple candidate date/price columns require an explicit choice.
     return [f, matches.length === 1 ? matches[0] : ""];
   }));
+}
+
+export async function parseCsvSheets(buffer: Buffer): Promise<Sheets> {
+  const parsed = await parseCsvBuffer(buffer);
+  if (!parsed.headers.some(h => matchesField("serial", h)))
+    throw new Error("No serial-number heading found. Include a Serial Number column.");
+  const retained = isPronto(parsed.headers) ? prontoColumns(parsed.headers) : parsed.headers;
+  const rows = parsed.rows.map((row, index) => ({
+    ...Object.fromEntries(retained.map(h => [h, row[h] ?? ""])),
+    __sourceRow: index + 2,
+  })).filter(row => Object.entries(row).some(([key, value]) => key !== "__sourceRow" && value !== "" && value != null));
+  if (!rows.length) throw new Error("The CSV contains no serial rows.");
+  return { CSV: rows };
+}
+
+export function filterFullHistorySerialRows(
+  rows: Record<string, unknown>[],
+  mapping: Record<string, string>,
+  knownSerials: Iterable<string>,
+  fallbackWeek: string | null = null,
+) {
+  const dateColumn = mapping.date;
+  const serialColumn = mapping.serial;
+  const contentWeek = mostCommonWeek(dateColumn ? rows.map(row => row[dateColumn]) : []).weekIso;
+  const detectedWeek = contentWeek ?? fallbackWeek;
+  const seen = new Set([...knownSerials].map(serialKey).filter(Boolean));
+  const kept: Record<string, unknown>[] = [];
+  let skippedKnownHistory = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const serials = String(serialColumn ? row[serialColumn] ?? "" : "")
+      .split(/[|,;\n]+/).map(serialKey).filter(Boolean);
+    const rowWeek = dateColumn ? dateStringToWeekIso(parseDate(row[dateColumn], "dmy")) : "";
+    const inDetectedWeek = !!detectedWeek && rowWeek === detectedWeek;
+    const unseen = serials.some(serial => !seen.has(serial));
+    if (inDetectedWeek || unseen) {
+      kept.push({ ...row, __sourceRow: Number(row.__sourceRow) || i + 2 });
+      for (const serial of serials) seen.add(serial);
+    } else {
+      skippedKnownHistory++;
+    }
+  }
+  return { rows: kept, weekIso: detectedWeek, contentWeek, skippedKnownHistory };
 }
 export function parseSheets(buffer: Buffer): Sheets {
   const wb = XLSX.read(buffer, { type: "buffer", cellDates: false, raw: true, sheetRows: 20002 });
@@ -75,30 +122,7 @@ export function parseSheets(buffer: Buffer): Sheets {
   return out;
 }
 export function parseDate(v: unknown, mode: "dmy" | "mdy"): string {
-  if (v === "" || v == null) return "";
-  if (typeof v === "number") {
-    if (Number.isSafeInteger(v) && /^\d{8}$/.test(String(v))) {
-      const compact = String(v);
-      const date = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
-      return validDate(date) ? date : "";
-    }
-    const d = XLSX.SSF.parse_date_code(v);
-    const date = d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : "";
-    return validDate(date) ? date : "";
-  }
-  const text = String(v).trim();
-  if (/^\d{8}$/.test(text)) {
-    const date = `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
-    return validDate(date) ? date : "";
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return validDate(text) ? text : "";
-  const match = text.match(/^(\d{1,2})[/. -](\d{1,2})[/. -](\d{2}|\d{4})$/);
-  if (!match) return "";
-  const year = match[3].length === 2 ? "20" + match[3] : match[3];
-  const month = mode === "dmy" ? match[2] : match[1];
-  const day = mode === "dmy" ? match[1] : match[2];
-  const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  return validDate(date) ? date : "";
+  return parseDateValue(v, mode);
 }
 
 export function prontoDateRange(rows: Record<string, unknown>[], mode: "dmy" | "mdy") {
@@ -120,7 +144,7 @@ export function mapImport(
   const mapping = options.mapping;
   const rawRows = raw[options.sheet];
   if (!rawRows) throw new Error("Choose a valid worksheet.");
-  const headers = Object.keys(rawRows[0] ?? {});
+  const headers = Object.keys(rawRows[0] ?? {}).filter(h => h !== "__sourceRow");
   if (Object.entries(mapping).some(([key, column]) => !fields[key] || (column && !headers.includes(column))))
     throw new Error("Mapping contains an unknown field or column.");
   const required = base.kind === "evidence"
@@ -146,8 +170,8 @@ export function mapImport(
     const value = (key: string) => mapping[key] ? row[mapping[key]] : "";
     const text = (key: string) => String(value(key) ?? "").trim();
     const serials = scope ? splitSerials(value("serial")) : text("serial").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
-    if (rows.length + serials.length > 100_000)
-      throw new Error("Limit each import to 100,000 serial events; split this extract.");
+    if (rows.length + serials.length > 1_000_000)
+      throw new Error("Limit each import to 1,000,000 serial events; split this extract.");
     const sku = text("sku").toUpperCase();
     const date = parseDate(value("date"), options.dateFormat);
     const name = text("account").toUpperCase();
@@ -196,7 +220,7 @@ export function mapImport(
       invoice: text("invoice"), unitPriceCents: price == null ? null : Math.abs(price),
       costCents: cost == null ? null : Math.abs(cost),
       amountCents: amount, program: text("program"), reference: text("reference"),
-      sourceRow: i + 2,
+      sourceRow: Number(row.__sourceRow) || i + 2,
     });
   });
   const unmatchedCreditCount = scope?.preview.excludedCounts[unmatchedCreditReason] ?? 0;

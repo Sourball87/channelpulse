@@ -1,4 +1,4 @@
-import { previousWeekIso } from "./parser";
+import { previousWeekIso } from "./dates";
 
 /** Calendar weeks, including weeks without any reports; never skip gaps. */
 export function weeklySalesWeeks(endWeek: string): string[] {

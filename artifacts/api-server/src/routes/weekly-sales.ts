@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { GetDashboardWeeklySalesQueryParams } from "@workspace/api-zod";
 import { parseFilterParams } from "../lib/filter-params";
-import { isValidWeekIso } from "../lib/parser";
+import { isValidWeekIso } from "../lib/dates";
 import { weeklySalesData } from "../lib/weekly-sales";
 import { loadSalesReconciliation } from "../lib/load-sales-reconciliation";
 import { reconciledWeeklyCells } from "../lib/sales-reconciliation";

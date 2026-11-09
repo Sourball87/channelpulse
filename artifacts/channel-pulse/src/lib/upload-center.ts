@@ -9,6 +9,7 @@ export interface CenterUpload {
   name: string;
   accountId: number | null;
   weekIso: string | null;
+  weekSource?: "filename" | "file_dates" | "manual" | "unknown";
   sourceId: string | null;
   state: "preview" | "committed" | "superseded";
   createdAt: string;
@@ -16,8 +17,10 @@ export interface CenterUpload {
   summary: {
     skuCount: number; soh: number; unitsSold: number; serialCount: number;
     from: string; to: string; ddRangeCount: number; invoicedCount: number;
+    nonSerialCount: number; historyRowsSkipped: number;
   };
   errors: string[];
+  warnings?: string[];
   headers: string[];
   mapping: Record<string, string>;
   preview: Record<string, unknown>[];

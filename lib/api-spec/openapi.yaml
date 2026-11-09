@@ -1926,6 +1926,9 @@ components:
         name: { type: string }
         accountId: { type: [integer, "null"] }
         weekIso: { type: [string, "null"] }
+        weekSource:
+          type: string
+          enum: [filename, file_dates, manual, unknown]
         sourceId: { type: [string, "null"] }
         state: { type: string, enum: [preview, committed, superseded] }
         createdAt: { type: string }
@@ -1942,7 +1945,10 @@ components:
             to: { type: string }
             ddRangeCount: { type: integer }
             invoicedCount: { type: integer }
+            nonSerialCount: { type: integer }
+            historyRowsSkipped: { type: integer }
         errors: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
         headers: { type: array, items: { type: string } }
         mapping: { type: object, additionalProperties: { type: string } }
         preview: { type: array, items: { type: object, additionalProperties: true } }
