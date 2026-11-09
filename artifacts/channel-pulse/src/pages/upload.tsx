@@ -133,6 +133,7 @@ export default function UploadCenter() {
   const pending = useMemo(() => uploads.filter((u) => u.state === "preview").sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [uploads]);
   const selectedPending = pending.filter((u) => selectedPendingIds.includes(u.id));
   const allPendingSelected = pending.length > 0 && selectedPending.length === pending.length;
+  const committedDeleteCount = bulkDeleteTargets?.filter(upload => upload.state !== "preview").length ?? 0;
   const open = uploads.find((u) => u.id === openId) ?? null;
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const pricesUpdated = (center.data?.prices ?? []).reduce<string | null>((m, p) => (!m || p.updatedAt > m ? p.updatedAt : m), null);
@@ -189,8 +190,12 @@ export default function UploadCenter() {
     const target = deleteTarget;
     deleteCenter.mutate(target.id, {
       onSuccess: () => {
-        trackEvent("upload_deleted", { was_committed: false });
-        toast({ title: "Pending upload deleted", description: `"${target.name}" has been removed.` });
+        const wasCommitted = target.state !== "preview";
+        trackEvent("upload_deleted", { was_committed: wasCommitted });
+        toast({
+          title: wasCommitted ? "Uploaded file and linked data deleted" : "Pending upload deleted",
+          description: `"${target.name}" has been removed.`,
+        });
         if (openId === target.id) setOpenId(null);
         setSelectedPendingIds(ids => ids.filter(id => id !== target.id));
         setDeleteTarget(null);
@@ -204,10 +209,13 @@ export default function UploadCenter() {
     const targets = bulkDeleteTargets;
     deleteManyCenter.mutate(targets.map(upload => upload.id), {
       onSuccess: ({ deletedIds }) => {
-        trackEvent("upload_deleted", { was_committed: false, file_count: deletedIds.length });
+        const deletedCommittedCount = targets.filter(upload => upload.state !== "preview").length;
+        trackEvent("upload_deleted", { was_committed: deletedCommittedCount > 0, file_count: deletedIds.length });
         toast({
-          title: `${deletedIds.length} pending upload${deletedIds.length === 1 ? "" : "s"} deleted`,
-          description: "The selected files have been removed.",
+          title: `${deletedIds.length} upload${deletedIds.length === 1 ? "" : "s"} deleted`,
+          description: deletedCommittedCount
+            ? `${deletedCommittedCount} committed file${deletedCommittedCount === 1 ? "" : "s"} and linked data removed. Approved claim history remains.`
+            : "The selected pending files have been removed.",
         });
         if (openId && deletedIds.includes(openId)) setOpenId(null);
         setSelectedPendingIds(ids => ids.filter(id => !deletedIds.includes(id)));
@@ -221,8 +229,7 @@ export default function UploadCenter() {
   };
 
   const requestBulkDelete = (targets: CenterUpload[]) => {
-    const deletable = targets.filter(upload => upload.state === "preview");
-    if (deletable.length) setBulkDeleteTargets(deletable);
+    if (targets.length) setBulkDeleteTargets(targets);
   };
 
   const doCommit = async (centerUploadId: string, uploadId: number, resellerId: number, weekIso: string, mappings: any[], confirmOverwrite: boolean) => {
@@ -496,9 +503,13 @@ export default function UploadCenter() {
       <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-rose-500" /> Delete pending upload?</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-rose-500" /> {deleteTarget?.state === "preview" ? "Delete pending upload?" : "Delete uploaded file and data?"}</DialogTitle>
             <DialogDescription>
-              This removes <strong className="text-foreground">{deleteTarget?.name}</strong>. It has not been committed, so no reporting or claim data changes.
+              {deleteTarget?.state === "preview" ? (
+                <>This removes <strong className="text-foreground">{deleteTarget?.name}</strong>. It has not been committed, so reporting and claim data will not change.</>
+              ) : (
+                <>This permanently removes <strong className="text-foreground">{deleteTarget?.name}</strong> and its linked data. SOH snapshots, current price rows owned by this file, or claim/Pronto source evidence may be removed. Earlier overwritten price values are not restored. Approved claim batches and serial history remain. Saved scanback promotions are separate and will not be deleted.</>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -513,9 +524,11 @@ export default function UploadCenter() {
       <Dialog open={!!bulkDeleteTargets?.length} onOpenChange={(o) => { if (!o && !deleteManyCenter.isPending) setBulkDeleteTargets(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-rose-500" /> Delete {bulkDeleteTargets?.length ?? 0} pending uploads?</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-rose-500" /> Delete {bulkDeleteTargets?.length ?? 0} selected uploads?</DialogTitle>
             <DialogDescription>
-              These files have not been committed. Deleting them removes the files and their pending review data; reporting and claim history will not change.
+              {committedDeleteCount > 0
+                ? `${committedDeleteCount} committed or superseded file${committedDeleteCount === 1 ? "" : "s"} will be permanently removed with linked data. SOH snapshots, current price rows owned by those files, and claim/Pronto source evidence may be removed. Earlier overwritten price values are not restored. Approved claim batches and serial history remain; saved scanback promotions are separate and will not be deleted.`
+                : "These files have not been committed. Deleting them removes the files and pending review data; reporting and claim history will not change."}
             </DialogDescription>
           </DialogHeader>
           {!!bulkDeleteTargets?.length && (

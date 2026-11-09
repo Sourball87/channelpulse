@@ -119,7 +119,6 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect(evidence.summary.serialCount).toBe(2);
       expect((await call(`/scanback/imports/${evidence.sourceId}/commit`, "POST", {})).status).toBe(200);
       expect((await call(`/upload-center/${evidence.id}`, "PATCH", { accountId: null })).status).toBe(409);
-      expect((await call(`/upload-center/${evidence.id}`, "DELETE")).status).toBe(409);
       const claim = find("claim");
       expect((await call(`/scanback/imports/${claim.sourceId}/commit`, "POST", {})).status).toBe(200);
       const learnedAccount = (await call("/resellers")).data.find((r: { id: number }) => r.id === account.id);
@@ -136,7 +135,17 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect(ws.prices.find((p: any) => p.sku === sku)).toMatchObject({ rrpIncCents: 11001, ddCostExCents: 6527, t1BuyExCents: 9099 });
       expect(ws.programRows.find((p: any) => p.sku === sku)).toMatchObject({ gtmBuyCents: 7025 });
       expect(ws.uploads.find((p: CenterUpload) => p.id === claim.id).summary).toMatchObject({ ddRangeCount: 1, invoicedCount: 1, serialCount: 1 });
-      expect((await call(`/upload-center/${price.id}`, "DELETE")).status).toBe(409);
+      expect((await call(`/upload-center/${evidence.id}`, "DELETE")).status).toBe(200);
+      expect((await call("/scanback/workspace")).data.imports.some((item: { id: string }) => item.id === evidence.sourceId)).toBe(false);
+      expect((await call(`/upload-center/${claim.id}`, "DELETE")).status).toBe(200);
+      const scanbackAfterClaimDelete = (await call("/scanback/workspace")).data;
+      expect(scanbackAfterClaimDelete.imports.some((item: { id: string }) => item.id === claim.sourceId)).toBe(false);
+      expect(scanbackAfterClaimDelete.drafts.some((draft: any) => draft.settings.claimImportId === claim.sourceId)).toBe(false);
+
+      expect((await call(`/upload-center/${price.id}`, "DELETE")).status).toBe(200);
+      expect((await call("/upload-center")).data.prices.some((item: { sku: string }) => item.sku === sku)).toBe(false);
+      expect((await call(`/upload-center/${program.id}`, "DELETE")).status).toBe(200);
+      expect((await call("/upload-center")).data.uploads.some((item: CenterUpload) => item.id === program.id)).toBe(false);
       // Unsupported files remain pending; a user may explicitly reclassify.
       const unknown = await stage([["unknown", `Unrecognised,Value\nA,B\n`]], account.id);
       expect(unknown.uploads[0].kind).toBe("unknown");
@@ -144,7 +153,6 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect((await call(`/upload-center/${unknown.uploads[0].id}`, "PATCH", { kind: "program" })).status).toBe(200);
       expect((await call(`/upload-center/${unknown.uploads[0].id}/commit`, "POST", {})).status).toBe(400);
       expect((await call(`/upload-center/${unknown.uploads[0].id}`, "DELETE")).status).toBe(200);
-      expect((await call(`/upload-center/${soh.id}`, "DELETE")).status).toBe(409);
 
       const bulk = await stage([
         ["bulk-a", `Unrecognised,Value\n${prefix}A,one\n`],
@@ -154,11 +162,12 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect(bulkDelete.status).toBe(200);
       expect(bulkDelete.data.deletedIds.sort()).toEqual(bulk.uploads.map((upload: CenterUpload) => upload.id).sort());
 
-      const protectedBatch = await stage([["bulk-protected", `Unrecognised,Value\n${prefix}C,three\n`]], account.id);
-      const protectedDelete = await call("/upload-center", "DELETE", { ids: [protectedBatch.uploads[0].id, soh.id] });
-      expect(protectedDelete.status).toBe(409);
-      expect((await call("/upload-center")).data.uploads.some((upload: CenterUpload) => upload.id === protectedBatch.uploads[0].id)).toBe(true);
-      expect((await call(`/upload-center/${protectedBatch.uploads[0].id}`, "DELETE")).status).toBe(200);
+      const mixedBatch = await stage([["bulk-committed", `Unrecognised,Value\n${prefix}C,three\n`]], account.id);
+      const mixedDelete = await call("/upload-center", "DELETE", { ids: [mixedBatch.uploads[0].id, soh.id] });
+      expect(mixedDelete.status).toBe(200);
+      expect(mixedDelete.data.deletedIds).toHaveLength(2);
+      expect((await pool.query("SELECT 1 FROM inventory_snapshots WHERE upload_id=$1", [Number(soh.sourceId)])).rowCount).toBe(0);
+      expect((await pool.query("SELECT 1 FROM uploads WHERE id=$1", [Number(soh.sourceId)])).rowCount).toBe(0);
     } finally {
       // Test-owned references/evidence only; never use broad business-data cleanup.
       if (accountId != null) {

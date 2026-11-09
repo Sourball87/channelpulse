@@ -357,13 +357,22 @@ router.post("/upload-center/files", intake.array("files"), async (req, res) => {
   return res.json({ uploads: staged, errors });
 });
 async function removeSource(c: Client, e: CenterUpload) {
-  requireThat(e.state !== "committed", "Committed financial evidence and reports are immutable.", 409);
   if (e.kind === "soh" && e.sourceId) {
-    const r = await c.query("DELETE FROM uploads WHERE id=$1 AND status <> 'committed' RETURNING id", [e.sourceId]);
-    requireThat(r.rowCount, "This source was committed or changed. Refresh before editing.", 409);
+    const r = await c.query("DELETE FROM uploads WHERE id=$1 RETURNING id", [e.sourceId]);
+    requireThat(r.rowCount, "This source no longer exists. Refresh before deleting.", 409);
   } else if (e.sourceId && ["claim", "evidence", "history"].includes(e.kind)) {
-    const r = await c.query("DELETE FROM scanback_imports WHERE id=$1 AND payload->>'state'<>'committed' RETURNING id", [e.sourceId]);
-    requireThat(r.rowCount, "This source was committed or changed. Refresh before editing.", 409);
+    if (e.kind === "claim") {
+      // Unapproved drafts cannot be recalculated without their source report.
+      // Preserve drafts already represented by an approved, immutable batch.
+      await c.query(`DELETE FROM scanback_drafts d WHERE d.payload->'settings'->>'claimImportId'=$1
+        AND NOT EXISTS (SELECT 1 FROM scanback_batches b WHERE b.draft_id=d.id)`, [e.sourceId]);
+    }
+    const r = await c.query("DELETE FROM scanback_imports WHERE id=$1 RETURNING id", [e.sourceId]);
+    requireThat(r.rowCount, "This source no longer exists. Refresh before deleting.", 409);
+  } else if (e.kind === "price") {
+    // price_list.upload_id references this registry row without ON DELETE
+    // CASCADE; remove only current price entries still owned by this upload.
+    await c.query("DELETE FROM price_list WHERE upload_id=$1", [e.id]);
   }
 }
 router.delete("/upload-center", wrap(async (c, req) => {
@@ -374,11 +383,10 @@ router.delete("/upload-center", wrap(async (c, req) => {
   const entries: CenterUpload[] = [];
   for (const id of ids as string[]) {
     const { entry } = await load(c, id);
-    requireThat(entry.state !== "committed", "Committed financial evidence and reports are immutable.", 409);
     entries.push(entry);
   }
-  // Validate every entry before removing any source. The transaction also
-  // rolls back the whole selection if a source changes during deletion.
+  // Resolve every entry before removing any source. The transaction rolls
+  // back the whole selection if any linked source cannot be deleted.
   for (const entry of entries) {
     await removeSource(c, entry);
     await c.query("DELETE FROM center_uploads WHERE id=$1", [entry.id]);

@@ -530,9 +530,8 @@ export function AllUploadsTable({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const list = uploads.filter((u) => kind === "all" || u.kind === kind).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const deletable = list.filter(upload => upload.state === "preview");
-  const selected = deletable.filter(upload => selectedIds.includes(upload.id));
-  const allSelected = deletable.length > 0 && selected.length === deletable.length;
+  const selected = list.filter(upload => selectedIds.includes(upload.id));
+  const allSelected = list.length > 0 && selected.length === list.length;
   return (
     <section className="space-y-2" data-testid="section-all-uploads">
       <div className="flex items-center justify-between">
@@ -545,13 +544,13 @@ export function AllUploadsTable({
           </SelectContent>
         </Select>
       </div>
-      {!loading && deletable.length > 0 && (
+      {!loading && list.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-background px-3 py-2">
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <Checkbox checked={allSelected ? true : selected.length ? "indeterminate" : false}
-              onCheckedChange={(checked) => setSelectedIds(checked === true ? deletable.map(upload => upload.id) : [])}
-              aria-label="Select all pending uploads in this list" data-testid="checkbox-select-all-uploads" />
-            Select pending uploads
+              onCheckedChange={(checked) => setSelectedIds(checked === true ? list.map(upload => upload.id) : [])}
+              aria-label="Select all uploads in this list" data-testid="checkbox-select-all-uploads" />
+            Select all uploads
           </label>
           <span className="text-xs text-muted-foreground">{selected.length} selected</span>
           <Button size="sm" variant="destructive" className="ml-auto" disabled={!selected.length}
@@ -573,13 +572,11 @@ export function AllUploadsTable({
             ) : list.map((u) => (
               <TableRow key={u.id} data-testid={`row-upload-${u.id}`}>
                 <TableCell>
-                  {u.state === "preview" && (
-                    <Checkbox checked={selectedIds.includes(u.id)}
-                      onCheckedChange={(checked) => setSelectedIds(ids => checked === true
-                        ? ids.includes(u.id) ? ids : [...ids, u.id]
-                        : ids.filter(id => id !== u.id))}
-                      aria-label={`Select ${u.name}`} data-testid={`checkbox-upload-${u.id}`} />
-                  )}
+                  <Checkbox checked={selectedIds.includes(u.id)}
+                    onCheckedChange={(checked) => setSelectedIds(ids => checked === true
+                      ? ids.includes(u.id) ? ids : [...ids, u.id]
+                      : ids.filter(id => id !== u.id))}
+                    aria-label={`Select ${u.name}`} data-testid={`checkbox-upload-${u.id}`} />
                 </TableCell>
                 <TableCell><KindBadge kind={u.kind} /></TableCell>
                 <TableCell className="font-mono text-xs">{u.accountId == null ? "-" : customerLabel(resById.get(u.accountId)?.code ?? u.accountId)}</TableCell>
@@ -593,9 +590,11 @@ export function AllUploadsTable({
                     <>
                       <Button variant="outline" size="sm" className="mr-1 h-7" onClick={() => onReview(u)} data-testid={`button-review-${u.id}`}>Review</Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Edit details" onClick={() => onEdit(u)} data-testid={`button-edit-${u.id}`}><Pencil className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-600 hover:bg-rose-50" aria-label="Delete pending upload" onClick={() => onDelete(u)} data-testid={`button-delete-${u.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </>
-                  ) : <span className="text-[11px] text-muted-foreground">Immutable</span>}
+                  ) : null}
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-600 hover:bg-rose-50"
+                    aria-label={u.state === "preview" ? "Delete pending upload" : "Delete uploaded file"}
+                    onClick={() => onDelete(u)} data-testid={`button-delete-${u.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </TableCell>
               </TableRow>
             ))}
