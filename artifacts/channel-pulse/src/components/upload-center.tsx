@@ -315,9 +315,14 @@ function SerialSummary({ u, reseller, programs, week }: { u: CenterUpload; resel
       <p className="font-mono text-[11px] text-slate-600">
         {n(s.serialCount)} serials &middot; {n(s.skuCount)} SKUs &middot; {shortDate(s.from)} - {shortDate(s.to)}
       </p>
+      {!!s.historyRowsSkipped && (
+        <p className="text-[11px] text-amber-800" data-testid={`text-history-rows-skipped-${u.id}`}>
+          {n(s.historyRowsSkipped)} historical rows skipped.
+        </p>
+      )}
       {!!s.nonSerialCount && (
         <p className="text-[11px] text-amber-800">
-          {n(s.nonSerialCount)} DigiDirect barcodes or part labels excluded from serial matching and added to the chase list.
+          {n(s.nonSerialCount)} {customerLabel(reseller.code)} barcodes or part labels excluded from serial matching and added to the chase list.
         </p>
       )}
       <p className="text-[11px] text-slate-600"><span className="font-semibold tabular-nums">{n(s.invoicedCount)}</span> of {n(s.ddRangeCount)} reported serials in DD range invoiced to this customer <span className="text-muted-foreground">(coverage only, not eligibility)</span></p>

@@ -215,14 +215,15 @@ const REPORT_FORMATS: ReportFormat[] = [
     resellerCodes: ["ca", "ks"],
   },
   {
-    formatId: "v_report",
-    headers: ["partnumber", "soh", "soldlast7days", "soldmtd", "avgcost"],
-    resellerCodes: ["pccg", "digi"],
-  },
-  {
     formatId: "scorptec_csv",
     headers: ["model", "onhand", "soldlast7days", "itemaveragecostexgst", "qtyonorder"],
     optionalHeaders: ["brand", "category", "title", "active", "itemaveragecostincgst", "totalcostexgst", "stockage"],
+    resellerCodes: ["scorptec"],
+  },
+  {
+    formatId: "scorptec_powerbi",
+    headers: ["model", "sohqty", "soldlast7days", "onorderqty", "unitcostexgst"],
+    optionalHeaders: ["brand", "category", "title", "active", "totalcostexgst", "stockage"],
     resellerCodes: ["scorptec"],
   },
   {
@@ -235,11 +236,6 @@ const REPORT_FORMATS: ReportFormat[] = [
     headers: ["sapcode", "sku", "totalonhand", "otheronhand", "daystosale", "onorderqty", "soldqty"],
     optionalHeaders: ["sapprice", "cost", "totalonhandallwhrevenue", "revenue", "purchaseqty", "purchasevalue", "ageing90", "ageing90cost", "ageing120", "ageing120cost"],
     resellerCodes: ["centrecom"],
-  },
-  {
-    formatId: "jw_weekly",
-    headers: ["modelcode", "soh", "soldlast7days", "soldmtd", "qtyonpo", "avgcost"],
-    resellerCodes: ["jw"],
   },
   {
     formatId: "pccg_forecast",

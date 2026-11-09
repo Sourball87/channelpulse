@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import type { ScanbackImport, ScanbackImportRow, ScanbackMapping } from "@workspace/api-zod";
 import { cents, serialKey, validDate } from "./scanback-engine";
-import { dateStringToWeekIso, mostCommonWeek, parseDateValue } from "./dates";
+import { dateStringToWeekIso, isValidWeekIso, parseDateValue } from "./dates";
 import { parseCsvBuffer } from "./csv-stream";
 import { isPronto, prontoColumns, prontoMapping, scopePronto, splitSerials, unmatchedCreditReason } from "./scanback-pronto";
 
@@ -72,30 +72,49 @@ export function filterFullHistorySerialRows(
   rows: Record<string, unknown>[],
   mapping: Record<string, string>,
   knownSerials: Iterable<string>,
-  fallbackWeek: string | null = null,
+  filenameWeek: string | null = null,
 ) {
   const dateColumn = mapping.date;
   const serialColumn = mapping.serial;
-  const contentWeek = mostCommonWeek(dateColumn ? rows.map(row => row[dateColumn]) : []).weekIso;
-  const detectedWeek = contentWeek ?? fallbackWeek;
+  const rowDates = rows.map(row => dateColumn ? parseDateValue(row[dateColumn], "dmy") : "");
+  const weekCounts = new Map<string, { count: number; latestDate: string }>();
+  const rowWeeks = rowDates.map(date => {
+    if (!date) return "";
+    const week = dateStringToWeekIso(date);
+    const current = weekCounts.get(week);
+    weekCounts.set(week, {
+      count: (current?.count ?? 0) + 1,
+      latestDate: !current || date > current.latestDate ? date : current.latestDate,
+    });
+    return week;
+  });
+  const contentWeek = [...weekCounts.entries()].sort((a, b) =>
+    b[1].count - a[1].count || b[1].latestDate.localeCompare(a[1].latestDate),
+  )[0]?.[0] ?? null;
+  const dates = rowDates.filter(Boolean).sort();
+  const spansMoreThanThreeWeeks = dates.length > 1 &&
+    Date.parse(`${dates[dates.length - 1]}T00:00:00Z`) - Date.parse(`${dates[0]}T00:00:00Z`) > 21 * 86_400_000;
+  const validFilenameWeek = filenameWeek && isValidWeekIso(filenameWeek) ? filenameWeek : null;
+  const detectedWeek = spansMoreThanThreeWeeks
+    ? validFilenameWeek ?? contentWeek
+    : contentWeek ?? validFilenameWeek;
   const seen = new Set([...knownSerials].map(serialKey).filter(Boolean));
   const kept: Record<string, unknown>[] = [];
-  let skippedKnownHistory = 0;
+  let historicalRowsSkipped = 0;
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const serials = String(serialColumn ? row[serialColumn] ?? "" : "")
       .split(/[|,;\n]+/).map(serialKey).filter(Boolean);
-    const rowWeek = dateColumn ? dateStringToWeekIso(parseDate(row[dateColumn], "dmy")) : "";
-    const inDetectedWeek = !!detectedWeek && rowWeek === detectedWeek;
+    const inDetectedWeek = !!detectedWeek && rowWeeks[i] === detectedWeek;
     const unseen = serials.some(serial => !seen.has(serial));
-    if (inDetectedWeek || unseen) {
+    if (inDetectedWeek || (!spansMoreThanThreeWeeks && unseen)) {
       kept.push({ ...row, __sourceRow: Number(row.__sourceRow) || i + 2 });
       for (const serial of serials) seen.add(serial);
     } else {
-      skippedKnownHistory++;
+      historicalRowsSkipped++;
     }
   }
-  return { rows: kept, weekIso: detectedWeek, contentWeek, skippedKnownHistory };
+  return { rows: kept, weekIso: detectedWeek, contentWeek, historicalRowsSkipped, isFullHistory: spansMoreThanThreeWeeks };
 }
 export function parseSheets(buffer: Buffer): Sheets {
   const wb = XLSX.read(buffer, { type: "buffer", cellDates: false, raw: true, sheetRows: 20002 });
@@ -249,7 +268,7 @@ export function mapImport(
     rows, errors, recordCount: rows.length, nonSerialCount, nonSerialIdentifiers: [...nonSerialIdentifiers], warnings: [
       "Review dates and column mappings before committing. No AI is used.",
       ...(base.kind === "evidence" ? ["Unit price must be the amount invoiced to the reseller, excluding GST—not purchase cost."] : []),
-      ...(nonSerialCount ? [`Not a serial — looks like a barcode: ${nonSerialCount} DigiDirect barcode or part-label row(s) excluded from serial matching.`] : []),
+      ...(nonSerialCount ? [`Not a serial — looks like a barcode: ${nonSerialCount} barcode or part-label row(s) excluded from serial matching.`] : []),
       ...(scope ? [
         "Pronto POS: Invoice Date, Ship Qty and Item Price are used. Cost, RRP, contact and address fields are not retained.",
         `${scope.preview.includedSourceRows} source rows included; ${scope.preview.excludedSourceRows} excluded. Excluded rows are not evidence and cannot make a serial payable.`,

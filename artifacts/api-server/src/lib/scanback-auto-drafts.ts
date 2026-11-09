@@ -29,7 +29,10 @@ export function splitClaimRowsByPromotion(
 
     const matches = programs.filter(program =>
       !program.archived && program.customerIds.includes(accountId) &&
-      row.date >= program.start && row.date <= program.end,
+      row.date >= program.start && row.date <= program.end &&
+      program.lines.some(line =>
+        String(line.sku ?? "").trim().toUpperCase() === row.sku.trim().toUpperCase(),
+      ),
     );
     if (matches.length !== 1) {
       unmatched.push({

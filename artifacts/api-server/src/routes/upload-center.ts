@@ -108,28 +108,30 @@ async function createSource(c: Client, entry: CenterUpload, raw: Sheets, buffer?
     let sourceRows = financial[sheet] ?? [];
     const headers = Object.keys(sourceRows[0] ?? {}).filter(h => h !== "__sourceRow");
     const mapping = suggestMapping(headers);
-    if (entry.kind === "claim" && entry.weekSource !== "manual") {
+    const customer = entry.accountId != null ? (await profiles(c)).find(account => account.id === entry.accountId) : undefined;
+    const isLargePleHistory = entry.kind === "claim" && /\.csv$/i.test(entry.name) &&
+      customer?.code?.toLowerCase() === "ple" && (data.length > 10 * 1024 * 1024 || sourceRows.length > 100_000);
+    if (entry.kind === "claim" && entry.weekSource !== "manual" && !isLargePleHistory) {
       const detected = mostCommonWeek(mapping.date ? sourceRows.map(row => row[mapping.date]) : []);
       if (detected.weekIso) {
         entry.weekIso = detected.weekIso;
         entry.weekSource = "file_dates";
       }
     }
-    if (entry.kind === "claim" && /\.csv$/i.test(entry.name) && entry.accountId != null) {
-      const customer = (await profiles(c)).find(account => account.id === entry.accountId);
-      if (customer?.code?.toLowerCase() === "ple" && (data.length > 10 * 1024 * 1024 || sourceRows.length > 100_000)) {
-        const known = (await loadReportedSales(c)).map(row => row.serial);
-        const filtered = filterFullHistorySerialRows(sourceRows, mapping, known, entry.weekIso);
-        sourceRows = filtered.rows;
-        financial[sheet] = sourceRows;
-        if (entry.weekSource !== "manual" && filtered.weekIso) {
-          entry.weekIso = filtered.weekIso;
-          entry.weekSource = "file_dates";
-        }
-        entry.summary.historyRowsSkipped = filtered.skippedKnownHistory;
-        if (filtered.skippedKnownHistory)
-          entry.warnings = [...(entry.warnings ?? []), `${filtered.skippedKnownHistory.toLocaleString()} older rows skipped as already-known history.`];
+    if (isLargePleHistory) {
+      const known = (await loadReportedSales(c)).map(row => row.serial);
+      const filenameWeek = detectWeekFromFilename(entry.name).weekIso;
+      const targetWeek = entry.weekSource === "manual" ? entry.weekIso : filenameWeek;
+      const filtered = filterFullHistorySerialRows(sourceRows, mapping, known, targetWeek);
+      sourceRows = filtered.rows;
+      financial[sheet] = sourceRows;
+      if (entry.weekSource !== "manual" && filtered.weekIso) {
+        entry.weekIso = filtered.weekIso;
+        entry.weekSource = filtered.isFullHistory && filenameWeek ? "filename" : "file_dates";
       }
+      entry.summary.historyRowsSkipped = filtered.historicalRowsSkipped;
+      if (filtered.historicalRowsSkipped)
+        entry.warnings = [...(entry.warnings ?? []), `${filtered.historicalRowsSkipped.toLocaleString()} historical rows skipped.`];
     }
     const key = createHash("sha256").update(entry.kind).update(data).digest("hex");
     const duplicate = await c.query("SELECT payload FROM scanback_imports WHERE content_key=$1", [key]);

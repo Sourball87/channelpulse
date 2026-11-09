@@ -9,11 +9,17 @@ Show each reporting week alongside its Monday–Sunday calendar date range, not 
 
 **How to apply:** Add calendar ranges to reporting-week labels while preserving ISO-week identifiers, grouping, and actual upload timestamps.
 
-Do not assume all files supplied together share a reporting week or reseller. Undated reports require explicit week confirmation, and V-Report attribution must be reviewed rather than inferred from another report.
+Do not assume all files supplied together share a reporting week or reseller. Undated reports require explicit week confirmation. The former PartNumber/SOH/SoldLast7Days/SoldMTD/AvgCost signature belongs uniquely to JW; it is not a shared V-Report format.
 
-**Why:** These exports omit metadata, and the same V-Report structure can belong to PCCG or DigiDirect. Recognition does not establish ownership or reporting period.
+**Why:** The old parser tagged JW's headers as a shared PCCG/DigiDirect format. The corrected report structure and real files identify JW uniquely, while genuinely shared headers still need a reliable tie-breaker.
 
-**How to apply:** Distinguish successful format parsing from permission to commit. Validate report compatibility without importing or overwriting existing data unless requested.
+**How to apply:** Match a format only to its actual reseller candidates, using verified sheet-name tie-breakers for shared signatures. Keep week confirmation and commit/overwrite safeguards separate from format recognition.
+
+For PLE serial uploads spanning more than three weeks, use the filename-derived week and keep only rows from that week. If the filename has no week, fall back to content dates; never keep older rows just because a serial is unseen, and show how many rows were skipped.
+
+**Why:** PLE's full-history serial export contains years of data, while its filename identifies the intended weekly period.
+
+**How to apply:** Apply this rule to full-history serial uploads before building the preview, and surface the excluded historical-row count in Upload Center.
 
 Use the ISO calendar week of an explicit report date, or the ending date of a filename date range. Do not silently shift Monday-dated Centrecom reports into the preceding week.
 

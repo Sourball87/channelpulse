@@ -159,11 +159,16 @@ describe("detectResellerFromFilename", () => {
 
 const CA_KS_HEADERS = ["Model", "StockOnHand", "StockOnOrder", "SoldLast7Days", "SoldMTD", "AverageCostExGST"];
 const SCORPTEC_HEADERS = ["Category", "Model", "OnHand", "SoldLast7Days", "ItemAverageCostExGST", "ItemAverageCostIncGST", "QtyOnOrder"];
+const SCORPTEC_POWERBI_HEADERS = [
+  "Products[Model]", "[SOH Qty]", "[Sold Last 7 Days]", "[On Order Qty]", "[Unit Cost exGST]",
+  "Products[Brand]", "Products[Category]", "Products[Title]", "Products[Active]",
+  "[Total Cost exGST]", "[Stock Age]",
+];
 const PLE_HEADERS = ["InventoryItemID", "ManufacturerModel", "QuantityOnHand", "QuantityOnOrder", "InvoicedQuantity", "AverageCostExTax"];
 const UMART_HEADERS = ["SAPCode", "SKU", "TotalOnHand", "OtherOnHand", "DaysToSale", "OnOrderQty", "SoldQty"];
-const JW_HEADERS = ["ModelCode", "SOH", "SoldLast7Days", "SoldMTD", "QtyOnPO", "AvgCost"];
+const JW_HEADERS = ["PartNumber", "SOH", "SoldLast7Days", "SoldMTD", "AvgCost"];
+const DIGI_HEADERS = ["ModelCode", "SOH", "SoldLast7Days", "SoldMTD", "QtyOnPO", "AvgCost"];
 const CENTRECOM_HEADERS = ["ProductName", "ProductModel", "30D", "14D", "7D", "Stock", "AvgStockValue"];
-const V_REPORT_HEADERS = ["PartNumber", "SOH", "SoldLast7Days", "SoldMTD", "AvgCost"];
 
 describe("detectResellerFromHeaders", () => {
   it("CA/KS format: sheet 'ComputerAlliance' → CA", () => {
@@ -222,6 +227,20 @@ describe("detectResellerFromHeaders", () => {
     expect(r.resolutionSource).toBe("format_unique");
   });
 
+  it("Scorptec Power BI: ignores optional product and inventory columns", () => {
+    const r = detectResellerFromHeaders(SCORPTEC_POWERBI_HEADERS, null, RESELLERS);
+    expect(r.resellerId).toBe(3);
+    expect(r.formatId).toBe("scorptec_powerbi");
+    expect(r.resolutionSource).toBe("format_unique");
+  });
+
+  it("DigiDirect: model-code signature → resolved", () => {
+    const r = detectResellerFromHeaders(DIGI_HEADERS, null, RESELLERS);
+    expect(r.resellerId).toBe(9);
+    expect(r.formatId).toBe("digi_weekly");
+    expect(r.resolutionSource).toBe("format_unique");
+  });
+
   it("PCCG Forecast: unique format → resolved", () => {
     const r = detectResellerFromHeaders(CENTRECOM_HEADERS, null, RESELLERS);
     expect(r.resellerId).toBe(7);
@@ -229,22 +248,12 @@ describe("detectResellerFromHeaders", () => {
     expect(r.resolutionSource).toBe("format_unique");
   });
 
-  it("V-Report: unhelpful filename → resellerId null, candidates listed, confidence 0", () => {
-    const r = detectResellerFromHeaders(V_REPORT_HEADERS, null, RESELLERS);
-    expect(r.resellerId).toBeNull();
-    expect(r.formatId).toBe("v_report");
-    expect(r.candidates.length).toBeGreaterThan(0);
-    expect(r.confidence).toBe(0);
-    expect(r.resolutionSource).toBeNull();
-  });
-
-  it("V-Report: learned fingerprint breaks the tie", async () => {
-    const { computeHeaderFingerprint } = await import("./parser");
-    const fingerprint = computeHeaderFingerprint(V_REPORT_HEADERS);
-    const learned = new Map([[fingerprint, 7]]); // 7 = PCCG
-    const r = detectResellerFromHeaders(V_REPORT_HEADERS, null, RESELLERS, undefined, learned);
-    expect(r.resellerId).toBe(7);
-    expect(r.resolutionSource).toBe("learned");
+  it("the former V-Report signature resolves to JW, not PCCG or DigiDirect", () => {
+    const r = detectResellerFromHeaders(JW_HEADERS, null, RESELLERS);
+    expect(r.resellerId).toBe(8);
+    expect(r.formatId).toBe("jw_weekly");
+    expect(r.candidates.map(candidate => candidate.code)).toEqual(["jw"]);
+    expect(r.resolutionSource).toBe("format_unique");
   });
 
   it("no matching format → resellerId null, formatId null", () => {

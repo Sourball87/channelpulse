@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
+import { readFile } from "node:fs/promises";
 import {
-  detectWeekFromFilename, isValidWeekIso, isAutoCommitEligible,
+  detectResellerFromFilename, detectWeekFromFilename, isValidWeekIso, isAutoCommitEligible,
   applyMappingsToRows, mapHeaders, type ResellerProfile,
 } from "./parser";
 import { parseFile } from "./file-parser";
@@ -25,7 +26,7 @@ const shared = ["Model", "Stock On Hand", "Stock On order", "Sold Last 7 Days", 
 const umart = ["SapCode", "Sku", "TotalOnHand", "OtherOnHand", "DaysToSale", "OnOrderQty", "SoldQty", "SapPrice", "Cost",
   "TotalOnHandAllWHRevenue", "Revenue", "Ageing90", "Ageing90Cost", "Ageing120", "Ageing120Cost"];
 const fixtures = [
-  { filename: "Samsung HDD Weekly.xlsx", code: "jw", week: null, sheet: "Sheet1",
+  { filename: "Samsung HDD Weekly.xlsx", code: "digi", week: null, sheet: "Sheet1",
     headers: ["Model Code", "SOH", "Sold Last 7 Days", "Sold MTD", "Qty On PO", "Avg Cost"],
     row: ["MZ-V9P1T0BW", 12, 3, 7, 2, 99], soh: 12, sold: 3 },
   { filename: "Samsung Monitor + SSD SOH 29.06.2026.xls", code: "pccg", week: "2026-W27", sheet: "Forecast",
@@ -37,7 +38,7 @@ const fixtures = [
   { filename: "Scorptec_stock_on_hand_175_20260705060455.csv", code: "scorptec", week: "2026-W27", sheet: "CSV",
     headers: ["#", "Category", "Model", "On Hand", "Sold Last 7 Days", "Item Average Cost (Ex GST)", "Item Average Cost (Inc GST)", "Qty On Order"],
     row: [1, "SSD", "MZ-77E1T0BW", 9, 2, 100, 110, 3], soh: 9, sold: 2 },
-  { filename: "V. Report - Samsung.xlsx", code: null, week: null, sheet: "Sheet1",
+  { filename: "V. Report - Samsung.xlsx", code: "jw", week: null, sheet: "Sheet1",
     headers: ["Part Number", "SOH", "Sold last 7 days", "Sold MTD", "AVG Cost"],
     row: ["MZ-77E1T0BW", 4, 1, 2, 100], soh: 4, sold: 1 },
   { filename: "samsung_soh_report_(1).xlsx", code: "ca", week: null, sheet: "ComputerAlliance",
@@ -128,10 +129,12 @@ describe("no silent data corruption", () => {
     expect(isAutoCommitEligible({ ...result, rawRows: [{ ...result.rawRows[0], TotalOnHand: -1 }] })).toBe(false);
     expect(isAutoCommitEligible({ ...result, rawRows: [{ ...result.rawRows[0], TotalOnHand: "bad value" }] })).toBe(false);
   });
-  it("never auto-commits V-Report, even with a filename tie-break", async () => {
+  it("recognises the former V-Report headers as JW from an unlabelled filename", async () => {
     const result = await parseFile(workbook(["Part Number", "SOH", "Sold last 7 days", "Sold MTD", "AVG Cost"],
-      ["MZ-V9P1T0BW", 4, 1, 2, 100]), "PCCG_2026-07-05.xlsx", profiles);
-    expect(isAutoCommitEligible(result)).toBe(false);
+      ["MZ-V9P1T0BW", 4, 1, 2, 100]), "weekly_2026-07-05.xlsx", profiles);
+    expect(result.detectedResellerId).toBe(8);
+    expect(result.detectedFormatId).toBe("jw_weekly");
+    expect(isAutoCommitEligible(result)).toBe(true);
   });
   it("ignores blank/total rows, normalises SKU case and preserves negative stock as flagged", () => {
     const rows = [
@@ -152,4 +155,28 @@ describe("no silent data corruption", () => {
     const parsed = applyMappingsToRows(rows, mapHeaders(Object.keys(rows[0]), rows));
     expect(parsed[0]).toMatchObject({ soh: 1234, avg_cost: 1203.32, flagged: false });
   });
+});
+
+const realSohSamples = [
+  { file: "ComputerAlliance_Samsung_soh_report_261102_261108_1794204905231.xlsx", filename: "weekly_stock_261102_261108.xlsx", code: "ca", format: "ca_ks_weekly" },
+  { file: "Samsung_ssd_sell_thru_and_soh_Report_2026-10-12_2026-10-18_CE_1794204905181.xlsx", filename: "weekly_stock_2026-10-12_2026-10-18.xlsx", code: "centrecom", format: "centrecom_forecast" },
+  { file: "Samsung_Memory_SOH_Weekly_Report-20261102-20261108_-_Scorptec_1794204905218.csv", filename: "weekly_stock_20261102_20261108.csv", code: "scorptec", format: "scorptec_powerbi" },
+  { file: "ReportingProcurementCustom--Samsung-SSD_1792967158451.csv", filename: "weekly_stock.csv", code: "ple", format: "ple_weekly" },
+  { file: "Samsung_Weekly_SOH_report_-2026-11-02-2026-11-08_-_PCCG_1794204905144.xlsx", filename: "weekly_stock_2026-11-02_2026-11-08.xlsx", code: "pccg", format: "pccg_forecast" },
+  { file: "Samsung_SSD_SOH_Report_2026-11-02_2026-11-08_-_JW_1794204905156.xlsx", filename: "weekly_stock_2026-11-02_2026-11-08.xlsx", code: "jw", format: "jw_weekly" },
+  { file: "2026_WK_42_Samsung_SSD_SOH_reports_-_KS_1794204905244.xlsx", filename: "weekly_stock_2026_WK_42.xlsx", code: "ks", format: "ca_ks_weekly" },
+  { file: "Samsung_HDD_Weekly_2026-10-26_2026-11-01_DIGITDIRECT_1794204905205.csv", filename: "weekly_stock_2026-10-26_2026-11-01.csv", code: "digi", format: "digi_weekly" },
+];
+
+describe("real reseller SOH reports without customer names in filenames", () => {
+  for (const sample of realSohSamples) {
+    it(`detects ${sample.code} from the report format`, async () => {
+      const buffer = await readFile(new URL(`../../../../attached_assets/${sample.file}`, import.meta.url));
+      expect(detectResellerFromFilename(sample.filename, profiles).resellerId).toBeNull();
+      const parsed = await parseFile(buffer, sample.filename, profiles);
+      const code = profiles.find(profile => profile.id === parsed.detectedResellerId)?.code.toLowerCase();
+      expect(code).toBe(sample.code);
+      expect(parsed.detectedFormatId).toBe(sample.format);
+    });
+  }
 });

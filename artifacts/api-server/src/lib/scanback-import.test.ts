@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
 import type { ScanbackImport } from "@workspace/api-zod";
-import { filterFullHistorySerialRows, mapImport, suggestMapping } from "./scanback-import";
+import { dateStringToWeekIso, detectWeekFromFilename, parseDateValue } from "./dates";
+import { filterFullHistorySerialRows, mapImport, parseCsvSheets, suggestMapping } from "./scanback-import";
 
 describe("serial report ingestion", () => {
   it("keeps the detected week and unseen history while counting known older rows", () => {
@@ -18,7 +20,32 @@ describe("serial report ingestion", () => {
     expect(result.weekIso).toBe("2026-W45");
     expect(result.contentWeek).toBe("2026-W45");
     expect(result.rows).toHaveLength(4);
-    expect(result.skippedKnownHistory).toBe(2);
+    expect(result.historicalRowsSkipped).toBe(2);
+    expect(result.isFullHistory).toBe(false);
+  });
+
+  it("keeps only the filename week from the real 184,172-row PLE full-history file", async () => {
+    const filename = "Samsung-SSD-Serial_2026-10-05_2026-10-11_PLE.csv";
+    const buffer = await readFile(new URL(
+      "../../../../attached_assets/Samsung-SSD-Serial_2026-10-05_2026-10-11_PLE_1794204905280.csv",
+      import.meta.url,
+    ));
+    const parsed = await parseCsvSheets(buffer);
+    const rows = parsed.CSV;
+    const headers = Object.keys(rows[0]).filter(header => header !== "__sourceRow");
+    const mapping = suggestMapping(headers);
+    const result = filterFullHistorySerialRows(rows, mapping, [], detectWeekFromFilename(filename).weekIso);
+
+    expect(rows).toHaveLength(184_172);
+    expect(result.isFullHistory).toBe(true);
+    expect(result.weekIso).toBe("2026-W41");
+    expect(result.rows).toHaveLength(50);
+    expect(result.historicalRowsSkipped).toBe(184_122);
+    expect(result.rows.every(row => {
+      const date = parseDateValue(row.SaleDay);
+      return date >= "2026-10-05" && date <= "2026-10-11" &&
+        dateStringToWeekIso(date) === "2026-W41";
+    })).toBe(true);
   });
 
   it("separates DigiDirect barcode and part-label values from serial matching", () => {

@@ -2,7 +2,7 @@
 - [Preview resize notifications](preview-resize-notifications.md) — distinguish harmless browser ResizeObserver notices from real application exceptions.
 - [Focus drill-down](focus-drill-down.md) — Dashboard WOI and a shared-order, PHO-style Explorer with account/SKU drill-down.
 - [Analytics privacy](analytics-privacy.md) — measure actions and counts without sending channel data or account/SKU identities.
-- [Report interpretation](report-interpretation.md) — missing dates and shared formats require confirmation; calendar dates determine ISO weeks.
+- [Report interpretation](report-interpretation.md) — use filename weeks for PLE full-history uploads; the former V-Report signature is JW, not shared.
 - [Dependency security](dependency-security.md) — patched SheetJS releases still trigger unbounded npm advisories; force-rebuild composite types after upgrades.
 - [Scanback claims rules](scanback-claims.md) — initial scope, spreadsheet sources and the global one-payment-per-serial rule.
 - [Customer masking](customer-masking.md) — show the nine customers only by their requested abbreviations; preserve internal matching identities.
