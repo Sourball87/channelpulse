@@ -12,7 +12,7 @@ import { parseFilterParams, resolveRange, buildConditions } from "../lib/filter-
 import weeklySalesRouter from "./weekly-sales";
 import { loadSalesReconciliation } from "../lib/load-sales-reconciliation";
 import { calculateWoi } from "../lib/woi";
-import { weeklySalesWeeks } from "../lib/weekly-sales";
+import { calendarWeeksBetween, weeklySalesWeeks } from "../lib/weekly-sales";
 
 const router: IRouter = Router();
 router.use(weeklySalesRouter);
@@ -222,39 +222,72 @@ router.get("/dashboard/heatmap", async (req, res) => {
     const q = GetDashboardHeatmapQueryParams.safeParse(req.query);
     const category = q.success ? q.data.category : undefined;
     const filters = parseFilterParams(req.query as Record<string, unknown>);
+    const hasRange = !!filters.weekFrom || !!filters.weekTo;
+    const calendarRange = filters.weekFrom && filters.weekTo
+      ? calendarWeeksBetween(filters.weekFrom, filters.weekTo)
+      : [];
+    if (hasRange && (!filters.weekFrom || !filters.weekTo || !calendarRange.length)) {
+      return res.status(400).json({ error: "Choose a valid inclusive reporting-week range." });
+    }
 
-    let fallbackWeek = await getLatestWeek();
-    if (!fallbackWeek) return res.json({ week_iso: null, parts: [], resellers: [], cells: [] });
+    const fallbackWeek = await getLatestWeek();
+    const weeksInRange = hasRange ? calendarRange.length : 1;
+    if (!fallbackWeek) return res.json({
+      week_iso: null, is_period: hasRange, weeks_in_range: weeksInRange,
+      week_from: filters.weekFrom ?? null, week_to: filters.weekTo ?? null,
+      parts: [], resellers: [], cells: [],
+    });
 
     if (!filters.weekFrom && q.success && q.data.week_iso) {
       filters.weekIso = q.data.week_iso;
     }
 
     const range = await resolveRange(filters, fallbackWeek);
-    const { weekList, latestWeek, isPeriod } = range;
+    const { weekList, latestWeek, isPeriod, weeksWithData } = range;
+    if (isPeriod && weeksWithData === 0) {
+      return res.json({
+        week_iso: null, is_period: true, weeks_in_range: weeksInRange,
+        week_from: filters.weekFrom ?? null, week_to: filters.weekTo ?? null,
+        parts: [], resellers: [], cells: [],
+      });
+    }
 
     const catParts = category && category !== "All";
 
-    // ── SOH from latest week ──────────────────────────────────────────────────
-    const sohRows = await db
+    // Use the latest in-range SOH independently for each customer/SKU pair.
+    const sohRowsInRange = await db
       .select({
         part_id: inventorySnapshots.partId,
         reseller_id: inventorySnapshots.resellerId,
         part_no: parts.partNo,
+        part_sort_order: parts.sortOrder,
+        part_category: parts.category,
         display_name: parts.displayName,
         reseller_code: resellers.code,
         soh: inventorySnapshots.soh,
+        week_iso: inventorySnapshots.weekIso,
       })
       .from(inventorySnapshots)
       .leftJoin(parts, eq(inventorySnapshots.partId, parts.id))
       .leftJoin(resellers, eq(inventorySnapshots.resellerId, resellers.id))
       .where(buildConditions([
-        eq(inventorySnapshots.weekIso, latestWeek),
+        inArray(inventorySnapshots.weekIso, weekList),
         catParts ? eq(parts.category, category!) : undefined,
       ], filters))
-      .orderBy(parts.sortOrder, parts.category, parts.partNo, resellers.code);
+      .orderBy(desc(inventorySnapshots.weekIso), parts.sortOrder, parts.category, parts.partNo, resellers.code);
+    const latestSohByPair = new Map<string, typeof sohRowsInRange[number]>();
+    for (const row of sohRowsInRange) {
+      const key = `${row.part_id}:${row.reseller_id}`;
+      if (!latestSohByPair.has(key)) latestSohByPair.set(key, row);
+    }
+    const sohRows = [...latestSohByPair.values()].sort((a, b) =>
+      (a.part_sort_order ?? 0) - (b.part_sort_order ?? 0) ||
+      (a.part_category ?? "").localeCompare(b.part_category ?? "") ||
+      (a.part_no ?? "").localeCompare(b.part_no ?? "") ||
+      (a.reseller_code ?? "").localeCompare(b.reseller_code ?? ""),
+    );
 
-    // ── Avg weekly ST across weekList ─────────────────────────────────────────
+    // ── Sold totals and reported-week counts across weekList ───────────────────
     const stRows = await db
       .select({
         part_id: inventorySnapshots.partId,
@@ -297,7 +330,8 @@ router.get("/dashboard/heatmap", async (req, res) => {
         part_id: r.part_id ?? 0,
         woi,
         soh,
-        st: Math.round(avgSt),
+        st: Math.round(stData?.totalSt ?? 0),
+        as_at_week: r.week_iso,
         color: woiColor(woi, soh, Math.round(avgSt)),
       };
     });
@@ -305,6 +339,9 @@ router.get("/dashboard/heatmap", async (req, res) => {
     res.json({
       week_iso: latestWeek,
       is_period: isPeriod,
+      weeks_in_range: weeksInRange,
+      week_from: filters.weekFrom ?? null,
+      week_to: filters.weekTo ?? null,
       parts: partSet,
       resellers: resellerSet,
       cells,
@@ -331,9 +368,21 @@ router.get("/dashboard/woi-heatmap", async (req, res): Promise<void> => {
 
   try {
     const filters = parseFilterParams(req.query as Record<string, unknown>);
-    const weekIso = query.data.week_iso ?? await getLatestWeek();
-    const windowWeeks = query.data.weeks ?? 4;
-    const weeks = weekIso ? weeklySalesWeeks(weekIso, windowWeeks) : [];
+    const hasRange = !!filters.weekFrom || !!filters.weekTo;
+    const periodWeeks = filters.weekFrom && filters.weekTo
+      ? calendarWeeksBetween(filters.weekFrom, filters.weekTo)
+      : [];
+    if (hasRange && (!filters.weekFrom || !filters.weekTo || !periodWeeks.length)) {
+      res.status(400).json({ error: "Choose a valid inclusive reporting-week range." });
+      return;
+    }
+    if (!hasRange && query.data.week_iso && !isValidWeekIso(query.data.week_iso)) {
+      res.status(400).json({ error: "Select a valid ISO reporting week." });
+      return;
+    }
+    const weekIso = filters.weekTo ?? query.data.week_iso ?? await getLatestWeek();
+    const weeks = hasRange ? periodWeeks : weekIso ? weeklySalesWeeks(weekIso, query.data.weeks) : [];
+    const windowWeeks = hasRange ? periodWeeks.length : query.data.weeks;
     if (!weekIso) {
       res.json(GetWoiHeatmapResponse.parse({ week_iso: null, window_weeks: windowWeeks, weeks, customers: [], rows: [] }));
       return;
@@ -365,6 +414,7 @@ router.get("/dashboard/woi-heatmap", async (req, res): Promise<void> => {
         weeks,
       }),
     ]);
+    const sohWeeks = hasRange ? periodWeeks : [weekIso];
 
     const rowsByPairWeek = new Map<string, (typeof reconciliation.rows)[number]>();
     for (const row of reconciliation.rows) {
@@ -374,26 +424,37 @@ router.get("/dashboard/woi-heatmap", async (req, res): Promise<void> => {
 
     const rows = selectedParts.map(part => {
       const cells = customers.map(customer => {
-        const current = rowsByPairWeek.get(`${part.part_id}:${customer.id}:${weekIso}`);
+        const current = sohWeeks
+          .map(week => rowsByPairWeek.get(`${part.part_id}:${customer.id}:${week}`))
+          .filter((row): row is NonNullable<typeof row> => row != null && row.soh != null)
+          .at(-1);
         const observations = weeks.map(week => rowsByPairWeek.get(`${part.part_id}:${customer.id}:${week}`))
           .filter((row): row is NonNullable<typeof row> => row != null)
           .map(row => ({ sold: row.soh_sold, soldColumnPresent: row.sold_column_present }));
+        const validSales = observations.filter((observation): observation is { sold: number; soldColumnPresent: true } =>
+          observation.soldColumnPresent === true && typeof observation.sold === "number" &&
+          Number.isFinite(observation.sold) && observation.sold >= 0,
+        );
+        const salesTotal = validSales.reduce((sum, observation) => sum + observation.sold, 0);
         const value = calculateWoi(current?.soh ?? null, observations, windowWeeks);
         return {
           reseller_id: customer.id,
           reseller_code: customer.code,
           soh: current?.soh ?? null,
+          sales_total: validSales.length ? salesTotal : null,
           avg_weekly_sales: value.avgWeeklySales,
           woi: value.woi,
           weeks_observed: value.weeksObserved,
           window_weeks: value.windowWeeks,
           state: value.state,
+          as_at_week: current?.week_iso ?? null,
         };
       });
       const sohValues = cells.map(cell => cell.soh).filter((value): value is number => value != null);
       const salesValues = cells.map(cell => cell.avg_weekly_sales).filter((value): value is number => value != null);
       const totalSoh = sohValues.length ? sohValues.reduce((sum, value) => sum + value, 0) : null;
       const totalAverageSales = salesValues.length ? salesValues.reduce((sum, value) => sum + value, 0) : null;
+      const salesTotals = cells.map(cell => cell.sales_total).filter((value): value is number => value != null);
       const totalState = totalSoh == null ? "no_soh" :
         totalAverageSales == null ? "no_sales_data" :
         totalAverageSales === 0 ? "no_sales" : "value";
@@ -401,11 +462,13 @@ router.get("/dashboard/woi-heatmap", async (req, res): Promise<void> => {
         reseller_id: null,
         reseller_code: "Channel total",
         soh: totalSoh,
+        sales_total: salesTotals.length ? salesTotals.reduce((sum, value) => sum + value, 0) : null,
         avg_weekly_sales: totalAverageSales,
         woi: totalState === "value" ? totalSoh! / totalAverageSales! : null,
         weeks_observed: cells.reduce((max, cell) => Math.max(max, cell.weeks_observed), 0),
         window_weeks: windowWeeks,
         state: totalState,
+        as_at_week: null,
       };
       return { ...part, cells, channel_total: channelTotal };
     });

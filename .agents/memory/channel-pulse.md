@@ -25,9 +25,13 @@ description: Key architecture choices, gotchas, and conventions for the ChannelP
 - **Apply buildConditions to ALL queries including history/trailing queries**, not just the main current-week queries. Missing it on history queries causes inconsistent results within a single response.
 
 ## Period mode conventions
-- SOH = `latestWeek` (most recent in range)
-- ST = sum or avg over `weekList`
-- WOI = `Math.round(latestSOH / avgWeeklyST)` — always integer, never decimals
+- Dashboard heatmap single-week mode shows the exact selected week's SOH and sold. Period mode shows each customer/SKU's latest in-range SOH and sold summed across the selected range; expose the SOH report week per cell.
+- Period mode uses the entire selected calendar range for WOI, replacing the 4/8/13-week selector. Keep a customer with an earlier in-range SOH even when it missed the final week.
+- In single-week mode, WOI SOH is from the exact selected week while its sales average still uses the selected trailing 4/8/13-week window.
+
+**Why:** A dashboard date range must describe one consistent slice. The previous period-ending snapshot dropped customers who did not report in the last week and understated period sold.
+
+**How to apply:** Resolve SOH per customer/SKU, sum sold over the requested range, retain per-customer report dates, and keep WOI's average denominator tied to actual reported sales weeks.
 - Delta comparison: prior period of equal length to the selected range
 
 ## Explorer pivot types

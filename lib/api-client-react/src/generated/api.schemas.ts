@@ -589,11 +589,20 @@ export interface HeatmapCell {
   woi: number | null;
   soh: number;
   st: number;
+  /** @nullable */
+  as_at_week: string | null;
   color: HeatmapCellColor;
 }
 
 export interface HeatmapData {
-  week_iso: string;
+  /** @nullable */
+  week_iso: string | null;
+  is_period: boolean;
+  weeks_in_range: number;
+  /** @nullable */
+  week_from: string | null;
+  /** @nullable */
+  week_to: string | null;
   parts: string[];
   resellers: string[];
   cells: HeatmapCell[];
@@ -622,12 +631,16 @@ export interface WoiHeatmapCell {
   /** @nullable */
   soh: number | null;
   /** @nullable */
+  sales_total: number | null;
+  /** @nullable */
   avg_weekly_sales: number | null;
   /** @nullable */
   woi: number | null;
   weeks_observed: number;
   window_weeks: number;
   state: WoiHeatmapCellState;
+  /** @nullable */
+  as_at_week: string | null;
 }
 
 export interface WoiHeatmapPart {
@@ -1321,11 +1334,23 @@ category?: string;
 
 export type GetDashboardHeatmapParams = {
 week_iso?: string;
+week_from?: string;
+week_to?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+part_ids?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+reseller_ids?: string;
 category?: string;
 };
 
 export type GetWoiHeatmapParams = {
 week_iso?: string;
+week_from?: string;
+week_to?: string;
 weeks?: GetWoiHeatmapWeeks;
 category?: string;
 /**

@@ -412,12 +412,30 @@ paths:
     get:
       operationId: getDashboardHeatmap
       tags: [dashboard]
-      summary: Get heatmap grid (parts x resellers, WOI values) for a given week
+      summary: Get SOH and sold heatmap for a selected week or period
       parameters:
         - name: week_iso
           in: query
           schema:
             type: string
+        - name: week_from
+          in: query
+          schema:
+            type: string
+        - name: week_to
+          in: query
+          schema:
+            type: string
+        - name: part_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+        - name: reseller_ids
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
         - name: category
           in: query
           schema:
@@ -437,6 +455,14 @@ paths:
       summary: Get weeks-of-inventory by SKU and customer
       parameters:
         - name: week_iso
+          in: query
+          schema:
+            type: string
+        - name: week_from
+          in: query
+          schema:
+            type: string
+        - name: week_to
           in: query
           schema:
             type: string
@@ -1368,7 +1394,7 @@ components:
 
     HeatmapCell:
       type: object
-      required: [part_no, reseller_code, woi, soh, st, color]
+      required: [part_no, reseller_code, woi, soh, st, color, as_at_week]
       properties:
         part_no:
           type: string
@@ -1386,16 +1412,26 @@ components:
           type: integer
         st:
           type: integer
+        as_at_week:
+          type: ["string", "null"]
         color:
           type: string
           enum: [green, amber, red, grey, empty]
 
     HeatmapData:
       type: object
-      required: [week_iso, parts, resellers, cells]
+      required: [week_iso, is_period, weeks_in_range, week_from, week_to, parts, resellers, cells]
       properties:
         week_iso:
-          type: string
+          type: ["string", "null"]
+        is_period:
+          type: boolean
+        weeks_in_range:
+          type: integer
+        week_from:
+          type: ["string", "null"]
+        week_to:
+          type: ["string", "null"]
         parts:
           type: array
           items:
@@ -1418,11 +1454,12 @@ components:
 
     WoiHeatmapCell:
       type: object
-      required: [reseller_id, reseller_code, soh, avg_weekly_sales, woi, weeks_observed, window_weeks, state]
+      required: [reseller_id, reseller_code, soh, sales_total, avg_weekly_sales, woi, weeks_observed, window_weeks, state, as_at_week]
       properties:
         reseller_id: { type: ["integer", "null"] }
         reseller_code: { type: ["string", "null"] }
         soh: { type: ["integer", "null"] }
+        sales_total: { type: ["number", "null"] }
         avg_weekly_sales: { type: ["number", "null"] }
         woi: { type: ["number", "null"] }
         weeks_observed: { type: integer }
@@ -1430,6 +1467,8 @@ components:
         state:
           type: string
           enum: [value, no_sales, no_sales_data, no_soh]
+        as_at_week:
+          type: ["string", "null"]
 
     WoiHeatmapPart:
       type: object

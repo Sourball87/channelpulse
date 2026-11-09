@@ -15,10 +15,14 @@ export interface WoiHeatmapCell {
   /** @nullable */
   soh: number | null;
   /** @nullable */
+  sales_total: number | null;
+  /** @nullable */
   avg_weekly_sales: number | null;
   /** @nullable */
   woi: number | null;
   weeks_observed: number;
   window_weeks: number;
   state: WoiHeatmapCellState;
+  /** @nullable */
+  as_at_week: string | null;
 }

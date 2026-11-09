@@ -2471,7 +2471,7 @@ export const getGetDashboardHeatmapUrl = (params?: GetDashboardHeatmapParams,) =
 }
 
 /**
- * @summary Get heatmap grid (parts x resellers, WOI values) for a given week
+ * @summary Get SOH and sold heatmap for a selected week or period
  */
 export const getDashboardHeatmap = async (params?: GetDashboardHeatmapParams, options?: Parameters<typeof customFetch>[1]): Promise<HeatmapData> => {
 
@@ -2542,7 +2542,7 @@ export function useGetDashboardHeatmap<TData = Awaited<ReturnType<typeof getDash
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Get heatmap grid (parts x resellers, WOI values) for a given week
+ * @summary Get SOH and sold heatmap for a selected week or period
  */
 
 export function useGetDashboardHeatmap<TData = Awaited<ReturnType<typeof getDashboardHeatmap>>, TError = ErrorType<unknown>>(

@@ -8,5 +8,15 @@
 
 export type GetDashboardHeatmapParams = {
 week_iso?: string;
+week_from?: string;
+week_to?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+part_ids?: string;
+/**
+ * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$
+ */
+reseller_ids?: string;
 category?: string;
 };

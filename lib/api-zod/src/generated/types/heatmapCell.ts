@@ -18,5 +18,7 @@ export interface HeatmapCell {
   woi: number | null;
   soh: number;
   st: number;
+  /** @nullable */
+  as_at_week: string | null;
   color: HeatmapCellColor;
 }

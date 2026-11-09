@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [category, setCategory] = useState("All");
   const [woiWeeks, setWoiWeeks] = useState<4 | 8 | 13>(4);
   const { apiParams, insightWeek, resellerIds } = useFilters();
+  const isPeriod = !!apiParams.week_from && !!apiParams.week_to;
   const { data: parts = [], isLoading: partsLoading, isError: partsError } = useGetParts();
   const { data: accounts } = useGetResellers();
   const queryCategory = category === "All" ? undefined : category;
@@ -42,11 +43,9 @@ export default function Dashboard() {
     refetch: retryKpis,
   } = useGetDashboardKpis(kpiParams, { query: { queryKey: getGetDashboardKpisQueryKey(kpiParams) } });
   const woiParams = {
-    week_iso: insightWeek,
+    ...apiParams,
     weeks: woiWeeks,
     category: queryCategory,
-    part_ids: apiParams.part_ids,
-    reseller_ids: apiParams.reseller_ids,
   };
   const {
     data: woiData,
@@ -190,10 +189,12 @@ export default function Dashboard() {
               <div>
                 <CardTitle className="text-sm font-medium">Weeks of inventory</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {woiData ? `${formatWeekSpan(woiData.weeks.at(-1), woiData.week_iso ?? undefined)} · Coverage window ${woiWeeks} weeks` : `SKU by customer · ${woiWeeks}-week sales window`}
+                  {isPeriod
+                    ? `SOH at each customer's latest report · sales ${formatWeekSpan(apiParams.week_from, apiParams.week_to)} (${woiData?.window_weeks ?? 0} weeks). The selected period sets this window.`
+                    : `SOH as at ${formatWeekLabel(woiData?.week_iso ?? insightWeek)} · sales ${woiData?.weeks.length ? formatWeekSpan(woiData.weeks[0], woiData.weeks.at(-1)) : `${woiWeeks} weeks`} (${woiData?.window_weeks ?? woiWeeks} weeks)`}
                 </p>
               </div>
-              <Select value={String(woiWeeks)} onValueChange={(value) => setWoiWeeks(Number(value) as 4 | 8 | 13)}>
+              <Select value={String(woiWeeks)} onValueChange={(value) => setWoiWeeks(Number(value) as 4 | 8 | 13)} disabled={isPeriod}>
                 <SelectTrigger className="h-8 w-[120px]" aria-label="WOI coverage window" data-testid="select-woi-window"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="4">4 weeks</SelectItem><SelectItem value="8">8 weeks</SelectItem><SelectItem value="13">13 weeks</SelectItem>
@@ -238,13 +239,17 @@ export default function Dashboard() {
                           return (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <span className="inline-flex min-w-[54px] cursor-default justify-center rounded px-2 py-1 text-center" data-testid={`cell-woi-${row.part_id}-${cell.reseller_id ?? "total"}`}>
-                                  {display}
+                                  <span className="inline-flex min-w-[54px] cursor-default flex-col items-center justify-center rounded px-2 py-1 text-center" data-testid={`cell-woi-${row.part_id}-${cell.reseller_id ?? "total"}`}>
+                                    {display}
+                                    {isPeriod && cell.as_at_week && (
+                                      <span className="mt-0.5 text-[9px] font-normal text-muted-foreground">SOH as at {formatWeekLabel(cell.as_at_week)}</span>
+                                    )}
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent className="text-xs">
                                 <p className="mb-1 font-semibold">{row.part_no} · {label}</p>
-                                <p>SOH: {cell.soh == null ? "Not reported" : cell.soh.toLocaleString()}</p>
+                                <p>SOH: {cell.soh == null ? "Not reported" : `${cell.soh.toLocaleString()}${cell.as_at_week ? ` · as at ${formatWeekLabel(cell.as_at_week)}` : ""}`}</p>
+                                <p>{isPeriod ? "Total sold in selected period" : "Total sold in coverage window"}: {cell.sales_total == null ? "Not available" : cell.sales_total.toLocaleString()}</p>
                                 <p>Average weekly sales: {cell.avg_weekly_sales == null ? "Not available" : cell.avg_weekly_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                                 <p>WOI: {cell.state === "value" && cell.woi != null ? `${cell.woi.toFixed(1)} weeks` : cell.state === "no_sales" ? "No sales" : "Not available"}</p>
                                 <p>Data coverage: {label === "Channel total" ? "Varies by customer" : `${cell.weeks_observed} of ${cell.window_weeks} weeks`}</p>

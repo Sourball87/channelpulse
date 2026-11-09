@@ -1252,15 +1252,27 @@ export const GetDashboardKpisResponse = zod.object({
 
 
 /**
- * @summary Get heatmap grid (parts x resellers, WOI values) for a given week
+ * @summary Get SOH and sold heatmap for a selected week or period
  */
+export const getDashboardHeatmapQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+export const getDashboardHeatmapQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
+
+
 export const GetDashboardHeatmapQueryParams = zod.object({
   "week_iso": zod.coerce.string().optional(),
+  "week_from": zod.coerce.string().optional(),
+  "week_to": zod.coerce.string().optional(),
+  "part_ids": zod.coerce.string().regex(getDashboardHeatmapQueryPartIdsRegExp).optional(),
+  "reseller_ids": zod.coerce.string().regex(getDashboardHeatmapQueryResellerIdsRegExp).optional(),
   "category": zod.coerce.string().optional()
 })
 
 export const GetDashboardHeatmapResponse = zod.object({
-  "week_iso": zod.string(),
+  "week_iso": zod.string().nullable(),
+  "is_period": zod.boolean(),
+  "weeks_in_range": zod.int(),
+  "week_from": zod.string().nullable(),
+  "week_to": zod.string().nullable(),
   "parts": zod.array(zod.string()),
   "resellers": zod.array(zod.string()),
   "cells": zod.array(zod.object({
@@ -1272,6 +1284,7 @@ export const GetDashboardHeatmapResponse = zod.object({
   "woi": zod.number().nullable(),
   "soh": zod.int(),
   "st": zod.int(),
+  "as_at_week": zod.string().nullable(),
   "color": zod.enum(['green', 'amber', 'red', 'grey', 'empty'])
 }))
 })
@@ -1287,6 +1300,8 @@ export const getWoiHeatmapQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-
 
 export const GetWoiHeatmapQueryParams = zod.object({
   "week_iso": zod.coerce.string().optional(),
+  "week_from": zod.coerce.string().optional(),
+  "week_to": zod.coerce.string().optional(),
   "weeks": zod.union([zod.literal(4),zod.literal(8),zod.literal(13)]).default(getWoiHeatmapQueryWeeksDefault),
   "category": zod.coerce.string().optional(),
   "part_ids": zod.coerce.string().regex(getWoiHeatmapQueryPartIdsRegExp).optional(),
@@ -1309,21 +1324,25 @@ export const GetWoiHeatmapResponse = zod.object({
   "reseller_id": zod.int().nullable(),
   "reseller_code": zod.string().nullable(),
   "soh": zod.int().nullable(),
+  "sales_total": zod.number().nullable(),
   "avg_weekly_sales": zod.number().nullable(),
   "woi": zod.number().nullable(),
   "weeks_observed": zod.int(),
   "window_weeks": zod.int(),
-  "state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh'])
+  "state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh']),
+  "as_at_week": zod.string().nullable()
 })),
   "channel_total": zod.object({
   "reseller_id": zod.int().nullable(),
   "reseller_code": zod.string().nullable(),
   "soh": zod.int().nullable(),
+  "sales_total": zod.number().nullable(),
   "avg_weekly_sales": zod.number().nullable(),
   "woi": zod.number().nullable(),
   "weeks_observed": zod.int(),
   "window_weeks": zod.int(),
-  "state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh'])
+  "state": zod.enum(['value', 'no_sales', 'no_sales_data', 'no_soh']),
+  "as_at_week": zod.string().nullable()
 })
 }))
 })

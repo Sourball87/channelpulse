@@ -9,6 +9,8 @@ import type { GetWoiHeatmapWeeks } from './getWoiHeatmapWeeks';
 
 export type GetWoiHeatmapParams = {
 week_iso?: string;
+week_from?: string;
+week_to?: string;
 weeks?: GetWoiHeatmapWeeks;
 category?: string;
 /**

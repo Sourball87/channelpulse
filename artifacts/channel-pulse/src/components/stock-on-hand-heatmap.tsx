@@ -1,4 +1,4 @@
-import { formatWeekLabel } from "@/lib/week-display";
+import { formatWeekLabel, formatWeekSpan } from "@/lib/week-display";
 import { customerLabel } from "@/lib/customer-display";
 import { useState } from "react";
 import { useGetDashboardHeatmap, useGetResellers } from "@workspace/api-client-react";
@@ -22,7 +22,7 @@ function shade(metric: StockMetric, intensity: number): string {
   return `rgb(${Math.round(246 - 46 * intensity)}, ${Math.round(242 - 122 * intensity)}, ${Math.round(234 - 214 * intensity)})`;
 }
 
-/** Point-in-time view: SOH and ST both come from the single selected (or period-ending) week. */
+/** Shows selected-week values or latest in-period SOH plus period sold totals. */
 export function StockOnHandHeatmap({
   category,
   partOrder,
@@ -40,10 +40,8 @@ export function StockOnHandHeatmap({
 }) {
   const { apiParams, insightWeek, resellerIds } = useFilters();
   const stockParams = {
-    week_iso: insightWeek,
+    ...apiParams,
     category,
-    part_ids: apiParams.part_ids,
-    reseller_ids: apiParams.reseller_ids,
   };
   const { data, isLoading, isError, refetch } = useGetDashboardHeatmap(stockParams);
   const { data: accounts } = useGetResellers();
@@ -62,7 +60,14 @@ export function StockOnHandHeatmap({
     soh: allCells.reduce((m, c) => Math.max(m, c.soh), 0),
     st: allCells.reduce((m, c) => Math.max(m, c.st), 0),
   };
-  const weekLabel = formatWeekLabel(data?.week_iso ?? insightWeek);
+  const isPeriod = !!apiParams.week_from && !!apiParams.week_to;
+  const selectedWeek = apiParams.week_iso ?? insightWeek;
+  const weekLabel = isPeriod
+    ? `${data?.weeks_in_range ?? 0} weeks`
+    : formatWeekLabel(data?.week_iso ?? selectedWeek);
+  const salesLabel = isPeriod
+    ? `SOH at each customer's latest report · sales ${formatWeekSpan(apiParams.week_from, apiParams.week_to)} (${data?.weeks_in_range ?? 0} weeks)`
+    : `SOH and sold at ${formatWeekLabel(data?.week_iso ?? selectedWeek)}`;
 
   const totals = (stock: string) => {
     const reported = columns.map(code => cells.get(`${stock}:${code}`)).filter((c): c is NonNullable<typeof c> => !!c);
@@ -79,11 +84,13 @@ export function StockOnHandHeatmap({
           Sell Through & Stock on Hand
           <Badge variant="secondary">{weekLabel}</Badge>
         </CardTitle>
+        <p className="text-xs text-muted-foreground" data-testid="text-soh-period-label">{salesLabel}</p>
       </CardHeader>
       <CardContent className="p-4">
         <p className="text-xs text-muted-foreground mb-3">
-          Stock Code by Account Code · ST = units sold in the reporting week; SOH = units on hand at that week's report.
-          {" "}For a date range, both ST and SOH use the ending week only (not a period total or average).
+          Stock Code by Account Code · {isPeriod
+            ? "ST = total units sold across the selected period; SOH = each customer's latest available snapshot in that period."
+            : "ST = units sold in the selected week; SOH = units on hand at that week's report."}
           {" "}Totals include the reported accounts in your current selection.
         </p>
         <MetricPicker metrics={metrics} update={update} />
@@ -166,15 +173,24 @@ export function StockOnHandHeatmap({
                               <td key={`${code}-${metric}`} className={`p-1 border-b ${edge}`}>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div
-                                      className={`h-8 rounded flex items-center justify-center font-medium tabular-nums ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
+                             <div
+                                      className={`min-h-8 rounded flex flex-col items-center justify-center font-medium tabular-nums ${intensity > 0.55 ? "text-white" : "text-slate-900"}`}
                                       style={{ backgroundColor: shade(metric, intensity) }}
                                       aria-label={`${stock} at ${customerLabel(code)}: ${value.toLocaleString()} ${METRIC_INFO[metric].unit}`}
                                       data-testid={`cell-${metric}-${stock}-${code}`}
-                                    >{value.toLocaleString()}</div>
+                                    >
+                                      <span>{value.toLocaleString()}</span>
+                                      {isPeriod && metric === "soh" && cell.as_at_week && (
+                                        <span className="text-[9px] font-normal leading-3 opacity-80">as at {formatWeekLabel(cell.as_at_week)}</span>
+                                      )}
+                                    </div>
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    <p>{stock} · {customerLabel(code)} · {formatWeekLabel(data?.week_iso)}</p>
+                                     <p>{stock} · {customerLabel(code)}</p>
+                                     <p>SOH as at: {formatWeekLabel(cell.as_at_week)}</p>
+                                     <p>Sales window: {isPeriod && apiParams.week_from && apiParams.week_to
+                                       ? formatWeekSpan(apiParams.week_from, apiParams.week_to)
+                                       : formatWeekLabel(selectedWeek)}</p>
                                     <p>Sell through: {cell.st.toLocaleString()} units sold</p>
                                     <p>Stock on hand: {cell.soh.toLocaleString()} units</p>
                                   </TooltipContent>

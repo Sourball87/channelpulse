@@ -9,9 +9,9 @@ The user wants reseller/SKU/week serial counts compared against independently SO
 
 **How to apply:** Preserve provenance and unknown values in any extension of weekly reporting. Use the committed source's mapping to distinguish an absent column from a real zero, and leave the match percentage unavailable without an independent positive SOH-sales denominator.
 
-WOI uses only actual SOH/ST sales observations, not serial-count fallback. Its average is over observed weeks in the selected 4/8/13-week window; missing weeks stay missing, and reported zero-sales is distinct from absent sales data.
+WOI uses only actual SOH/ST sales observations, not serial-count fallback. In single-week mode, SOH is from the selected week and its average uses the trailing 4/8/13-week window. In period mode, the selected calendar range replaces that window and the average divides by that customer's actual reported sales weeks. Missing weeks stay missing, and reported zero-sales is distinct from absent sales data.
 
-**Why:** The user requires a meaningful WOI and explicitly said no sales must not become infinity. Treating missing reports as zero would bias the average and obscure coverage.
+**Why:** The user requires a meaningful WOI; averaging across calendar weeks with no report would bias the result, while treating missing sales as zero would obscure coverage.
 
 **How to apply:** Keep WOI sales provenance independent from the serial-backed sell-through measure. Expose observed-week coverage with each result and use a separate no-sales state when the observed average is zero.
 

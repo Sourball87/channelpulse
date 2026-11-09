@@ -8,7 +8,14 @@
 import type { HeatmapCell } from './heatmapCell';
 
 export interface HeatmapData {
-  week_iso: string;
+  /** @nullable */
+  week_iso: string | null;
+  is_period: boolean;
+  weeks_in_range: number;
+  /** @nullable */
+  week_from: string | null;
+  /** @nullable */
+  week_to: string | null;
   parts: string[];
   resellers: string[];
   cells: HeatmapCell[];
