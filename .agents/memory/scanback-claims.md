@@ -63,6 +63,12 @@ Scoping out Pronto accounts must never hide conflicting serial ownership or retu
 
 **How to apply:** Excluded events cannot grant eligibility, but serial overlaps must still trigger review across committed extracts. A missing-serial credit for a selected reseller/known SKU requires source correction, not silent exclusion.
 
+Committed Pronto imports with no serial-bearing invoice rows can still contain unmatched credits that must block claims.
+
+**Why:** A credit-only import can have an empty serial evidence list while its raw Pronto credit rows remain financially relevant.
+
+**How to apply:** Keep serial evidence indexing and unmatched-credit indexing separate; do not discard committed Pronto imports solely because their serial-row list is empty.
+
 Promotion SKUs may be typed even when no product-catalogue row exists.
 
 **Why:** The user explicitly chose to allow custom SKU codes outside the catalogue.

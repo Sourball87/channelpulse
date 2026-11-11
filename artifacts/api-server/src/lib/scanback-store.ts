@@ -215,7 +215,6 @@ export async function loadVerificationContext(c: Client): Promise<ScanbackVerifi
     c.query(`SELECT id,raw_sheets FROM scanback_imports
       WHERE payload->>'kind'='evidence' AND payload->>'state' IN ('committed','superseded')
         AND payload ? 'pronto'
-        AND jsonb_array_length(COALESCE(payload->'rows','[]'::jsonb)) > 0
         AND NOT (payload ? 'prontoCreditRows' AND payload ? 'prontoRestrictedSerials')`),
     c.query("SELECT draft_id FROM scanback_batches WHERE draft_id IS NOT NULL"),
   ]);
@@ -223,7 +222,9 @@ export async function loadVerificationContext(c: Client): Promise<ScanbackVerifi
   const evidenceImports = committedImports.filter(item =>
     item.kind === "evidence" && ["committed", "superseded"].includes(item.state) && item.rows.length > 0,
   );
-  const prontoImports = evidenceImports.filter(item => Object.hasOwn(item, "pronto"));
+  const prontoImports = committedImports.filter(item =>
+    item.kind === "evidence" && ["committed", "superseded"].includes(item.state) && Object.hasOwn(item, "pronto"),
+  );
   const claimImports = committedImports.filter(item => item.kind === "claim" && item.state === "committed");
   const importsById = new Map(committedImports.map(item => [item.id, item]));
   const programsById = new Map(programs.map(program => [program.id, program]));
