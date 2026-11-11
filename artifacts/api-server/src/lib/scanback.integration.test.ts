@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { pool } from "@workspace/db";
 import * as XLSX from "xlsx";
+import { maskCustomerText } from "./customer-display";
 
 // Opt-in: exercises the managed development API via its public proxy. Never
 // points at production, and removes only IDs created by this test.
@@ -9,7 +10,10 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
   it("imports, verifies, approves atomically and preserves history snapshots", async () => {
     if (base !== "http://localhost:80/api") throw new Error("Integration test must use the local development proxy.");
     const prefix = `CPTEST${Date.now()}`;
-    const ids = { programs: new Set<string>(), imports: new Set<string>(), drafts: new Set<string>(), batches: new Set<string>() };
+    const ids = {
+      programs: new Set<string>(), imports: new Set<string>(), drafts: new Set<string>(),
+      batches: new Set<string>(), audits: new Set<number>(),
+    };
     let sessionCookie = "";
     async function call(path: string, body?: unknown) {
       const headers: Record<string, string> = sessionCookie ? { Cookie: sessionCookie } : {};
@@ -444,6 +448,165 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         `Serial,SKU,Sale Date\n${prefix}CS3,${customSku},20/09/2026\n`, "custom-sku-cap-claim"));
       const exhausted = (await call("/scanback/verify", { ...customSettings, claimImportId: customClaimNext.id })).data;
       expect(exhausted.results[0].reason).toContain("cap reached");
+
+      // Weekly claims are grouped by the customer's sold date. One customer
+      // has an approved snapshot and another remains pending verification.
+      const weeklySku = `CPWEEK${Date.now()}`;
+      const weeklyCustomers = [a, other, accounts[2]].filter(Boolean);
+      const weeklyProgram = (await call("/scanback/programs", {
+        name: `${prefix} Weekly`, start: "2001-09-01", end: "2001-09-30", notes: "",
+        customerIds: weeklyCustomers.map((customer: { id: number }) => customer.id),
+        lines: [{
+          sku: weeklySku, partId: null, gtmBuyCents: 7000,
+          caps: weeklyCustomers.map((customer: { id: number }) => ({ resellerId: customer.id, quantity: null })),
+        }],
+      })).data;
+      const weeklyEvidence = await commit(await upload("evidence",
+        `${header}${prefix}-weekly-a,01/09/2001,${a.code},${weeklySku},1,${prefix}WKA,100.00,60.00\n` +
+        `${prefix}-weekly-b,01/09/2001,${other.code},${weeklySku},1,${prefix}WKB,100.00,60.00\n`,
+        "weekly-claims-evidence"));
+      expect(weeklyEvidence.errors).toEqual([]);
+      const weeklyClaimA = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}WKA,${weeklySku},15/09/2001,${a.code}\n`, "weekly-claim-a"));
+      const weeklyClaimB = await commit(await upload("claim",
+        `Serial,SKU,Sale Date,Account\n${prefix}WKB,${weeklySku},16/09/2001,${other.code}\n`, "weekly-claim-b"));
+      const weeklyDraftA = (await call("/scanback/verify", {
+        programId: weeklyProgram.id, accountId: a.id, claimImportId: weeklyClaimA.id,
+        basis: "sell", from: weeklyProgram.start, to: weeklyProgram.end,
+      })).data;
+      expect(weeklyDraftA.results[0]).toMatchObject({ status: "eligible", unitPriceCents: 10000, gtmBuyCents: 7000, amountCents: 3000 });
+      const weeklyApproval = await call("/scanback/approve", {
+        draftId: weeklyDraftA.id, token: weeklyDraftA.token, reference: `${prefix}-weekly-approved`,
+      });
+      expect(weeklyApproval.status).toBe(200);
+      ids.batches.add(weeklyApproval.data.id);
+
+      const weeklyParams = new URLSearchParams({ programId: weeklyProgram.id, week: "2001-W37" });
+      const claimsByWeekResponse = await fetch(`${base}/scanback/claims-by-week?${weeklyParams}`, {
+        headers: { Cookie: sessionCookie },
+      });
+      expect(claimsByWeekResponse.status).toBe(200);
+      const weekly = await claimsByWeekResponse.json() as any;
+      expect(weekly.weekLabel).toBe("w/e Sun 16 Sep");
+      const summaryA = weekly.customers.find((customer: any) => customer.accountId === a.id);
+      const summaryB = weekly.customers.find((customer: any) => customer.accountId === other.id);
+      expect(summaryA).toMatchObject({
+        reportedCount: 1, qualifyingCount: 1, notQualifyingCount: 0,
+        qualifyingCents: 3000, approvedCents: 3000, awaitingApprovalCents: 0,
+      });
+      expect(summaryB).toMatchObject({
+        reportedCount: 1, qualifyingCount: 1, notQualifyingCount: 0,
+        qualifyingCents: 3000, approvedCents: 0, awaitingApprovalCents: 3000,
+      });
+      expect(summaryA.lines[0]).toMatchObject({
+        serial: `${prefix}WKA`, status: "approved", invoiceNo: `${prefix}-weekly-a`,
+        invoicedPriceCents: 10000, gtmBuyExCents: 7000, claimCents: 3000,
+      });
+      expect(summaryB.lines[0]).toMatchObject({
+        serial: `${prefix}WKB`, status: "awaiting_approval",
+        invoicedPriceCents: 10000, gtmBuyExCents: 7000, claimCents: 3000,
+      });
+      expect(weekly.totals).toMatchObject({
+        reportedCount: 2, qualifyingCount: 2, notQualifyingCount: 0,
+        qualifyingCents: 6000, approvedCents: 3000, awaitingApprovalCents: 3000,
+      });
+      const approvedFilters = new URLSearchParams({ programId: weeklyProgram.id, week: "2001-W37", status: "approved" });
+      const approvedOnly = await (await fetch(`${base}/scanback/claims-by-week?${approvedFilters}`, {
+        headers: { Cookie: sessionCookie },
+      })).json() as any;
+      expect(approvedOnly.customers).toHaveLength(1);
+      expect(approvedOnly.customers[0]).toMatchObject({
+        accountId: a.id, reportedCount: 1, qualifyingCount: 1, notQualifyingCount: 0,
+        approvedCents: 3000, awaitingApprovalCents: 0,
+      });
+      expect(approvedOnly.totals).toMatchObject({ reportedCount: 1, qualifyingCents: 3000, approvedCents: 3000 });
+      const pendingCustomerFilters = new URLSearchParams({
+        programId: weeklyProgram.id, week: "2001-W37", customerId: String(other.id), status: "awaiting_approval",
+      });
+      const pendingOnly = await (await fetch(`${base}/scanback/claims-by-week?${pendingCustomerFilters}`, {
+        headers: { Cookie: sessionCookie },
+      })).json() as any;
+      expect(pendingOnly.customers).toHaveLength(1);
+      expect(pendingOnly.customers[0]).toMatchObject({
+        accountId: other.id, reportedCount: 1, qualifyingCount: 1, approvedCents: 0, awaitingApprovalCents: 3000,
+      });
+      const allWeeksFilters = new URLSearchParams({ programId: weeklyProgram.id, week: "all" });
+      const allWeeks = await (await fetch(`${base}/scanback/claims-by-week?${allWeeksFilters}`, {
+        headers: { Cookie: sessionCookie },
+      })).json() as any;
+      expect(allWeeks).toMatchObject({ selectedWeek: null, weekLabel: "All weeks in promotion" });
+      expect(allWeeks.totals).toMatchObject({ reportedCount: 2, qualifyingCents: 6000 });
+      const defaultWeek = await (await fetch(`${base}/scanback/claims-by-week?programId=${weeklyProgram.id}`, {
+        headers: { Cookie: sessionCookie },
+      })).json() as any;
+      expect(defaultWeek.selectedWeek).toBe(defaultWeek.defaultWeek);
+      expect(defaultWeek.weekOptions.some((option: { weekIso: string }) => option.weekIso === defaultWeek.defaultWeek)).toBe(true);
+      const noReportCustomer = weekly.customers.find((customer: any) =>
+        ![a.id, other.id].includes(customer.accountId),
+      );
+      if (weeklyCustomers.length > 2) expect(noReportCustomer).toMatchObject({ hasSerialReport: false, reportedCount: 0 });
+
+      const weeklyExport = await fetch(`${base}/scanback/claims-by-week/export?${weeklyParams}`, {
+        headers: { Cookie: sessionCookie },
+      });
+      expect(weeklyExport.status).toBe(200);
+      const weeklyWorkbook = XLSX.read(Buffer.from(await weeklyExport.arrayBuffer()), { type: "buffer" });
+      expect(weeklyWorkbook.SheetNames.slice(0, 2)).toEqual(["Customer summary", "Serial details"]);
+      expect(weeklyWorkbook.SheetNames).toContain(maskCustomerText(a.code));
+      expect(weeklyWorkbook.SheetNames).toContain(maskCustomerText(other.code));
+      const exportSummary = XLSX.utils.sheet_to_json<unknown[]>(weeklyWorkbook.Sheets["Customer summary"], { header: 1 });
+      expect(exportSummary.slice(0, 3)).toEqual([
+        ["Promotion", `${prefix} Weekly`],
+        ["Promotion dates", "2001-09-01 to 2001-09-30"],
+        ["Week", "w/e Sun 16 Sep"],
+      ]);
+      expect(exportSummary).toContainEqual([maskCustomerText(a.code), 1, 1, 0, 30, 30, 0]);
+      expect(exportSummary).toContainEqual([maskCustomerText(other.code), 1, 1, 0, 30, 0, 30]);
+      const exportLines = XLSX.utils.sheet_to_json<unknown[]>(weeklyWorkbook.Sheets["Serial details"], { header: 1 });
+      const exportedWeeklyA = exportLines.find(row => row[0] === `${prefix}WKA`)!;
+      const exportedWeeklyB = exportLines.find(row => row[0] === `${prefix}WKB`)!;
+      expect(exportedWeeklyA[7]).toBe(30);
+      expect(exportedWeeklyA[8]).toContain("Approved");
+      expect(exportedWeeklyB[7]).toBe(30);
+      expect(exportedWeeklyB[8]).toContain("awaiting approval");
+
+      // Approved promotions are blocked with the exact archive instruction.
+      const blockedDelete = await fetch(`${base}/scanback/programs/${weeklyProgram.id}`, {
+        method: "DELETE", headers: { Cookie: sessionCookie },
+      });
+      expect(blockedDelete.status).toBe(409);
+      expect(await blockedDelete.json()).toMatchObject({
+        error: "This promotion has approved claims — archive it instead",
+      });
+
+      // A no-approval promotion and its unapproved draft can be deleted; the
+      // deletion itself must leave a durable audit row.
+      const deletable = (await call("/scanback/programs", {
+        name: `${prefix} Deletable`, start: "2001-09-01", end: "2001-09-30", notes: "",
+        customerIds: [a.id],
+        lines: [{ sku: `CPDEL${Date.now()}`, partId: null, gtmBuyCents: 7000, caps: [{ resellerId: a.id, quantity: null }] }],
+      })).data;
+      const deletionDraft = (await call("/scanback/verify", {
+        programId: deletable.id, accountId: a.id, claimImportId: weeklyClaimA.id,
+        basis: "sell", from: deletable.start, to: deletable.end,
+      })).data;
+      ids.drafts.add(deletionDraft.id);
+      const deleteResponse = await fetch(`${base}/scanback/programs/${deletable.id}`, {
+        method: "DELETE", headers: { Cookie: sessionCookie },
+      });
+      expect(deleteResponse.status).toBe(200);
+      const deleteResult = await deleteResponse.json() as { id: string; deletedDraftCount: number; auditId: number };
+      expect(deleteResult).toMatchObject({ id: deletable.id, deletedDraftCount: 1 });
+      ids.audits.add(deleteResult.auditId);
+      const auditRow = await pool.query("SELECT action,entity_id,entity_name,details FROM scanback_audit_log WHERE id=$1", [deleteResult.auditId]);
+      expect(auditRow.rows[0]).toMatchObject({
+        action: "promotion_deleted", entity_id: deletable.id, entity_name: deletable.name,
+        details: expect.objectContaining({ deletedDraftCount: 1 }),
+      });
+      expect((await pool.query("SELECT id FROM scanback_drafts WHERE id=$1", [deletionDraft.id])).rowCount).toBe(0);
+      const afterDeleteWorkspace = (await call("/scanback/workspace")).data;
+      expect(afterDeleteWorkspace.programs.some((program: { id: string }) => program.id === deletable.id)).toBe(false);
+
       expect((await call("/auth/logout", {})).status).toBe(200);
       sessionCookie = "";
       expect((await fetch(base + "/parts")).status).toBe(401);
@@ -459,6 +622,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         await cleanup.query("DELETE FROM scanback_drafts WHERE id=ANY($1::text[])", [[...ids.drafts]]);
         await cleanup.query("DELETE FROM scanback_imports WHERE id=ANY($1::text[])", [[...ids.imports]]);
         await cleanup.query("DELETE FROM scanback_programs WHERE id=ANY($1::text[])", [[...ids.programs]]);
+        await cleanup.query("DELETE FROM scanback_audit_log WHERE id=ANY($1::int[])", [[...ids.audits]]);
         await cleanup.query("COMMIT");
       } catch (e) { await cleanup.query("ROLLBACK"); throw e; }
       finally { cleanup.release(); }

@@ -12,6 +12,7 @@ import { VerifyPanel } from "@/components/scanback/verify-panel";
 import { HistoryPanel } from "@/components/scanback/history-panel";
 import { errorMessage, formatCents, useScanbackWorkspace } from "@/components/scanback/shared";
 import { useUploadCenter } from "@/lib/upload-center";
+import { ClaimsByWeekPanel } from "@/components/scanback/claims-by-week";
 
 export default function ScanbackClaims() {
   const ws = useScanbackWorkspace();
@@ -21,7 +22,7 @@ export default function ScanbackClaims() {
   const search = useSearch();
   const query = useMemo(() => new URLSearchParams(search), [search]);
   const programUploadId = query.get("programUpload") ?? undefined;
-  const [tab, setTab] = useState(() => query.get("tab") ?? (programUploadId ? "programs" : "verify"));
+  const [tab, setTab] = useState(() => query.get("tab") ?? (programUploadId ? "programs" : "claims"));
   useEffect(() => { const t = query.get("tab") ?? (programUploadId ? "programs" : null); if (t) setTab(t); }, [query, programUploadId]);
   const [, navigate] = useLocation();
   const serialParam = query.get("serial") ?? "";
@@ -82,11 +83,15 @@ export default function ScanbackClaims() {
         ) : (
           <Tabs value={tab} onValueChange={setTab} className="mx-auto w-full max-w-[1440px]">
             <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="claims" data-testid="tab-claims-by-week">Claims by week</TabsTrigger>
               <TabsTrigger value="verify" data-testid="tab-verify">Verify Claims</TabsTrigger>
               <TabsTrigger value="programs" data-testid="tab-programs">Programs</TabsTrigger>
               <TabsTrigger value="history" data-testid="tab-history">Claims History</TabsTrigger>
               <TabsTrigger value="serials" data-testid="tab-serials">Serial lookup</TabsTrigger>
             </TabsList>
+            <TabsContent value="claims" className="mt-4">
+              <ClaimsByWeekPanel programs={data.programs} />
+            </TabsContent>
             <TabsContent value="verify" className="mt-4">
               <VerifyPanel programs={data.programs} imports={data.imports} drafts={data.drafts} resellers={resellers} onApproved={() => undefined} preset={preset} onOpenSerial={openSerial} />
             </TabsContent>

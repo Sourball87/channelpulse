@@ -646,6 +646,97 @@ export const GetScanbackWorkspaceResponse = zod.object({
 })
 
 
+
+
+
+export const DeleteScanbackProgramParams = zod.object({
+  "id": zod.coerce.string().min(1)
+})
+
+export const DeleteScanbackProgramResponse = zod.object({
+  "id": zod.string(),
+  "deletedDraftCount": zod.int(),
+  "auditId": zod.int()
+})
+
+
+
+export const getScanbackClaimsByWeekQueryWeekRegExp = new RegExp('^(all|[0-9]{4}-W[0-9]{2})$');
+
+
+
+export const GetScanbackClaimsByWeekQueryParams = zod.object({
+  "programId": zod.coerce.string().min(1),
+  "week": zod.coerce.string().regex(getScanbackClaimsByWeekQueryWeekRegExp).optional(),
+  "customerId": zod.coerce.number().int().min(1).optional(),
+  "status": zod.enum(['all', 'approved', 'awaiting_approval', 'not_qualifying']).optional()
+})
+
+export const GetScanbackClaimsByWeekResponse = zod.object({
+  "programId": zod.string(),
+  "programName": zod.string(),
+  "programStart": zod.string(),
+  "programEnd": zod.string(),
+  "selectedWeek": zod.string().nullable(),
+  "defaultWeek": zod.string(),
+  "weekLabel": zod.string(),
+  "weekOptions": zod.array(zod.object({
+  "weekIso": zod.string(),
+  "label": zod.string(),
+  "start": zod.string(),
+  "end": zod.string()
+})),
+  "customers": zod.array(zod.object({
+  "accountId": zod.int(),
+  "accountCode": zod.string(),
+  "hasSerialReport": zod.boolean(),
+  "reportedCount": zod.int(),
+  "qualifyingCount": zod.int(),
+  "notQualifyingCount": zod.int(),
+  "qualifyingCents": zod.int(),
+  "approvedCents": zod.int(),
+  "awaitingApprovalCents": zod.int(),
+  "lines": zod.array(zod.object({
+  "serial": zod.string(),
+  "sku": zod.string(),
+  "soldDate": zod.string(),
+  "invoiceNo": zod.string(),
+  "invoiceDate": zod.string(),
+  "invoicedPriceCents": zod.int().nullable(),
+  "gtmBuyExCents": zod.int().nullable(),
+  "claimCents": zod.int().nullable(),
+  "status": zod.enum(['approved', 'awaiting_approval', 'not_qualifying']),
+  "reason": zod.string(),
+  "trackingColor": zod.enum(['red', 'orange', 'amber', 'green', 'neutral']),
+  "batchReference": zod.string().nullable()
+}))
+})),
+  "totals": zod.object({
+  "reportedCount": zod.int(),
+  "qualifyingCount": zod.int(),
+  "notQualifyingCount": zod.int(),
+  "qualifyingCents": zod.int(),
+  "approvedCents": zod.int(),
+  "awaitingApprovalCents": zod.int()
+})
+})
+
+
+
+export const exportScanbackClaimsByWeekQueryWeekRegExp = new RegExp('^(all|[0-9]{4}-W[0-9]{2})$');
+
+
+
+export const ExportScanbackClaimsByWeekQueryParams = zod.object({
+  "programId": zod.coerce.string().min(1),
+  "week": zod.coerce.string().regex(exportScanbackClaimsByWeekQueryWeekRegExp).optional(),
+  "customerId": zod.coerce.number().int().min(1).optional(),
+  "status": zod.enum(['all', 'approved', 'awaiting_approval', 'not_qualifying']).optional()
+})
+
+export const ExportScanbackClaimsByWeekResponse = zod.unknown()
+
+
 export const saveScanbackProgramBodyLinesItemSkuMax = 120;
 
 

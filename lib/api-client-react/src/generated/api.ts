@@ -39,6 +39,7 @@ import type {
   ExplorerAnalyticsData,
   ExplorerExportInput,
   ExplorerRow,
+  ExportScanbackClaimsByWeekParams,
   GetAlertsParams,
   GetDashboardHeatmapParams,
   GetDashboardKpisParams,
@@ -47,6 +48,7 @@ import type {
   GetExplorerDataParams,
   GetExplorerTrendParams,
   GetPartsParams,
+  GetScanbackClaimsByWeekParams,
   GetSerialReconciliationParams,
   GetTrendsParams,
   GetWoiHeatmapParams,
@@ -65,10 +67,12 @@ import type {
   ResellerUpdate,
   ScanbackApprovalInput,
   ScanbackBatch,
+  ScanbackClaimsByWeek,
   ScanbackDraft,
   ScanbackImport,
   ScanbackMapping,
   ScanbackProgram,
+  ScanbackProgramDeleteResult,
   ScanbackProgramInput,
   ScanbackSerialTrail,
   ScanbackUpload,
@@ -1130,6 +1134,278 @@ export function useGetScanbackWorkspace<TData = Awaited<ReturnType<typeof getSca
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetScanbackWorkspaceQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteScanbackProgramUrl = (id: string,) => {
+
+
+
+
+  return `/api/scanback/programs/${id}`
+}
+
+export const deleteScanbackProgram = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ScanbackProgramDeleteResult> => {
+
+  return customFetch<ScanbackProgramDeleteResult>(getDeleteScanbackProgramUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteScanbackProgramMutationKey = () => ['deleteScanbackProgram'] as const;
+
+export const getDeleteScanbackProgramMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScanbackProgram>>, TError,DeleteScanbackProgramMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteScanbackProgram>>, TError,DeleteScanbackProgramMutationVariables, TContext> => {
+
+const mutationKey = getDeleteScanbackProgramMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteScanbackProgram>>, DeleteScanbackProgramMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteScanbackProgram(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteScanbackProgramMutationResult = NonNullable<Awaited<ReturnType<typeof deleteScanbackProgram>>>
+
+    export type DeleteScanbackProgramMutationError = ErrorType<void>
+    export type DeleteScanbackProgramMutationVariables = {id: string}
+
+    export const useDeleteScanbackProgram = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScanbackProgram>>, TError,DeleteScanbackProgramMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteScanbackProgram>>,
+        TError,
+        DeleteScanbackProgramMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteScanbackProgramMutationOptions(options), queryClient);
+    }
+
+export const getGetScanbackClaimsByWeekUrl = (params: GetScanbackClaimsByWeekParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/scanback/claims-by-week?${stringifiedParams}` : `/api/scanback/claims-by-week`
+}
+
+export const getScanbackClaimsByWeek = async (params: GetScanbackClaimsByWeekParams, options?: Parameters<typeof customFetch>[1]): Promise<ScanbackClaimsByWeek> => {
+
+  return customFetch<ScanbackClaimsByWeek>(getGetScanbackClaimsByWeekUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetScanbackClaimsByWeekQueryKey = (params?: GetScanbackClaimsByWeekParams,) => {
+    return [
+    `/api/scanback/claims-by-week`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetScanbackClaimsByWeekQueryOptions = <TData = Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(params: GetScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetScanbackClaimsByWeekQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>> = ({ signal }) => getScanbackClaimsByWeek(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetScanbackClaimsByWeekQueryResult = NonNullable<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>>
+export type GetScanbackClaimsByWeekQueryError = ErrorType<unknown>
+
+
+export function useGetScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: GetScanbackClaimsByWeekParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getScanbackClaimsByWeek>>,
+          TError,
+          Awaited<ReturnType<typeof getScanbackClaimsByWeek>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: GetScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getScanbackClaimsByWeek>>,
+          TError,
+          Awaited<ReturnType<typeof getScanbackClaimsByWeek>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: GetScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: GetScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackClaimsByWeek>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetScanbackClaimsByWeekQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getExportScanbackClaimsByWeekUrl = (params: ExportScanbackClaimsByWeekParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/scanback/claims-by-week/export?${stringifiedParams}` : `/api/scanback/claims-by-week/export`
+}
+
+export const exportScanbackClaimsByWeek = async (params: ExportScanbackClaimsByWeekParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getExportScanbackClaimsByWeekUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportScanbackClaimsByWeekQueryKey = (params?: ExportScanbackClaimsByWeekParams,) => {
+    return [
+    `/api/scanback/claims-by-week/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportScanbackClaimsByWeekQueryOptions = <TData = Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(params: ExportScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportScanbackClaimsByWeekQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>> = ({ signal }) => exportScanbackClaimsByWeek(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExportScanbackClaimsByWeekQueryResult = NonNullable<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>>
+export type ExportScanbackClaimsByWeekQueryError = ErrorType<unknown>
+
+
+export function useExportScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: ExportScanbackClaimsByWeekParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>,
+          TError,
+          Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: ExportScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>,
+          TError,
+          Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: ExportScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useExportScanbackClaimsByWeek<TData = Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError = ErrorType<unknown>>(
+ params: ExportScanbackClaimsByWeekParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackClaimsByWeek>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExportScanbackClaimsByWeekQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

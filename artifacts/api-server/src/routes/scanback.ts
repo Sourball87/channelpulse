@@ -3,6 +3,9 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { randomUUID, createHash } from "node:crypto";
 import {
+  DeleteScanbackProgramParams,
+  GetScanbackClaimsByWeekQueryParams,
+  ExportScanbackClaimsByWeekQueryParams,
   SaveScanbackProgramBody, RemapScanbackImportBody, VerifyScanbackClaimBody, ApproveScanbackClaimBody,
   ResolveProntoCreditBody,
   type ScanbackProgram, type ScanbackImport, type ScanbackDraft, type ScanbackBatch, type ScanbackResult,
@@ -15,6 +18,7 @@ import {
   resolveWeekFromReportDates, previousCompletedWeekIso, weekEndingShortLabel,
 } from "../lib/dates";
 import { buildScanbackWorkbook, XLSX_MIME } from "../lib/scanback-export";
+import { buildScanbackClaimsByWeek, buildScanbackClaimsByWeekWorkbook } from "../lib/scanback-weekly";
 import { listWeeklyExports, readWeeklyExport } from "../lib/scanback-export-storage";
 import { validateProgramReferences } from "../lib/program-table";
 import {
@@ -71,6 +75,47 @@ router.get("/scanback/workspace", route(async (c, _req, res) => {
     .map(row => ({ ...row, amountCents: Number(row.amountCents) }));
   return { programs, imports: imports.map(i => publicImport(i)), drafts, batches, programStats };
 }));
+router.delete("/scanback/programs/:id", route(async (c, req) => {
+  const { id } = parse(DeleteScanbackProgramParams, req.params);
+  const program = await get<ScanbackProgram>(c, "scanback_programs", id);
+  const approved = await c.query(`SELECT s.serial FROM scanback_approved_serials s
+    JOIN scanback_batches b ON b.id=s.batch_id
+    WHERE s.program_id=$1 OR (s.program_id IS NULL AND upper(b.payload->>'programName')=upper($2))
+    LIMIT 1`, [id, program.name]);
+  requireThat(!approved.rowCount, "This promotion has approved claims — archive it instead", 409);
+
+  const deletedDrafts = await c.query(`DELETE FROM scanback_drafts d
+    WHERE d.payload->'settings'->>'programId'=$1
+      AND NOT EXISTS (SELECT 1 FROM scanback_batches b WHERE b.draft_id=d.id)
+    RETURNING id`, [id]);
+  await c.query("DELETE FROM scanback_programs WHERE id=$1", [id]);
+  const audit = await c.query(`INSERT INTO scanback_audit_log(action,entity_id,entity_name,actor,details)
+    VALUES('promotion_deleted',$1,$2,'admin',$3::jsonb) RETURNING id`,
+  [id, program.name, JSON.stringify({
+    start: program.start,
+    end: program.end,
+    version: program.version,
+    deletedDraftCount: deletedDrafts.rowCount ?? deletedDrafts.rows.length,
+  })]);
+  const auditId = Number(audit.rows[0].id);
+  req.log.info({ auditId, programId: id, deletedDraftCount: deletedDrafts.rowCount }, "Scanback promotion deleted");
+
+  const reports = (await all<ScanbackImport>(c, "scanback_imports"))
+    .filter(report => report.kind === "claim" && report.state === "committed");
+  for (const report of reports) await generateAutomaticClaimDrafts(c, report);
+
+  return { id, deletedDraftCount: deletedDrafts.rowCount ?? deletedDrafts.rows.length, auditId };
+}));
+router.get("/scanback/claims-by-week", route(async (c, req) => {
+  const filters = parse(GetScanbackClaimsByWeekQueryParams, req.query);
+  return buildScanbackClaimsByWeek(c, filters);
+}));
+router.get("/scanback/claims-by-week/export", route(async (c, req, res) => {
+  const filters = parse(ExportScanbackClaimsByWeekQueryParams, req.query);
+  const buffer = await buildScanbackClaimsByWeekWorkbook(c, filters);
+  res.type(XLSX_MIME).attachment("scanback-claims-by-week.xlsx").send(buffer);
+  return null;
+}));
 router.post("/scanback/programs", route(async (c, req, res) => {
   const input = parse(SaveScanbackProgramBody, req.body);
   requireThat(input.name.trim() && input.name.length <= 200, "Promotion name is required (maximum 200 characters).");
@@ -118,6 +163,9 @@ router.post("/scanback/programs", route(async (c, req, res) => {
   await c.query(`UPDATE scanback_approved_serials s SET program_id=$1
     FROM scanback_batches b WHERE s.batch_id=b.id AND s.program_id IS NULL
     AND upper(b.payload->>'programName')=upper($2)`, [value.id, value.name]);
+  const reports = (await all<ScanbackImport>(c, "scanback_imports"))
+    .filter(report => report.kind === "claim" && report.state === "committed");
+  for (const report of reports) await generateAutomaticClaimDrafts(c, report);
   return value;
 }));
 router.post("/scanback/imports/preview", upload.single("file"), route(async (c, req, res) => {
@@ -373,6 +421,7 @@ router.post("/scanback/approve", route(async (c, req, res) => {
   const snapshot = { ...batch, programSnapshot: current.p, settings: draft.settings, verificationToken: draft.token };
   await c.query("INSERT INTO scanback_batches(id,draft_id,payload) VALUES($1,$2,$3::jsonb)", [batch.id, draft.id, JSON.stringify(snapshot)]);
   await recordApprovedSerials(c, batch, account.id, current.parts, current.p.id);
+  await refreshAutomaticClaimDrafts(c);
   return batch;
 }));
 function sendStatement(res: Response, data: ScanbackBatch | ScanbackDraft, format: string) {

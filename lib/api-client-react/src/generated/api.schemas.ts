@@ -177,6 +177,114 @@ export type ScanbackProgram = ScanbackProgramInput & {
   createdAt: string;
 };
 
+export interface ScanbackProgramDeleteResult {
+  id: string;
+  deletedDraftCount: number;
+  auditId: number;
+}
+
+export type ScanbackClaimsByWeekQueryStatus = typeof ScanbackClaimsByWeekQueryStatus[keyof typeof ScanbackClaimsByWeekQueryStatus];
+
+
+export const ScanbackClaimsByWeekQueryStatus = {
+  all: 'all',
+  approved: 'approved',
+  awaiting_approval: 'awaiting_approval',
+  not_qualifying: 'not_qualifying',
+} as const;
+
+export interface ScanbackClaimsByWeekQuery {
+  /** @minLength 1 */
+  programId: string;
+  /** @pattern ^(all|[0-9]{4}-W[0-9]{2})$ */
+  week?: string;
+  /** @minimum 1 */
+  customerId?: number;
+  status?: ScanbackClaimsByWeekQueryStatus;
+}
+
+export type ScanbackClaimsByWeekLineStatus = typeof ScanbackClaimsByWeekLineStatus[keyof typeof ScanbackClaimsByWeekLineStatus];
+
+
+export const ScanbackClaimsByWeekLineStatus = {
+  approved: 'approved',
+  awaiting_approval: 'awaiting_approval',
+  not_qualifying: 'not_qualifying',
+} as const;
+
+export type ScanbackClaimsByWeekLineTrackingColor = typeof ScanbackClaimsByWeekLineTrackingColor[keyof typeof ScanbackClaimsByWeekLineTrackingColor];
+
+
+export const ScanbackClaimsByWeekLineTrackingColor = {
+  red: 'red',
+  orange: 'orange',
+  amber: 'amber',
+  green: 'green',
+  neutral: 'neutral',
+} as const;
+
+export interface ScanbackClaimsByWeekLine {
+  serial: string;
+  sku: string;
+  soldDate: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  /** @nullable */
+  invoicedPriceCents: number | null;
+  /** @nullable */
+  gtmBuyExCents: number | null;
+  /** @nullable */
+  claimCents: number | null;
+  status: ScanbackClaimsByWeekLineStatus;
+  reason: string;
+  trackingColor: ScanbackClaimsByWeekLineTrackingColor;
+  /** @nullable */
+  batchReference: string | null;
+}
+
+export interface ScanbackClaimsByWeekCustomer {
+  accountId: number;
+  accountCode: string;
+  hasSerialReport: boolean;
+  reportedCount: number;
+  qualifyingCount: number;
+  notQualifyingCount: number;
+  qualifyingCents: number;
+  approvedCents: number;
+  awaitingApprovalCents: number;
+  lines: ScanbackClaimsByWeekLine[];
+}
+
+export interface ScanbackClaimsByWeekOption {
+  weekIso: string;
+  label: string;
+  start: string;
+  end: string;
+}
+
+export interface ScanbackClaimsByWeekTotals {
+  reportedCount: number;
+  qualifyingCount: number;
+  notQualifyingCount: number;
+  qualifyingCents: number;
+  approvedCents: number;
+  awaitingApprovalCents: number;
+}
+
+export interface ScanbackClaimsByWeek {
+  programId: string;
+  programName: string;
+  programStart: string;
+  programEnd: string;
+  /** @nullable */
+  selectedWeek: string | null;
+  defaultWeek: string;
+  weekLabel: string;
+  weekOptions: ScanbackClaimsByWeekOption[];
+  customers: ScanbackClaimsByWeekCustomer[];
+  totals: ScanbackClaimsByWeekTotals;
+}
+
 export type ScanbackUploadKind = typeof ScanbackUploadKind[keyof typeof ScanbackUploadKind];
 
 
@@ -1328,6 +1436,58 @@ export type StageCenterFiles200 = {
 export type DeleteCenterUpload200 = {
   success?: boolean;
 };
+
+export type GetScanbackClaimsByWeekParams = {
+/**
+ * @minLength 1
+ */
+programId: string;
+/**
+ * @pattern ^(all|[0-9]{4}-W[0-9]{2})$
+ */
+week?: string;
+/**
+ * @minimum 1
+ */
+customerId?: number;
+status?: GetScanbackClaimsByWeekStatus;
+};
+
+export type GetScanbackClaimsByWeekStatus = typeof GetScanbackClaimsByWeekStatus[keyof typeof GetScanbackClaimsByWeekStatus];
+
+
+export const GetScanbackClaimsByWeekStatus = {
+  all: 'all',
+  approved: 'approved',
+  awaiting_approval: 'awaiting_approval',
+  not_qualifying: 'not_qualifying',
+} as const;
+
+export type ExportScanbackClaimsByWeekParams = {
+/**
+ * @minLength 1
+ */
+programId: string;
+/**
+ * @pattern ^(all|[0-9]{4}-W[0-9]{2})$
+ */
+week?: string;
+/**
+ * @minimum 1
+ */
+customerId?: number;
+status?: ExportScanbackClaimsByWeekStatus;
+};
+
+export type ExportScanbackClaimsByWeekStatus = typeof ExportScanbackClaimsByWeekStatus[keyof typeof ExportScanbackClaimsByWeekStatus];
+
+
+export const ExportScanbackClaimsByWeekStatus = {
+  all: 'all',
+  approved: 'approved',
+  awaiting_approval: 'awaiting_approval',
+  not_qualifying: 'not_qualifying',
+} as const;
 
 export type GetDashboardKpisParams = {
 /**

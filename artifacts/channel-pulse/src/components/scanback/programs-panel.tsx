@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { useSaveScanbackProgram, type Part, type Reseller, type ScanbackProgram } from "@workspace/api-client-react";
+import { useDeleteScanbackProgram, useSaveScanbackProgram, type Part, type Reseller, type ScanbackProgram } from "@workspace/api-client-react";
 import { Archive, ArchiveRestore, ClipboardPaste, Copy, ExternalLink, FileSpreadsheet, Plus, RotateCcw, Save, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import {
 import { ProgramGrid, StatusChip } from "./program-grid";
 import { ProgramPasteDialog } from "./program-paste";
 import { errorMessage, formatDate, useRefreshWorkspace } from "./shared";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const NEW = "__draft";
 
@@ -39,6 +40,7 @@ export function ProgramsPanel({
   stats?: ProgramStat[]; uploads?: CenterUpload[]; initialProgramId?: string; programUploadId?: string;
 }) {
   const save = useSaveScanbackProgram();
+  const remove = useDeleteScanbackProgram();
   const refresh = useRefreshWorkspace();
   const { toast } = useToast();
 
@@ -49,6 +51,7 @@ export function ProgramsPanel({
   const [draft, setDraft] = useState<ProgramDraft>(() => { const p = pickDefault(); return p ? draftFromProgram(p, parts) : emptyDraft(); });
   const [baseFp, setBaseFp] = useState(() => fingerprint(draft));
   const [conflict, setConflict] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<{ label: string; run: () => void } | null>(null);
   const [paste, setPaste] = useState<{ open: boolean; uploadId: string | null }>({ open: !!programUploadId, uploadId: programUploadId ?? null });
@@ -119,6 +122,29 @@ export function ProgramsPanel({
     });
   };
 
+  const deletePromotion = () => {
+    if (!server || remove.isPending) return;
+    const deleting = server;
+    remove.mutate({ id: deleting.id }, {
+      onSuccess: (result) => {
+        setDeleteOpen(false);
+        const next = sorted.find((p) => p.id !== deleting.id && !p.archived)
+          ?? sorted.find((p) => p.id !== deleting.id) ?? null;
+        load(next);
+        toast({
+          title: "Promotion deleted",
+          description: `${deleting.name} was deleted${result.deletedDraftCount ? `; ${result.deletedDraftCount} draft${result.deletedDraftCount === 1 ? "" : "s"} removed` : ""}.`,
+        });
+        void refresh();
+      },
+      onError: (e) => {
+        const message = errorMessage(e);
+        setDeleteOpen(false);
+        toast({ title: "Could not delete promotion", description: message, variant: "destructive" });
+      },
+    });
+  };
+
   const copy = (src: ProgramDraft = draft) => {
     const d: ProgramDraft = {
       ...src, id: undefined, version: undefined, archived: false,
@@ -162,6 +188,10 @@ export function ProgramsPanel({
         <Button size="sm" variant="outline" className="h-8" data-testid={server ? `button-archive-program-${server.id}` : "button-archive-program"} disabled={!server || save.isPending}
           onClick={() => guard(server?.archived ? "restore this promotion" : "archive this promotion", toggleArchive)}>
           {server?.archived ? <><ArchiveRestore className="mr-1 h-3.5 w-3.5" /> Restore</> : <><Archive className="mr-1 h-3.5 w-3.5" /> Archive</>}
+        </Button>
+        <Button size="sm" variant="destructive" className="h-8" data-testid={server ? `button-delete-program-${server.id}` : "button-delete-program"} disabled={!server || save.isPending || remove.isPending}
+          onClick={() => guard("delete this promotion", () => setDeleteOpen(true))}>
+          Delete
         </Button>
         <span className="mx-1 h-5 w-px bg-slate-300" />
         <Button size="sm" variant="outline" className="h-8" data-testid="button-paste-program" onClick={() => guard("paste a new program", () => setPaste({ open: true, uploadId: null }))}>
@@ -240,6 +270,23 @@ export function ProgramsPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={deleteOpen} onOpenChange={(open) => !remove.isPending && setDeleteOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {server?.name ?? "this promotion"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the promotion and its unapproved drafts. Approved claims cannot be deleted. If this promotion has approved claims, archive it instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={remove.isPending} data-testid="button-cancel-delete-program">Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={!server || remove.isPending} data-testid="button-confirm-delete-program"
+              onClick={(event) => { event.preventDefault(); deletePromotion(); }}>
+              {remove.isPending ? "Deleting…" : `Delete ${server?.name ?? "promotion"}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

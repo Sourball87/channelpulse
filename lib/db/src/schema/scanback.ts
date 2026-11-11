@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, jsonb, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
 // JSON documents retain the exact version of financial terms/evidence used by a
@@ -34,6 +34,15 @@ export const scanbackApprovedSerials = pgTable("scanback_approved_serials", {
   partId: integer("part_id").references(() => partsRef()),
   sku: text("sku"),
   amountCents: integer("amount_cents").notNull(),
+});
+export const scanbackAuditLog = pgTable("scanback_audit_log", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(),
+  entityId: text("entity_id").notNull(),
+  entityName: text("entity_name").notNull(),
+  actor: text("actor").notNull(),
+  details: jsonb("details").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Imported late through the existing schema module; references resolve lazily.
