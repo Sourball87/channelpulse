@@ -10,3 +10,4 @@
 - [Private browser-test auth](browser-test-auth.md) — notebook and shell do not share secrets; authenticate runtime-side without exposing credentials or weakening app auth.
 - [Weekly sales reconciliation](weekly-sales-reconciliation.md) — independent WOI sales provenance, missing versus zero, serial fallback and DD coverage warnings.
 - [Program-table ingestion](program-table-ingestion.md) — tolerant shared paste/upload parsing, reviewable dates and ignored columns, and no guessed caps or calculated claim fields.
+- [Production host access](production-host-access.md) — use a deployment's additional published URL when shell DNS cannot resolve its primary custom domain.
