@@ -3,6 +3,7 @@ import { createContext, useContext, useCallback, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useGetAvailableWeeks } from "@workspace/api-client-react";
 import { trackEvent } from "@/lib/analytics";
+import { readCategoryFilter, writeCategoryFilter } from "@/lib/category-filtering";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ interface FilterContextValue {
   // Raw URL state
   partIds: number[];
   resellerIds: number[];
+  category?: string;
   preset?: string;          // "last4" | "last8" | "last12" | "mtd" | "qtd" | "ytd" | "custom"
   weekFrom?: string;        // explicit custom range
   weekTo?: string;
@@ -44,6 +46,7 @@ interface FilterContextValue {
   setFilters: (updates: Partial<{
     partIds: number[];
     resellerIds: number[];
+    category?: string | null;
     weekIso?: string;
     preset?: string;
     weekFrom?: string;
@@ -128,6 +131,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
 
   const partIds    = useMemo(() => params.get("parts")?.split(",").map(Number).filter(n => n > 0) ?? [], [params]);
   const resellerIds = useMemo(() => params.get("resellers")?.split(",").map(Number).filter(n => n > 0) ?? [], [params]);
+  const category = readCategoryFilter(search);
   const preset     = params.get("period") ?? undefined;
   const weekFrom   = params.get("from") ?? undefined;
   const weekTo     = params.get("to") ?? undefined;
@@ -181,12 +185,13 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
     return "Period";
   }, [mode, preset, resolvedFrom, resolvedTo, resolvedWeek]);
 
-  const isFiltered = partIds.length > 0 || resellerIds.length > 0 || !!weekIso || !!weekFrom || preset != null;
+  const isFiltered = partIds.length > 0 || resellerIds.length > 0 || !!category || !!weekIso || !!weekFrom || preset != null;
 
   // Update URL
   const setFilters = useCallback((updates: Partial<{
     partIds: number[];
     resellerIds: number[];
+    category?: string | null;
     weekIso?: string;
     preset?: string;
     weekFrom?: string;
@@ -203,6 +208,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
       const ids = updates.resellerIds!;
       if (ids.length > 0) p.set("resellers", ids.join(",")); else p.delete("resellers");
     }
+    if ("category" in updates) writeCategoryFilter(p, updates.category);
     if ("weekIso" in updates) {
       if (updates.weekIso) { p.set("week", updates.weekIso); p.delete("period"); p.delete("from"); p.delete("to"); }
       else p.delete("week");
@@ -230,6 +236,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
         stock_changed: "partIds" in updates,
         date_changed: "weekIso" in updates || "preset" in updates ||
           "weekFrom" in updates || "weekTo" in updates || !!updates.clearDate,
+        category_changed: "category" in updates,
         account_count: p.get("resellers")?.split(",").filter(Boolean).length ?? 0,
         sku_count: p.get("parts")?.split(",").filter(Boolean).length ?? 0,
         mode: p.has("period") || p.has("from") ? "period" : "week",
@@ -244,7 +251,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   }, [location, navigate, search]);
 
   const value: FilterContextValue = {
-    partIds, resellerIds, preset, weekFrom, weekTo, weekIso,
+    partIds, resellerIds, category, preset, weekFrom, weekTo, weekIso,
     mode, resolvedFrom, resolvedTo, resolvedWeek,
     apiParams, insightWeek,
     periodLabel, isFiltered, focusView,

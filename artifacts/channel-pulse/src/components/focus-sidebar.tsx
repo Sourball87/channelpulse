@@ -9,8 +9,14 @@ import {
 } from "@workspace/api-client-react";
 import { X } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
+import {
+  filterStockCodeParts,
+  isSelectableCategory,
+  keepCategoryCompatiblePartIds,
+  listSelectableCategories,
+} from "@/lib/category-filtering";
 
-type DimKey = "code" | "sku";
+type DimKey = "code" | "category" | "sku";
 
 interface Option {
   key: string;
@@ -23,6 +29,7 @@ const ACCOUNT_DIMS: { key: DimKey; label: string }[] = [
   { key: "code", label: "Account Code" },
 ];
 const STOCK_DIMS: { key: DimKey; label: string }[] = [
+  { key: "category", label: "Category" },
   { key: "sku", label: "Stock Code" },
 ];
 
@@ -30,7 +37,7 @@ const dimBtn =
   "w-full h-9 rounded-[2px] border border-[#cfd2d6] bg-[#ececec] text-[13px] text-[#333] hover:bg-[#e0e0e0] aria-expanded:bg-[#d6dde2] aria-expanded:border-[#5bc6e0]";
 
 export function FocusSidebar() {
-  const { partIds, resellerIds, setFilters, clearFilters, isFiltered, apiParams, insightWeek } = useFilters();
+  const { partIds, resellerIds, category, setFilters, clearFilters, isFiltered, apiParams, insightWeek } = useFilters();
   const { data: parts } = useGetParts();
   const { data: resellers } = useGetResellers();
   const [open, setOpen] = useState(true);
@@ -45,6 +52,7 @@ export function FocusSidebar() {
 
   const allParts = useMemo(() => parts ?? [], [parts]);
   const selectedParts = useMemo(() => allParts.filter((p) => partIds.includes(p.id)), [allParts, partIds]);
+  const categories = useMemo(() => listSelectableCategories(allParts), [allParts]);
 
   const scopedPartIds = useMemo(() => {
     if (!scoped || !heat.isSuccess || !heat.data) return null;
@@ -69,7 +77,20 @@ export function FocusSidebar() {
           onPick: () => setFilters({ resellerIds: [r.id] }),
         }));
     }
-    return allParts
+    if (dim === "category") {
+      return categories
+        .filter((value) => !s || value.toLowerCase().includes(s))
+        .map((value) => ({
+          key: value,
+          label: value,
+          selected: category === value,
+          onPick: () => setFilters({
+            category: value,
+            partIds: keepCategoryCompatiblePartIds(allParts, partIds, value),
+          }),
+        }));
+    }
+    return filterStockCodeParts(allParts, category, partIds)
       .filter((p) => {
         // Keep selected stock codes available so they can still be cleared.
         if (partIds.includes(p.id)) return true;
@@ -84,11 +105,21 @@ export function FocusSidebar() {
         key: String(p.id),
         label: p.part_no,
         selected: partIds.includes(p.id),
-        onPick: () => setFilters({ partIds: [p.id] }),
+          onPick: () => setFilters({
+            partIds: [p.id],
+            category: isSelectableCategory(p.category) ? p.category : null,
+          }),
       }));
-  }, [dim, q, resellers, allParts, resellerIds, partIds, scopedPartIds, setFilters]);
+  }, [dim, q, resellers, allParts, resellerIds, partIds, category, categories, scopedPartIds, setFilters]);
 
   const chips: { key: string; label: string; remove: () => void }[] = [];
+  if (category) {
+    chips.push({
+      key: "category",
+      label: `Category: ${category}`,
+      remove: () => setFilters({ category: null }),
+    });
+  }
   for (const id of resellerIds) {
     const r = resellers?.find((x) => x.id === id);
     chips.push({
@@ -145,11 +176,13 @@ export function FocusSidebar() {
                 className="w-full px-2 py-1.5 text-left text-xs text-[#0a8fb0] hover:bg-[#e8e8e8]"
                 onClick={() =>
                   setFilters(
-                    d.key === "code" ? { resellerIds: [] } : { partIds: [] },
+                    d.key === "code" ? { resellerIds: [] }
+                      : d.key === "category" ? { category: null }
+                      : { partIds: [] },
                   )
                 }
               >
-                All (clear)
+                {d.key === "category" ? "All" : "All (clear)"}
               </button>
               {stockDim && stockStatus === "loading" && (
                 <p className="px-2 py-1.5 text-xs text-[#666]">Loading stock for selected accounts...</p>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   exportExplorerView,
   getGetExplorerAnalyticsQueryKey,
@@ -15,6 +15,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, ChevronRight, Download, RotateCcw, TableProperties } from "lucide-react";
+import {
+  EXCLUDED_CATEGORY,
+  filterExplorerRowsByCategory,
+  keepCategoryCompatiblePartIds,
+} from "@/lib/category-filtering";
 
 type Dimension = "Category" | "SKU" | "Customer" | "Week";
 type Measure = "Sold" | "SOH" | "WOI" | "Serials reported" | "DD sell-in";
@@ -93,8 +98,7 @@ function formatValue(value: number | null, measure: Measure, woiState: string | 
 }
 
 export default function Explorer() {
-  const { apiParams } = useFilters();
-  const [category, setCategory] = useState("All");
+  const { apiParams, category, partIds, setFilters } = useFilters();
   const [woiWeeks, setWoiWeeks] = useState<4 | 8 | 13>(4);
   const [dimensions, setDimensions] = useState<Dimension[]>(["Category", "SKU", "Customer"]);
   const [measures, setMeasures] = useState<Measure[]>(["Sold", "SOH", "WOI"]);
@@ -102,7 +106,7 @@ export default function Explorer() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const { data: parts = [] } = useGetParts();
-  const queryCategory = category === "All" ? undefined : category;
+  const queryCategory = category;
   const params = {
     ...apiParams,
     category: queryCategory,
@@ -115,22 +119,29 @@ export default function Explorer() {
     refetch,
   } = useGetExplorerAnalytics(params, { query: { queryKey: getGetExplorerAnalyticsQueryKey(params) } });
 
-  const categoryOptions = useMemo(() => {
-    const fromParts = parts.filter((part) => part.active !== false).map((part) => part.category).filter((value) => value && value !== "HDD & Memory");
-    return ["All", ...Array.from(new Set(fromParts)).sort((a, b) => a.localeCompare(b))];
-  }, [parts]);
   const availableDimensions: Dimension[] = dimensions.length ? dimensions : ["Category"];
-  const currentDimension: Dimension = availableDimensions[Math.min(path.length, availableDimensions.length - 1)] ?? "Category";
+  const categoryBasePath = useMemo<DrillEntry[]>(
+    () => category && availableDimensions[0] === "Category" && availableDimensions.length > 1
+      ? [{ dimension: "Category", key: category, label: category }]
+      : [],
+    [category, availableDimensions],
+  );
+  const currentDimensionIndex = categoryBasePath.length + path.length;
+  const currentDimension: Dimension = availableDimensions[Math.min(currentDimensionIndex, availableDimensions.length - 1)] ?? "Category";
+  const breadcrumbPath = category
+    ? [{ dimension: "Category" as const, key: category, label: category }, ...path]
+    : path;
   const filteredRows = useMemo(() => {
-    let rows = data?.rows ?? [];
-    for (const entry of path) rows = rows.filter((row) => groupField(entry.dimension, row) === entry.key);
+    let rows = filterExplorerRowsByCategory(data?.rows ?? [], category);
+    for (const entry of [...categoryBasePath, ...path]) rows = rows.filter((row) => groupField(entry.dimension, row) === entry.key);
     return rows;
-  }, [data, path]);
+  }, [data, path, category, categoryBasePath]);
 
   const visibleRows = useMemo(() => {
     if (!filteredRows.length || !currentDimension) return [];
     const buckets = new Map<string, ExplorerAnalyticsRow[]>();
     for (const row of filteredRows) {
+      if (currentDimension === "Category" && row.category === EXCLUDED_CATEGORY) continue;
       const key = groupField(currentDimension, row);
       const bucket = buckets.get(key) ?? [];
       bucket.push(row);
@@ -140,8 +151,9 @@ export default function Explorer() {
       const representative = rows[0];
       const metrics = aggregate(rows);
       const label = groupLabel(currentDimension, representative);
-      const nextDimension = availableDimensions[path.length + 1];
+      const nextDimension = availableDimensions[currentDimensionIndex + 1];
       const hasNext = Boolean(nextDimension);
+      const canSelectCategory = currentDimension === "Category";
       return {
         key,
         label,
@@ -149,13 +161,13 @@ export default function Explorer() {
         values: metrics,
         woiState: metrics.woiState,
         sourceRows: rows,
-        drill: hasNext ? { dimension: currentDimension, key, label } : undefined,
+        drill: hasNext || canSelectCategory ? { dimension: currentDimension, key, label } : undefined,
       } satisfies GroupedRow;
     }).sort((a, b) => {
       if (currentDimension === "Week") return a.key.localeCompare(b.key);
       return a.label.localeCompare(b.label, undefined, { numeric: true });
     });
-  }, [filteredRows, currentDimension, availableDimensions, path.length]);
+  }, [filteredRows, currentDimension, currentDimensionIndex, availableDimensions]);
 
   const toggleDimension = (dimension: Dimension) => {
     setDimensions((current) => {
@@ -170,15 +182,31 @@ export default function Explorer() {
   };
   const resetDrill = () => setPath([]);
   const drillInto = (row: GroupedRow) => {
+    if (row.dimension === "Category") {
+      setFilters({
+        category: row.key,
+        partIds: keepCategoryCompatiblePartIds(parts, partIds, row.key),
+      });
+      setPath([]);
+      return;
+    }
     if (row.drill) setPath((current) => [...current.slice(0, path.length), row.drill!]);
   };
+  const clearCategoryAndDrill = () => {
+    setFilters({ category: null });
+    setPath([]);
+  };
+  useEffect(() => {
+    setPath([]);
+  }, [category]);
 
   const exportRows = async () => {
     setExporting(true);
     setExportError("");
-    const columns = [...availableDimensions.slice(0, path.length).map((dimension) => DIMENSION_LABELS[dimension]), DIMENSION_LABELS[currentDimension], ...measures];
+    const exportDrillPath = [...categoryBasePath, ...path];
+    const columns = [...exportDrillPath.map((entry) => DIMENSION_LABELS[entry.dimension]), DIMENSION_LABELS[currentDimension], ...measures];
     const rows = visibleRows.map((row) => {
-      const drillValues = path.map((entry) => entry.label);
+      const drillValues = exportDrillPath.map((entry) => entry.label);
       const dimensionValue = row.dimension === "Customer" ? row.label : row.dimension === "Week" ? row.key : row.label;
       return [...drillValues, dimensionValue, ...measures.map((measure) => row.values[measure])];
     });
@@ -212,10 +240,6 @@ export default function Explorer() {
             <p className="mt-1 text-sm text-muted-foreground">Reconcile sell-through, inventory and distributor sell-in by dimension.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={category} onValueChange={(next) => { setCategory(next); setPath([]); }}>
-              <SelectTrigger className="w-[170px]" aria-label="Filter Explorer by category" data-testid="select-explorer-category"><SelectValue placeholder="Category" /></SelectTrigger>
-              <SelectContent>{categoryOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-            </Select>
             <Select value={String(woiWeeks)} onValueChange={(value) => setWoiWeeks(Number(value) as 4 | 8 | 13)}>
               <SelectTrigger className="w-[130px]" aria-label="WOI calculation window" data-testid="select-explorer-woi-window"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="4">WOI · 4 weeks</SelectItem><SelectItem value="8">WOI · 8 weeks</SelectItem><SelectItem value="13">WOI · 13 weeks</SelectItem></SelectContent>
@@ -261,11 +285,16 @@ export default function Explorer() {
           <Card className="min-h-[420px] shadow-xs">
             <CardHeader className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/10 px-4 py-3">
               <div className="flex flex-wrap items-center gap-1 text-sm">
-                <button type="button" className="font-medium text-primary hover:underline" onClick={resetDrill} data-testid="breadcrumb-explorer-root">All data</button>
-                {path.map((entry, index) => (
+                  <button type="button" className="font-medium text-primary hover:underline" onClick={clearCategoryAndDrill} data-testid="breadcrumb-explorer-root">All data</button>
+                {breadcrumbPath.map((entry, index) => (
                   <span key={`${entry.dimension}-${entry.key}`} className="inline-flex items-center gap-1">
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                    <button type="button" className={`hover:underline ${index === path.length - 1 ? "font-semibold" : "text-muted-foreground"}`} onClick={() => setPath((current) => current.slice(0, index + 1))} data-testid={`breadcrumb-${entry.dimension.toLowerCase()}`}>{entry.label}</button>
+                    <button
+                      type="button"
+                      className={`hover:underline ${index === breadcrumbPath.length - 1 ? "font-semibold" : "text-muted-foreground"}`}
+                      onClick={() => setPath(category ? path.slice(0, Math.max(0, index)) : path.slice(0, index + 1))}
+                      data-testid={`breadcrumb-${entry.dimension.toLowerCase()}`}
+                    >{entry.label}</button>
                   </span>
                 ))}
               </div>

@@ -176,18 +176,17 @@ export function resolveWeekFromFilename(
   let warning: string | null = null;
   if (namedWeek) {
     const createdDate = dateOfFileCreation(fileCreatedAt, now);
-    const namedEnd = weekDates(weekIso)?.end;
-    if (namedEnd && createdDate < namedEnd) {
+    const createdInNamedWeek = dateStringToWeekIso(createdDate) === weekIso;
+    const weekday = new Date(`${createdDate}T00:00:00.000Z`).getUTCDay() || 7;
+    if (createdInNamedWeek && weekday <= 3) {
       weekIso = lastCompletedWeekBeforeDate(createdDate);
       warning = `Filename said WK ${namedWeek[2]} (not finished yet). Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`;
+    } else if (!isCompletedWeekAsOf(weekIso, now)) {
+      warning = `Filename said WK ${namedWeek[2]} (week not finished yet). Keep ${weekIso} and review.`;
     }
-  }
-
-  if (!isCompletedWeekAsOf(weekIso, now)) {
+  } else if (!isCompletedWeekAsOf(weekIso, now)) {
     weekIso = previousCompletedWeekIso(now);
-    warning ??= namedWeek
-      ? `Filename said WK ${namedWeek[2]} (not finished yet). Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`
-      : `Filename date${detected.reportDate ? ` ${detected.reportDate}` : ""} is in an unfinished week. Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`;
+    warning = `Filename date${detected.reportDate ? ` ${detected.reportDate}` : ""} is in an unfinished week. Filed as w/e ${weekEndingShortLabel(weekIso)} — check.`;
   }
 
   return { ...detected, weekIso, warning };

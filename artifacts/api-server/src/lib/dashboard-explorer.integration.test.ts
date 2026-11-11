@@ -173,4 +173,74 @@ describe.skipIf(!base)("Dashboard and Explorer HTTP analytics", () => {
       await pool.query("DELETE FROM resellers WHERE id=ANY($1::int[])", [resellerIds]);
     }
   }, 60000);
+
+  it("filters Explorer analytics by category and restores all categories when cleared", async () => {
+    if (base !== "http://localhost:80/api") {
+      throw new Error("Integration test must use the local development proxy.");
+    }
+    const prefix = `EXPCATEGORY${Date.now()}`;
+    const resellerIds: number[] = [];
+    const partIds: number[] = [];
+    const uploadIds: number[] = [];
+    let cookie = "";
+    try {
+      const login = await fetch(base + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: process.env.CHANNELPULSE_ADMIN_PASSWORD }),
+      });
+      expect(login.status).toBe(200);
+      cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
+      const headers = { Cookie: cookie };
+
+      const reseller = await pool.query(
+        "INSERT INTO resellers(name,code,active) VALUES($1,$2,true) RETURNING id",
+        [`${prefix} Reseller`, `${prefix}R`],
+      );
+      resellerIds.push(Number(reseller.rows[0].id));
+      const firstPart = await pool.query(
+        "INSERT INTO parts(part_no,category,active) VALUES($1,$2,true) RETURNING id",
+        [`${prefix}-SSD`, `${prefix} SSD`],
+      );
+      const secondPart = await pool.query(
+        "INSERT INTO parts(part_no,category,active) VALUES($1,$2,true) RETURNING id",
+        [`${prefix}-Monitor`, `${prefix} Monitor`],
+      );
+      partIds.push(Number(firstPart.rows[0].id), Number(secondPart.rows[0].id));
+
+      const mappings = JSON.stringify([
+        { canonical_field: "part_no", source_col: "SKU" },
+        { canonical_field: "soh", source_col: "SOH" },
+        { canonical_field: "sell_through_7d", source_col: "Sold" },
+      ]);
+      const upload = await pool.query(`INSERT INTO uploads
+        (reseller_id,filename,file_hash,week_iso,status,detected_mappings)
+        VALUES($1,$2,$3,'2026-W32','committed',$4::jsonb) RETURNING id`,
+      [resellerIds[0], `${prefix}.csv`, prefix, mappings]);
+      uploadIds.push(Number(upload.rows[0].id));
+      await pool.query(`INSERT INTO inventory_snapshots
+        (upload_id,reseller_id,part_id,week_iso,soh,sell_through_7d)
+        VALUES($1,$2,$3,'2026-W32',100,10),($1,$2,$4,'2026-W32',50,5)`,
+      [uploadIds[0], resellerIds[0], partIds[0], partIds[1]]);
+
+      const scopedParams = `week_iso=2026-W32&woi_weeks=4&part_ids=${partIds.join(",")}&reseller_ids=${resellerIds[0]}`;
+      const allResponse = await fetch(base + `/explorer/analytics?${scopedParams}`, { headers });
+      expect(allResponse.status).toBe(200);
+      const allData = await allResponse.json() as { rows: { part_id: number }[] };
+      expect(new Set(allData.rows.map((row) => row.part_id))).toEqual(new Set(partIds));
+
+      const selectedResponse = await fetch(
+        base + `/explorer/analytics?${scopedParams}&category=${encodeURIComponent(`${prefix} SSD`)}`,
+        { headers },
+      );
+      expect(selectedResponse.status).toBe(200);
+      const selectedData = await selectedResponse.json() as { rows: { part_id: number }[] };
+      expect(selectedData.rows.map((row) => row.part_id)).toEqual([partIds[0]]);
+    } finally {
+      await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=ANY($1::int[])", [uploadIds]);
+      await pool.query("DELETE FROM uploads WHERE id=ANY($1::int[])", [uploadIds]);
+      await pool.query("DELETE FROM parts WHERE id=ANY($1::int[])", [partIds]);
+      await pool.query("DELETE FROM resellers WHERE id=ANY($1::int[])", [resellerIds]);
+    }
+  }, 60000);
 });

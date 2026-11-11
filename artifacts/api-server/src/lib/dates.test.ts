@@ -26,7 +26,7 @@ describe("central report dates", () => {
     expect(calendarDate(2027, 1, 29)).toBeNull();
   });
 
-  it("moves a KS WK filename created before the named week ends to the last completed week", () => {
+  it("moves a WK filename created Monday through Wednesday to the last completed week", () => {
     const resolved = resolveWeekFromFilename(
       "2026_WK_46_Samsung_SSD_SOH_reports_-_KS.xlsx",
       "2026-11-09T00:30:00.000Z",
@@ -34,6 +34,36 @@ describe("central report dates", () => {
     );
     expect(resolved.weekIso).toBe("2026-W45");
     expect(resolved.warning).toBe("Filename said WK 46 (not finished yet). Filed as w/e 8 Nov — check.");
+  });
+
+  it("keeps a named week when the file was created Friday within that week", () => {
+    const resolved = resolveWeekFromFilename(
+      "2026_WK_45_Samsung_SSD_SOH_reports_-_KS.xlsx",
+      "2026-11-06",
+      new Date("2026-11-09T00:30:00.000Z"),
+    );
+    expect(resolved.weekIso).toBe("2026-W45");
+    expect(resolved.warning).toBeNull();
+  });
+
+  it("keeps a named week when the file was created Saturday within that week", () => {
+    const resolved = resolveWeekFromFilename(
+      "2026_WK_45_Samsung_SSD_SOH_reports_-_KS.xlsx",
+      "2026-11-07",
+      new Date("2026-11-09T00:30:00.000Z"),
+    );
+    expect(resolved.weekIso).toBe("2026-W45");
+    expect(resolved.warning).toBeNull();
+  });
+
+  it("keeps and flags a named week that is unfinished when uploaded", () => {
+    const resolved = resolveWeekFromFilename(
+      "2026_WK_45_Samsung_SSD_SOH_reports_-_KS.xlsx",
+      "2026-11-05",
+      new Date("2026-11-06T00:00:00.000Z"),
+    );
+    expect(resolved.weekIso).toBe("2026-W45");
+    expect(resolved.warning).toContain("week not finished yet");
   });
 
   it("keeps WK 42 when its file creation date is the week's ending Sunday", () => {
