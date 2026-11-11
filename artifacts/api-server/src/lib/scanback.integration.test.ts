@@ -461,6 +461,12 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
           caps: weeklyCustomers.map((customer: { id: number }) => ({ resellerId: customer.id, quantity: null })),
         }],
       })).data;
+      const warmedWeeklyCache = await fetch(
+        `${base}/scanback/claims-by-week?${new URLSearchParams({ programId: weeklyProgram.id, week: "2001-W37" })}`,
+        { headers: { Cookie: sessionCookie } },
+      );
+      expect(warmedWeeklyCache.status).toBe(200);
+      expect((await warmedWeeklyCache.json() as any).totals.reportedCount).toBe(0);
       const weeklyEvidence = await commit(await upload("evidence",
         `${header}${prefix}-weekly-a,01/09/2001,${a.code},${weeklySku},1,${prefix}WKA,100.00,60.00\n` +
         `${prefix}-weekly-b,01/09/2001,${other.code},${weeklySku},1,${prefix}WKB,100.00,60.00\n`,
@@ -481,11 +487,32 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(weeklyApproval.status).toBe(200);
       ids.batches.add(weeklyApproval.data.id);
 
+      const weeklyReportIds = [weeklyClaimA.id, weeklyClaimB.id];
+      const draftsBeforeWeeklyRead = await pool.query(
+        `SELECT id,payload::text AS payload FROM scanback_drafts
+         WHERE payload->'settings'->>'claimImportId'=ANY($1::text[]) ORDER BY id`,
+        [weeklyReportIds],
+      );
+      const importsBeforeWeeklyRead = await pool.query(
+        "SELECT id,payload::text AS payload FROM scanback_imports WHERE id=ANY($1::text[]) ORDER BY id",
+        [weeklyReportIds],
+      );
       const weeklyParams = new URLSearchParams({ programId: weeklyProgram.id, week: "2001-W37" });
       const claimsByWeekResponse = await fetch(`${base}/scanback/claims-by-week?${weeklyParams}`, {
         headers: { Cookie: sessionCookie },
       });
       expect(claimsByWeekResponse.status).toBe(200);
+      const draftsAfterWeeklyRead = await pool.query(
+        `SELECT id,payload::text AS payload FROM scanback_drafts
+         WHERE payload->'settings'->>'claimImportId'=ANY($1::text[]) ORDER BY id`,
+        [weeklyReportIds],
+      );
+      const importsAfterWeeklyRead = await pool.query(
+        "SELECT id,payload::text AS payload FROM scanback_imports WHERE id=ANY($1::text[]) ORDER BY id",
+        [weeklyReportIds],
+      );
+      expect(draftsAfterWeeklyRead.rows).toEqual(draftsBeforeWeeklyRead.rows);
+      expect(importsAfterWeeklyRead.rows).toEqual(importsBeforeWeeklyRead.rows);
       const weekly = await claimsByWeekResponse.json() as any;
       expect(weekly.weekLabel).toBe("w/e Sun 16 Sep");
       const summaryA = weekly.customers.find((customer: any) => customer.accountId === a.id);

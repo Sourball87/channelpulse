@@ -35,6 +35,11 @@ export interface VerificationContext {
   unmatchedCreditKeys?: Set<string>;
   unmatchedProntoCredits?: { accountSkuKey: string; invoice: string; date: string }[];
   ddRangeSkus?: Set<string>;
+  evidenceBySerial?: Map<string, EvidenceRow[]>;
+  approvedBySerial?: Map<string, ApprovedSerial>;
+  reportedSalesBySerial?: Map<string, ReportedSale>;
+  accountCodesById?: Map<number, string>;
+  unmatchedProntoCreditsByAccountSku?: Map<string, { accountSkuKey: string; invoice: string; date: string }>;
 }
 
 export function ownerFor(events: EvidenceRow[]) {
@@ -62,19 +67,28 @@ export function ownerFor(events: EvidenceRow[]) {
   return { review: false, owner: active[0] ?? null };
 }
 
-export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
-  const { program: p, settings: s } = ctx;
+export function buildEvidenceSerialIndex(events: EvidenceRow[]): Map<string, EvidenceRow[]> {
   const bySerial = new Map<string, EvidenceRow[]>();
   const eventKeys = new Set<string>();
-  for (const e of ctx.evidence) {
-    const key = evidenceKey(e);
+  for (const event of events) {
+    const key = evidenceKey(event);
     if (eventKeys.has(key)) continue;
     eventKeys.add(key);
-    bySerial.set(e.serial, [...(bySerial.get(e.serial) ?? []), e]);
+    const rows = bySerial.get(event.serial);
+    if (rows) rows.push(event);
+    else bySerial.set(event.serial, [event]);
   }
-  const used = new Map(ctx.approved.map(a => [a.serial, a]));
-  const firstSales = new Map<string, ReportedSale>();
-  for (const sale of ctx.reportedSales ?? []) if (!firstSales.has(sale.serial)) firstSales.set(sale.serial, sale);
+  return bySerial;
+}
+
+export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
+  const { program: p, settings: s } = ctx;
+  const bySerial = ctx.evidenceBySerial ?? buildEvidenceSerialIndex(ctx.evidence);
+  const used = ctx.approvedBySerial ?? new Map(ctx.approved.map(a => [a.serial, a]));
+  const firstSales = ctx.reportedSalesBySerial ?? new Map<string, ReportedSale>();
+  if (!ctx.reportedSalesBySerial)
+    for (const sale of ctx.reportedSales ?? []) if (!firstSales.has(sale.serial)) firstSales.set(sale.serial, sale);
+  const accountCodes = ctx.accountCodesById ?? new Map((ctx.accounts ?? []).map(account => [account.id, account.code]));
   const catalogCode = new Map(ctx.parts.map(part => [part.id, part.code.toUpperCase()]));
   const lines = new Map(p.lines.map(line => [
     (line.sku ?? catalogCode.get(line.partId ?? -1) ?? "").trim().toUpperCase(), line,
@@ -114,7 +128,7 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       o.invoice = inv.invoice; o.invoiceDate = inv.date; o.unitPriceCents = inv.unitPriceCents;
       o.sku = inv.sku; o.source = inv.source; o.costCents = inv.costCents ?? null;
       o.invoicedAccountId = inv.accountId;
-      o.invoicedTo = ctx.accounts?.find(a => a.id === inv.accountId)?.code ?? String(inv.accountId ?? "");
+       o.invoicedTo = accountCodes.get(inv.accountId ?? -1) ?? String(inv.accountId ?? "");
       o.gtmBuyCents = lines.get(inv.sku.trim().toUpperCase())?.gtmBuyCents ?? null;
     }
     const firstSourceRow = seen.get(r.serial);
@@ -137,8 +151,9 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       return reject(reportReason);
     }
     const skuKey = (r.sku || inv?.sku || "").trim().toUpperCase();
-    const unmatchedCredit = ctx.unmatchedProntoCredits?.find(credit =>
-      credit.accountSkuKey === `${s.accountId}|${skuKey}`);
+    const unmatchedCredit = ctx.unmatchedProntoCreditsByAccountSku
+      ? ctx.unmatchedProntoCreditsByAccountSku.get(`${s.accountId}|${skuKey}`)
+      : ctx.unmatchedProntoCredits?.find(credit => credit.accountSkuKey === `${s.accountId}|${skuKey}`);
     if (unmatchedCredit || ctx.unmatchedCreditKeys?.has(`${s.accountId}|${skuKey}`)) {
       o.trackingColor = "amber";
       const creditDetails = unmatchedCredit

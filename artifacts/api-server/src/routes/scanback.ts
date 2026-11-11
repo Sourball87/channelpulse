@@ -18,13 +18,15 @@ import {
   resolveWeekFromReportDates, previousCompletedWeekIso, weekEndingShortLabel,
 } from "../lib/dates";
 import { buildScanbackWorkbook, XLSX_MIME } from "../lib/scanback-export";
-import { buildScanbackClaimsByWeek, buildScanbackClaimsByWeekWorkbook } from "../lib/scanback-weekly";
+import {
+  buildScanbackClaimsByWeek, buildScanbackClaimsByWeekWorkbook, invalidateScanbackClaimsByWeekCache,
+} from "../lib/scanback-weekly";
 import { listWeeklyExports, readWeeklyExport } from "../lib/scanback-export-storage";
 import { validateProgramReferences } from "../lib/program-table";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
   currentClaimReport, total, recordApprovedSerials, statementRows, requireThat, ScanbackError,
-  generateAutomaticClaimDrafts, refreshAutomaticClaimDrafts, type Client,
+  generateAutomaticClaimDrafts, loadVerificationContext, refreshAutomaticClaimDrafts, type Client,
 } from "../lib/scanback-store";
 
 const router = Router();
@@ -99,10 +101,14 @@ router.delete("/scanback/programs/:id", route(async (c, req) => {
   })]);
   const auditId = Number(audit.rows[0].id);
   req.log.info({ auditId, programId: id, deletedDraftCount: deletedDrafts.rowCount }, "Scanback promotion deleted");
+  invalidateScanbackClaimsByWeekCache();
 
   const reports = (await all<ScanbackImport>(c, "scanback_imports"))
     .filter(report => report.kind === "claim" && report.state === "committed");
-  for (const report of reports) await generateAutomaticClaimDrafts(c, report);
+  if (reports.length) {
+    const context = await loadVerificationContext(c);
+    for (const report of reports) await generateAutomaticClaimDrafts(c, report, context);
+  }
 
   return { id, deletedDraftCount: deletedDrafts.rowCount ?? deletedDrafts.rows.length, auditId };
 }));
@@ -160,12 +166,16 @@ router.post("/scanback/programs", route(async (c, req, res) => {
     version: (old?.version ?? 0) + 1, archived: input.archived ?? false, createdAt: old?.createdAt ?? new Date().toISOString() };
   if (old) await put(c, "scanback_programs", value.id, value);
   else await c.query("INSERT INTO scanback_programs(id,payload) VALUES($1,$2::jsonb)", [value.id, JSON.stringify(value)]);
+  invalidateScanbackClaimsByWeekCache();
   await c.query(`UPDATE scanback_approved_serials s SET program_id=$1
     FROM scanback_batches b WHERE s.batch_id=b.id AND s.program_id IS NULL
     AND upper(b.payload->>'programName')=upper($2)`, [value.id, value.name]);
   const reports = (await all<ScanbackImport>(c, "scanback_imports"))
     .filter(report => report.kind === "claim" && report.state === "committed");
-  for (const report of reports) await generateAutomaticClaimDrafts(c, report);
+  if (reports.length) {
+    const context = await loadVerificationContext(c);
+    for (const report of reports) await generateAutomaticClaimDrafts(c, report, context);
+  }
   return value;
 }));
 router.post("/scanback/imports/preview", upload.single("file"), route(async (c, req, res) => {
@@ -226,6 +236,7 @@ router.post("/scanback/imports/:id/supersede", route(async (c, req) => {
     "Only an active committed customer report can be marked superseded.");
   value.state = "superseded";
   await put(c, "scanback_imports", value.id, value);
+  invalidateScanbackClaimsByWeekCache();
   return publicImport(value, true);
 }));
 router.post("/scanback/pronto-credits/:importId/:sourceRow/resolve", route(async (c, req) => {
@@ -283,6 +294,7 @@ router.post("/scanback/pronto-credits/:importId/:sourceRow/resolve", route(async
   };
   value.prontoCreditResolutions = [...resolutions, resolution];
   await put(c, "scanback_imports", value.id, value);
+  invalidateScanbackClaimsByWeekCache();
   await refreshAutomaticClaimDrafts(c);
   return resolution;
 }));
@@ -369,6 +381,7 @@ router.post("/scanback/imports/:id/commit", route(async (c, req, res) => {
   value.state = "committed";
   value.committedAt = new Date().toISOString();
   await put(c, "scanback_imports", value.id, value);
+  invalidateScanbackClaimsByWeekCache();
   if (value.kind === "claim") await generateAutomaticClaimDrafts(c, value);
   else if (value.kind === "evidence") await refreshAutomaticClaimDrafts(c);
   return publicImport(value, true);
@@ -396,6 +409,7 @@ router.post("/scanback/verify", route(async (c, req, res) => {
   };
   const snapshot = { ...draft, programName: value.p.name, accountCode: value.accounts.find(a => a.id === input.accountId)?.code };
   await c.query("INSERT INTO scanback_drafts(id,payload) VALUES($1,$2::jsonb) ON CONFLICT(id) DO UPDATE SET payload=EXCLUDED.payload", [id, JSON.stringify(snapshot)]);
+  invalidateScanbackClaimsByWeekCache();
   return draft;
 }));
 router.post("/scanback/approve", route(async (c, req, res) => {
@@ -421,6 +435,7 @@ router.post("/scanback/approve", route(async (c, req, res) => {
   const snapshot = { ...batch, programSnapshot: current.p, settings: draft.settings, verificationToken: draft.token };
   await c.query("INSERT INTO scanback_batches(id,draft_id,payload) VALUES($1,$2,$3::jsonb)", [batch.id, draft.id, JSON.stringify(snapshot)]);
   await recordApprovedSerials(c, batch, account.id, current.parts, current.p.id);
+  invalidateScanbackClaimsByWeekCache();
   await refreshAutomaticClaimDrafts(c);
   return batch;
 }));

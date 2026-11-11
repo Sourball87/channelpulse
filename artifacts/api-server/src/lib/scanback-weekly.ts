@@ -1,6 +1,5 @@
 import * as XLSX from "xlsx";
 import type {
-  ScanbackBatch,
   ScanbackClaimsByWeek,
   ScanbackClaimsByWeekCustomer,
   ScanbackClaimsByWeekLine,
@@ -10,17 +9,16 @@ import type {
   ScanbackResult,
 } from "@workspace/api-zod";
 import {
-  all,
-  calculateDraft,
-  catalog,
-  generateAutomaticClaimDrafts,
-  get,
-  ledger,
+  loadVerificationContext,
+  requireThat,
   ScanbackError,
+  verifyWithContext,
   type Client,
+  type ScanbackVerificationData,
+  type StoredScanbackBatch,
 } from "./scanback-store";
 import { dateStringToWeekIso, previousCompletedWeekIso, weekDates, weekEndingShortLabel, isValidWeekIso } from "./dates";
-import { resolveMissingClaimSkus, splitClaimRowsByPromotion } from "./scanback-auto-drafts";
+import { resolveMissingClaimSkus, splitResolvedClaimRowsByPromotion } from "./scanback-auto-drafts";
 import { serialKey } from "./scanback-engine";
 import { maskCustomerText } from "./customer-display";
 
@@ -31,12 +29,27 @@ export interface ScanbackClaimsByWeekFilters {
   status?: "all" | "approved" | "awaiting_approval" | "not_qualifying";
 }
 
-type ExtendedBatch = ScanbackBatch & {
-  settings?: { programId?: string; accountId?: number; claimImportId?: string };
-  programSnapshot?: ScanbackProgram;
-};
 type CandidateLine = ScanbackClaimsByWeekLine & { _rowIndex: number };
 type Status = ScanbackClaimsByWeekLine["status"];
+const WEEKLY_CACHE_TTL_MS = 30_000;
+type WeeklyCacheEntry = {
+  programId: string;
+  expiresAt: number;
+  programCustomerIds: number[];
+  coveredCustomerIds: Set<number>;
+  report: ScanbackClaimsByWeek;
+};
+const weeklyReportCache = new Map<string, WeeklyCacheEntry>();
+
+export function invalidateScanbackClaimsByWeekCache(programId?: string) {
+  if (!programId) {
+    weeklyReportCache.clear();
+    return;
+  }
+  for (const [key, entry] of weeklyReportCache) {
+    if (entry.programId === programId) weeklyReportCache.delete(key);
+  }
+}
 
 const emptyTotals = (): ScanbackClaimsByWeekTotals => ({
   reportedCount: 0,
@@ -141,40 +154,27 @@ function lineStatusText(line: ScanbackClaimsByWeekLine) {
   return `Not qualifying – ${line.reason}`;
 }
 
-export async function buildScanbackClaimsByWeek(
-  c: Client,
-  filters: ScanbackClaimsByWeekFilters,
-): Promise<ScanbackClaimsByWeek> {
-  const program = await get<ScanbackProgram>(c, "scanback_programs", filters.programId);
-  const programs = await all<ScanbackProgram>(c, "scanback_programs");
-  const defaultWeek = previousCompletedWeekIso();
-  const selectedWeek = filters.week === "all" ? null : filters.week ?? defaultWeek;
-  if (selectedWeek && !isValidWeekIso(selectedWeek)) {
-    throw new ScanbackError("Choose a valid Monday–Sunday week.");
-  }
-
-  const { accounts } = await catalog(c);
-  const programAccounts = accounts.filter((account) => program.customerIds.includes(account.id));
-  if (filters.customerId != null && !program.customerIds.includes(filters.customerId)) {
-    throw new ScanbackError("Choose a customer included in this promotion.");
-  }
-  const imports = await all<ScanbackImport>(c, "scanback_imports");
-  const evidenceImports = imports.filter((item) =>
-    item.kind === "evidence" && ["committed", "superseded"].includes(item.state),
+export function buildScanbackClaimsByWeekFromContext(
+  context: ScanbackVerificationData,
+  programId: string,
+  selectedWeek: string | null,
+  defaultWeek: string,
+  customerIdsToBuild?: number[],
+): ScanbackClaimsByWeek {
+  const program = context.programsById.get(programId);
+  requireThat(program, "Record not found", 404);
+  const requestedCustomers = customerIdsToBuild ? new Set(customerIdsToBuild) : null;
+  const programAccounts = context.accounts.filter(account =>
+    program.customerIds.includes(account.id) && (!requestedCustomers || requestedCustomers.has(account.id)),
   );
-  const invoiceRows = evidenceImports.filter((item) => !!item.pronto).flatMap((item) => item.rows);
-  const reports = imports.filter((item) => item.kind === "claim" && item.state === "committed");
-  const batches = await all<ExtendedBatch>(c, "scanback_batches");
-  const approvedLedger = await ledger(c);
-  const batchesById = new Map(batches.map((batch) => [batch.id, batch]));
+  const batchesById = new Map<string, StoredScanbackBatch>(context.batches.map(batch => [batch.id, batch]));
   const approvedBySource = new Map<string, { row: ScanbackResult; reference: string }>();
-
-  for (const approved of approvedLedger) {
+  for (const approved of context.approved) {
     const batch = batchesById.get(approved.batchId);
     if (!batch) continue;
-    const programId = batch.settings?.programId ?? batch.programSnapshot?.id ?? approved.programId;
+    const approvedProgramId = batch.settings?.programId ?? batch.programSnapshot?.id ?? approved.programId;
     const programName = batch.programSnapshot?.name ?? batch.programName;
-    if (programId ? programId !== program.id : programName.toUpperCase() !== program.name.toUpperCase()) continue;
+    if (approvedProgramId ? approvedProgramId !== program.id : programName.toUpperCase() !== program.name.toUpperCase()) continue;
     const accountId = batch.settings?.accountId ?? approved.accountId;
     if (!program.customerIds.includes(accountId)) continue;
     const reportId = batch.settings?.claimImportId;
@@ -186,46 +186,55 @@ export async function buildScanbackClaimsByWeek(
     }
   }
 
+  const reportsByCustomer = new Map<number, ScanbackImport[]>();
+  for (const report of context.claimImports) {
+    const accountId = report.accountId ?? report.rows.find(row => row.accountId != null)?.accountId ?? null;
+    if (accountId == null || !program.customerIds.includes(accountId)) continue;
+    const hasRowsInPeriod = report.rows.some(row =>
+      (row.accountId ?? accountId) === accountId &&
+      (selectedWeek
+        ? dateStringToWeekIso(row.date) === selectedWeek
+        : row.date >= program.start && row.date <= program.end),
+    );
+    if (!hasRowsInPeriod) continue;
+    const current = reportsByCustomer.get(accountId) ?? [];
+    current.push(report);
+    reportsByCustomer.set(accountId, current);
+  }
+
   const customers: ScanbackClaimsByWeekCustomer[] = [];
-  const statusFilter = filters.status ?? "all";
   for (const account of programAccounts) {
     const lines: CandidateLine[] = [];
-    for (const report of reports) {
-      const reportAccountId = report.accountId ?? report.rows.find((row) => row.accountId != null)?.accountId ?? null;
+    for (const report of reportsByCustomer.get(account.id) ?? []) {
+      const reportAccountId = report.accountId ?? report.rows.find(row => row.accountId != null)?.accountId ?? null;
       if (reportAccountId !== account.id) continue;
-
-      const resolvedRows = resolveMissingClaimSkus(report.rows, reportAccountId, invoiceRows);
-      const matching = splitClaimRowsByPromotion(resolvedRows, reportAccountId, programs, invoiceRows);
+      const resolvedRows = resolveMissingClaimSkus(report.rows, reportAccountId, context.invoiceSkuIndex);
+      const matching = splitResolvedClaimRowsByPromotion(resolvedRows, reportAccountId, context.programs);
       const groupByRow = new Map<number, (typeof matching.groups)[number]>();
       for (const group of matching.groups) for (const rowIndex of group.rowIndices) groupByRow.set(rowIndex, group);
-      const unmatchedByRow = new Map(matching.unmatched.map((row) => [row.rowIndex, row.reason]));
-      const selectedGroup = matching.groups.find((group) =>
+      const unmatchedByRow = new Map(matching.unmatched.map(row => [row.rowIndex, row.reason]));
+      const selectedGroup = matching.groups.find(group =>
         group.program.id === program.id && group.accountId === account.id,
       );
 
-      let draftResults = new Map<number, ScanbackResult>();
-      if (selectedGroup && !program.archived) {
-        // Regenerate from committed evidence with the same verifier used by Verify,
-        // so the report reflects current program terms, returns, approvals and caps.
-        const generated = await generateAutomaticClaimDrafts(c, report);
-        const current = generated.find((draft) =>
-          draft.settings.programId === program.id && draft.settings.accountId === account.id,
-        );
-        draftResults = new Map((current?.results ?? []).map((result) => [result.rowIndex, result]));
+      let selectedRows: number[] | undefined;
+      if (selectedGroup) {
+        const autoKey = `${report.id}|${program.id}|${account.id}`;
+        const savedSelection = context.draftsByAutoKey.get(autoKey)?.settings.selectedRows;
+        selectedRows = Array.isArray(savedSelection)
+          ? savedSelection.filter(index => selectedGroup.rowIndices.includes(index))
+          : selectedGroup.rowIndices;
       }
-
-      let fallbackResults = new Map<number, ScanbackResult>();
-      if (!program.archived) {
-        const calculated = await calculateDraft(c, {
-          programId: program.id,
-          accountId: account.id,
-          claimImportId: report.id,
-          basis: "sell",
-          from: program.start,
-          to: program.end,
-        });
-        fallbackResults = new Map(calculated.results.map((result) => [result.rowIndex, result]));
-      }
+      const verification = program.archived ? null : verifyWithContext(context, {
+        programId: program.id,
+        accountId: account.id,
+        claimImportId: report.id,
+        basis: "sell",
+        from: program.start,
+        to: program.end,
+        ...(selectedRows ? { selectedRows } : {}),
+      });
+      const resultByRow = new Map((verification?.results ?? []).map(result => [result.rowIndex, result]));
 
       for (const row of resolvedRows) {
         if ((row.accountId ?? reportAccountId) !== account.id) continue;
@@ -234,15 +243,14 @@ export async function buildScanbackClaimsByWeek(
         if (selectedWeek ? saleWeek !== selectedWeek : row.date < program.start || row.date > program.end) continue;
 
         const group = groupByRow.get(row.rowIndex);
-        const exactApprovedKey = `${report.id}|${account.id}|${row.rowIndex}|${serialKey(row.serial)}`;
-        const approved = approvedBySource.get(exactApprovedKey);
+        const approved = approvedBySource.get(`${report.id}|${account.id}|${row.rowIndex}|${serialKey(row.serial)}`);
         let line: ScanbackClaimsByWeekLine;
         if (approved) {
           line = approvedLine(approved.row, approved.reference);
         } else if (program.archived) {
           line = notQualifyingResult(row, "Promotion is archived.");
         } else if (group?.program.id === program.id) {
-          const result = draftResults.get(row.rowIndex) ?? fallbackResults.get(row.rowIndex);
+          const result = resultByRow.get(row.rowIndex);
           line = result
             ? statusResult(result)
             : notQualifyingResult(row, "Current verification result is unavailable.");
@@ -255,7 +263,7 @@ export async function buildScanbackClaimsByWeek(
             : reason === "missing_customer_or_sale_date"
               ? "Customer or sold date is missing."
               : "No unique active promotion matched this customer, sold date and SKU.";
-          line = notQualifyingResult(row, explanation, fallbackResults.get(row.rowIndex));
+          line = notQualifyingResult(row, explanation, resultByRow.get(row.rowIndex));
         }
         lines.push({ ...line, _rowIndex: row.rowIndex });
       }
@@ -263,30 +271,24 @@ export async function buildScanbackClaimsByWeek(
 
     lines.sort((a, b) => a.soldDate.localeCompare(b.soldDate) ||
       a.serial.localeCompare(b.serial) || a._rowIndex - b._rowIndex);
-    const filteredLines = lines.filter((line) => statusFilter === "all" || line.status === statusFilter);
-    const publicLines = filteredLines
-      .map(({ _rowIndex: _unused, ...line }) => line);
-    const approvedCents = filteredLines.filter((line) => line.status === "approved")
+    const approvedCents = lines.filter(line => line.status === "approved")
       .reduce((sum, line) => sum + (line.claimCents ?? 0), 0);
-    const awaitingApprovalCents = filteredLines.filter((line) => line.status === "awaiting_approval")
+    const awaitingApprovalCents = lines.filter(line => line.status === "awaiting_approval")
       .reduce((sum, line) => sum + (line.claimCents ?? 0), 0);
-    const qualifyingCount = filteredLines.filter((line) => line.status !== "not_qualifying").length;
-    const notQualifyingCount = filteredLines.length - qualifyingCount;
-    const customer: ScanbackClaimsByWeekCustomer = {
+    const qualifyingCount = lines.filter(line => line.status !== "not_qualifying").length;
+    const notQualifyingCount = lines.length - qualifyingCount;
+    customers.push({
       accountId: account.id,
       accountCode: account.code,
       hasSerialReport: lines.length > 0,
-      reportedCount: filteredLines.length,
+      reportedCount: lines.length,
       qualifyingCount,
       notQualifyingCount,
       qualifyingCents: approvedCents + awaitingApprovalCents,
       approvedCents,
       awaitingApprovalCents,
-      lines: publicLines,
-    };
-    if (filters.customerId == null || filters.customerId === account.id) {
-      if (statusFilter === "all" || publicLines.length > 0) customers.push(customer);
-    }
+      lines: lines.map(({ _rowIndex: _unused, ...line }) => line),
+    });
   }
 
   const totals = emptyTotals();
@@ -303,6 +305,100 @@ export async function buildScanbackClaimsByWeek(
     customers,
     totals,
   };
+}
+
+function filteredReport(report: ScanbackClaimsByWeek, filters: ScanbackClaimsByWeekFilters, defaultWeek: string) {
+  const status = filters.status ?? "all";
+  const customers = report.customers.flatMap(customer => {
+    if (filters.customerId != null && filters.customerId !== customer.accountId) return [];
+    const lines = customer.lines.filter(line => status === "all" || line.status === status);
+    if (status !== "all" && lines.length === 0) return [];
+    const approvedCents = lines.filter(line => line.status === "approved")
+      .reduce((sum, line) => sum + (line.claimCents ?? 0), 0);
+    const awaitingApprovalCents = lines.filter(line => line.status === "awaiting_approval")
+      .reduce((sum, line) => sum + (line.claimCents ?? 0), 0);
+    const qualifyingCount = lines.filter(line => line.status !== "not_qualifying").length;
+    return [{
+      ...customer,
+      reportedCount: lines.length,
+      qualifyingCount,
+      notQualifyingCount: lines.length - qualifyingCount,
+      qualifyingCents: approvedCents + awaitingApprovalCents,
+      approvedCents,
+      awaitingApprovalCents,
+      lines,
+    }];
+  });
+  const totals = emptyTotals();
+  for (const customer of customers) addTotals(totals, customer);
+  return {
+    ...report,
+    defaultWeek,
+    weekOptions: weekOptions({ start: report.programStart, end: report.programEnd } as ScanbackProgram, defaultWeek),
+    customers,
+    totals,
+  };
+}
+
+export async function buildScanbackClaimsByWeek(
+  c: Client,
+  filters: ScanbackClaimsByWeekFilters,
+): Promise<ScanbackClaimsByWeek> {
+  const defaultWeek = previousCompletedWeekIso();
+  const selectedWeek = filters.week === "all" ? null : filters.week ?? defaultWeek;
+  if (selectedWeek && !isValidWeekIso(selectedWeek)) throw new ScanbackError("Choose a valid Monday–Sunday week.");
+  const key = JSON.stringify([filters.programId, selectedWeek ?? "all"]);
+  let entry = weeklyReportCache.get(key);
+  if (entry && entry.expiresAt <= Date.now()) {
+    weeklyReportCache.delete(key);
+    entry = undefined;
+  }
+
+  let context: ScanbackVerificationData | undefined;
+  if (!entry) {
+    context = await loadVerificationContext(c);
+    const program = context.programsById.get(filters.programId);
+    requireThat(program, "Record not found", 404);
+    entry = {
+      programId: program.id,
+      expiresAt: Date.now() + WEEKLY_CACHE_TTL_MS,
+      programCustomerIds: [...program.customerIds],
+      coveredCustomerIds: new Set(),
+      report: {
+        programId: program.id,
+        programName: program.name,
+        programStart: program.start,
+        programEnd: program.end,
+        selectedWeek,
+        defaultWeek,
+        weekLabel: selectedWeek ? `w/e Sun ${weekEndingShortLabel(selectedWeek)}` : "All weeks in promotion",
+        weekOptions: weekOptions(program, defaultWeek),
+        customers: [],
+        totals: emptyTotals(),
+      },
+    };
+    weeklyReportCache.set(key, entry);
+  }
+
+  if (filters.customerId != null && !entry.programCustomerIds.includes(filters.customerId))
+    throw new ScanbackError("Choose a customer included in this promotion.");
+  const customerIdsToBuild = filters.customerId == null ? entry.programCustomerIds : [filters.customerId];
+  const missingCustomerIds = customerIdsToBuild.filter(id => !entry.coveredCustomerIds.has(id));
+  if (missingCustomerIds.length) {
+    context ??= await loadVerificationContext(c);
+    const segment = buildScanbackClaimsByWeekFromContext(
+      context, filters.programId, selectedWeek, defaultWeek, missingCustomerIds,
+    );
+    const customersById = new Map(entry.report.customers.map(customer => [customer.accountId, customer]));
+    for (const customer of segment.customers) customersById.set(customer.accountId, customer);
+    const mergedCustomers = [...customersById.values()].sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+    const totals = emptyTotals();
+    for (const customer of mergedCustomers) addTotals(totals, customer);
+    entry.report = { ...entry.report, customers: mergedCustomers, totals };
+    for (const id of missingCustomerIds) entry.coveredCustomerIds.add(id);
+  }
+  entry.expiresAt = Date.now() + WEEKLY_CACHE_TTL_MS;
+  return filteredReport(entry.report, filters, defaultWeek);
 }
 
 function safeCell(value: unknown): string | number {

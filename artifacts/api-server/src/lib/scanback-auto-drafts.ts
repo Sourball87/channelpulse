@@ -13,12 +13,11 @@ export interface UnmatchedClaimRow {
   reason: "missing_customer_or_sale_date" | "no_matching_promotion" | "overlapping_promotions";
 }
 
-export function resolveMissingClaimSkus(
-  rows: ScanbackImportRow[],
-  reportAccountId: number | null,
-  invoiceRows: Pick<ScanbackImportRow, "serial" | "sku" | "accountId">[],
-): ScanbackImportRow[] {
-  const invoiceSkus = new Map<string, Set<string>>();
+export type InvoiceSkuIndex = Map<string, Set<string>>;
+type InvoiceSkuRow = Pick<ScanbackImportRow, "serial" | "sku" | "accountId">;
+
+export function buildInvoiceSkuIndex(invoiceRows: InvoiceSkuRow[]): InvoiceSkuIndex {
+  const invoiceSkus: InvoiceSkuIndex = new Map();
   for (const invoice of invoiceRows) {
     if (invoice.accountId == null) continue;
     const serial = serialKey(invoice.serial);
@@ -29,6 +28,17 @@ export function resolveMissingClaimSkus(
     skus.add(sku);
     invoiceSkus.set(key, skus);
   }
+  return invoiceSkus;
+}
+
+export function resolveMissingClaimSkus(
+  rows: ScanbackImportRow[],
+  reportAccountId: number | null,
+  invoiceRowsOrIndex: InvoiceSkuRow[] | InvoiceSkuIndex,
+): ScanbackImportRow[] {
+  const invoiceSkus = invoiceRowsOrIndex instanceof Map
+    ? invoiceRowsOrIndex
+    : buildInvoiceSkuIndex(invoiceRowsOrIndex);
 
   return rows.map(row => {
     if (String(row.sku ?? "").trim()) return row;
@@ -44,11 +54,19 @@ export function splitClaimRowsByPromotion(
   rows: ScanbackImportRow[],
   reportAccountId: number | null,
   programs: ScanbackProgram[],
-  invoiceRows: Pick<ScanbackImportRow, "serial" | "sku" | "accountId">[] = [],
+  invoiceRowsOrIndex: InvoiceSkuRow[] | InvoiceSkuIndex = [],
+): { groups: PromotionClaimRows[]; unmatched: UnmatchedClaimRow[] } {
+  const resolvedRows = resolveMissingClaimSkus(rows, reportAccountId, invoiceRowsOrIndex);
+  return splitResolvedClaimRowsByPromotion(resolvedRows, reportAccountId, programs);
+}
+
+export function splitResolvedClaimRowsByPromotion(
+  resolvedRows: ScanbackImportRow[],
+  reportAccountId: number | null,
+  programs: ScanbackProgram[],
 ): { groups: PromotionClaimRows[]; unmatched: UnmatchedClaimRow[] } {
   const grouped = new Map<string, PromotionClaimRows>();
   const unmatched: UnmatchedClaimRow[] = [];
-  const resolvedRows = resolveMissingClaimSkus(rows, reportAccountId, invoiceRows);
 
   for (const row of resolvedRows) {
     const accountId = row.accountId ?? reportAccountId;

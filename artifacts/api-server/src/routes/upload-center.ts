@@ -18,6 +18,7 @@ import { serialKey } from "../lib/scanback-engine";
 import { loadReportedSales, reportedSales, firstReportedSales, earlierReportReason, type ReportedSale } from "../lib/serial-tracking";
 import { indexProntoSource, isPronto, pendingProntoCredits } from "../lib/scanback-pronto";
 import { transaction, catalog, rebuildImport, requireThat, ScanbackError, type Client } from "../lib/scanback-store";
+import { invalidateScanbackClaimsByWeekCache } from "../lib/scanback-weekly";
 import { detectCenterKind, readCenterWorkbook, readCenterCsv, sheetsBuffer, referenceMapping, parseReference, type CenterKind } from "../lib/center-parser";
 import { aiAssistEnabled, suggestFileType, suggestRecognition } from "../lib/upload-ai";
 import type { AiNote } from "../lib/upload-review";
@@ -401,6 +402,7 @@ async function removeSource(c: Client, e: CenterUpload) {
     }
     const r = await c.query("DELETE FROM scanback_imports WHERE id=$1 RETURNING id", [e.sourceId]);
     requireThat(r.rowCount, "This source no longer exists. Refresh before deleting.", 409);
+    invalidateScanbackClaimsByWeekCache();
   } else if (e.kind === "price") {
     // price_list.upload_id references this registry row without ON DELETE
     // CASCADE; remove only current price entries still owned by this upload.
