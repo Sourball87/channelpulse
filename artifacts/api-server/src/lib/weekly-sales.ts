@@ -28,8 +28,12 @@ export interface WeeklySalesCell {
   serials_reported?: number;
 }
 
-export function weeklySalesData(endWeek: string | null, cells: WeeklySalesCell[]) {
-  const weeks = endWeek ? weeklySalesWeeks(endWeek) : [];
+export function weeklySalesData(
+  endWeek: string | null,
+  cells: WeeklySalesCell[],
+  selectedWeeks?: string[],
+) {
+  const weeks = selectedWeeks ?? (endWeek ? weeklySalesWeeks(endWeek) : []);
   const window = new Set(weeks);
   const reportedCells = cells.filter(cell => window.has(cell.week_iso));
   return {

@@ -207,7 +207,8 @@ describe("native Pronto POS evidence", () => {
     })]), "Sheet1");
     const raw = parseSheets(XLSX.write(wb, { type: "buffer" }));
     expect(Object.keys(raw.Sheet1[0])).not.toEqual(expect.arrayContaining(["EU Email"]));
-    expect(Object.keys(raw.Sheet1[0]).sort()).toEqual([...Object.keys(invoice()), "Currency", "Item Cost"].sort());
+    expect(Object.keys(raw.Sheet1[0]).filter(key => key !== "__sourceRow").sort())
+      .toEqual([...Object.keys(invoice()), "Currency", "Item Cost"].sort());
   });
   it("holds a serial for review when excluded source evidence could hide an owner or return", () => {
     const evidence = map().rows.map(row => ({ ...row, source: "test source" }));

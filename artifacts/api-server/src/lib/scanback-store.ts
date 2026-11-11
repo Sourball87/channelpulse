@@ -110,18 +110,24 @@ export async function rebuildImport(c: Client, base: ScanbackImport, raw: Sheets
   if (base.kind === "claim") {
     const first = firstReportedSales(await loadReportedSales(c));
     const approved = new Map((await ledger(c)).map(row => [row.serial, row]));
-    const seen = new Set<string>();
+    const seen = new Map<string, number>();
     let blockedRepeats = 0, sameCustomerRepeats = 0;
     value.rows = value.rows.map(row => {
+      const sourceRow = row.sourceRow ?? row.rowIndex + 2;
+      const firstSourceRow = seen.get(row.serial);
+      if (firstSourceRow == null) seen.set(row.serial, sourceRow);
       const claimed = approved.get(row.serial);
-      const reason = claimed ? `Already approved in batch ${claimed.batchId}${claimed.programName ? `, promotion ${claimed.programName}` : ""}` :
-        (seen.has(row.serial) ? "Duplicate serial in this customer report" :
-          earlierReportReason(first.get(row.serial), base.id, row.rowIndex, row.accountId ?? base.accountId));
-      seen.add(row.serial);
+      const approvedReason = claimed
+        ? `Already approved in batch ${claimed.batchId}${claimed.programName ? `, promotion ${claimed.programName}` : ""}`
+        : "";
+      const reportReason = earlierReportReason(first.get(row.serial), base.id, row.rowIndex, row.accountId ?? base.accountId);
+      const localRepeat = firstSourceRow == null ? "" :
+        `Duplicate serial in this upload (${base.name}): source row ${sourceRow} repeats its first occurrence on source row ${firstSourceRow}.`;
+      const reason = [localRepeat, approvedReason, reportReason].filter(Boolean).join(" ");
       if (reason) {
         if (isSameCustomerReportRepeat(reason)) sameCustomerRepeats++;
         else blockedRepeats++;
-        if (blockedRepeats + sameCustomerRepeats <= 20) value.warnings.push(`${row.serial}: ${reason}`);
+        if (blockedRepeats + sameCustomerRepeats <= 20) value.warnings.push(`${row.serial} at source row ${sourceRow}: ${reason}`);
       }
       return { ...row, reuseReason: reason };
     });

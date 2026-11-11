@@ -25,12 +25,10 @@ interface Option {
   onPick: () => void;
 }
 
-const ACCOUNT_DIMS: { key: DimKey; label: string }[] = [
-  { key: "code", label: "Account Code" },
-];
-const STOCK_DIMS: { key: DimKey; label: string }[] = [
+const FOCUS_DIMS: { key: DimKey; label: string }[] = [
   { key: "category", label: "Category" },
   { key: "sku", label: "Stock Code" },
+  { key: "code", label: "Account Code" },
 ];
 
 const dimBtn =
@@ -270,8 +268,7 @@ export function FocusSidebar() {
 
       {open && (
         <div className="space-y-3">
-          <div className="space-y-1.5">{ACCOUNT_DIMS.map(renderDim)}</div>
-          <div className="space-y-1.5">{STOCK_DIMS.map(renderDim)}</div>
+          <div className="space-y-1.5">{FOCUS_DIMS.map(renderDim)}</div>
         </div>
       )}
     </div>

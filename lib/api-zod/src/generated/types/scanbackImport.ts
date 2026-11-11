@@ -38,5 +38,6 @@ export interface ScanbackImport {
   duplicate: boolean;
   nonSerialCount?: number;
   nonSerialIdentifiers?: string[];
+  missingSerialCount?: number;
   recordCount: number;
 }

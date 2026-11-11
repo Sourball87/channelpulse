@@ -343,6 +343,7 @@ export interface ScanbackImport {
   duplicate: boolean;
   nonSerialCount?: number;
   nonSerialIdentifiers?: string[];
+  missingSerialCount?: number;
   recordCount: number;
 }
 
@@ -828,7 +829,10 @@ export interface ExplorerAnalyticsData {
 }
 
 export interface ExplorerExportInput {
-  /** @minItems 1 */
+  /**
+     * @minItems 1
+     * @maxItems 262
+     */
   columns: string[];
   rows: ((string | number | null)[])[];
 }
@@ -1189,6 +1193,7 @@ export type CenterUploadSummary = {
   nonSerialCount: number;
   nonSerialIdentifiers: string[];
   historyRowsSkipped: number;
+  missingSerialCount?: number;
 };
 
 export type CenterUploadSohReview = { [key: string]: unknown };
@@ -1377,6 +1382,14 @@ export type GetDashboardWeeklySalesParams = {
  * Final week of the 12-week window; defaults to the latest uploaded week
  */
 week_iso?: string;
+/**
+ * First week of an inclusive period window; provide with week_to
+ */
+week_from?: string;
+/**
+ * Last week of an inclusive period window; provide with week_from
+ */
+week_to?: string;
 category?: string;
 /**
  * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$

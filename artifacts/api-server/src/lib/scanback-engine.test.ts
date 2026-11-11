@@ -108,7 +108,8 @@ describe("scanback deterministic verification", () => {
   });
   it("blocks duplicates inside a claim", () => {
     const rows = verifyClaim(context({ claims: [row("SER001"), row("SER001", { rowIndex: 1 })] }));
-    expect(rows[1].reason).toContain("Duplicate");
+    expect(rows[1]).toMatchObject({ trackingColor: "red", include: false });
+    expect(rows[1].reason).toContain("first occurrence is on source row 2");
   });
   it("blocks missing invoice evidence", () => { expect(first({ evidence: [] }).reason).toContain("not found"); });
   it("marks only SKUs absent from all DD invoices and promotions as outside DD range", () => {
@@ -197,6 +198,10 @@ describe("scanback imports", () => {
     const result = map(); expect(result.errors).toEqual([]);
     expect(result.rows[0]).toMatchObject({ serial: "SN-001", accountId: 1, date: "2026-09-20", unitPriceCents: 10000 });
   });
+  it("keeps blank serials as hard errors for invoice evidence", () => {
+    const result = map({ Sheet1: [{ ...raw.Sheet1[0], Serial: "" }] });
+    expect(result.errors.some(issue => issue.message === "Serial is required; remove totals/non-serial rows.")).toBe(true);
+  });
   it("does not map purchase cost as invoiced price", () => {
     expect(suggestMapping(["Serial", "Cost"]).unitPrice).toBe("");
     const withCost = { Sheet1: [{ ...raw.Sheet1[0], Cost: "70.00" }] };
@@ -207,12 +212,20 @@ describe("scanback imports", () => {
     expect(suggestMapping(["Date", "Invoice Date", "Serial"]).date).toBe("");
     expect(suggestMapping(["Price", "Unit Price", "Serial"]).unitPrice).toBe("");
   });
-  it("allows serial-only claim files for invoice-basis verification", () => {
-    expect(map({ Sheet1: [{ Serial: "SER001" }] }, "claim").errors).toEqual([]);
+  it("requires a sale-date column to make a customer report usable", () => {
+    expect(map({ Sheet1: [{ Serial: "SER001" }] }, "claim").errors)
+      .toContainEqual({ row: 0, message: "Map the date column." });
   });
-  it("requires one serial per customer claim row instead of multiplying a stated quantity", () => {
-    expect(map({ Sheet1: [{ Serial: "SER001; SER002", Quantity: 1 }] }, "claim").errors
-      .some(e => e.message.includes("one serial per customer claim"))).toBe(true);
+  it("excludes row-level claim issues as warnings instead of blocking the report", () => {
+    const result = map({ Sheet1: [
+      { Serial: "SER001", Date: "20/09/2026" },
+      { Serial: "SER002; SER003", Date: "20/09/2026", Quantity: 1 },
+      { Serial: "SER004", Date: "not a date" },
+    ] }, "claim");
+    expect(result.errors).toEqual([]);
+    expect(result.rows.map(row => row.serial)).toEqual(["SER001"]);
+    expect(result.warnings).toContain("Row 3: Use exactly one serial per customer claim row; split serial lists into separate rows. — skipped.");
+    expect(result.warnings).toContain("Row 4: Invalid date for the selected date format. — skipped.");
   });
   it("accepts custom SKU codes in invoice evidence without cataloguing them", () => {
     const result = map({ Sheet1: [{ ...raw.Sheet1[0], Account: "CA", SKU: "Custom-Model", Invoice: "CUSTOM-INV" }] });

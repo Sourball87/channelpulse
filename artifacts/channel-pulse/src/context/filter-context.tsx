@@ -136,7 +136,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   const weekFrom   = params.get("from") ?? undefined;
   const weekTo     = params.get("to") ?? undefined;
   const weekIso    = params.get("week") ?? undefined;
-  const focusView = location === "/explorer" || location === "/sell-through";
+  const focusView = location === "/sell-through";
 
   const mode: "week" | "period" = preset != null || (weekFrom != null && weekTo != null) ? "period" : "week";
 

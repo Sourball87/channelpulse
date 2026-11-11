@@ -3,7 +3,7 @@ import type { PoolClient } from "@workspace/db";
 import { serialKey } from "./scanback-engine";
 
 export interface ReportedSale {
-  serial: string; reportId: string; reportName: string; rowIndex: number;
+  serial: string; reportId: string; reportName: string; rowIndex: number; sourceRow?: number;
   accountId: number | null; sellDate: string; committedAt: string;
 }
 
@@ -14,6 +14,7 @@ export function reportedSales(reports: ScanbackImport[]): ReportedSale[] {
     .sort((a, b) => (a.committedAt ?? a.createdAt).localeCompare(b.committedAt ?? b.createdAt) || a.id.localeCompare(b.id))
     .flatMap(r => [...r.rows].sort((a, b) => a.rowIndex - b.rowIndex).map(row => ({
       serial: serialKey(row.serial), reportId: r.id, reportName: r.name, rowIndex: row.rowIndex,
+      sourceRow: row.sourceRow,
       accountId: row.accountId ?? r.accountId, sellDate: row.date, committedAt: r.committedAt ?? r.createdAt,
     })));
 }
@@ -27,9 +28,9 @@ export function earlierReportReason(
 ): string {
   if (!first || (first.reportId === reportId && first.rowIndex === rowIndex)) return "";
   if (first.reportId === reportId)
-    return `Duplicate serial in customer report ${first.reportName} [${first.reportId}], row ${first.rowIndex + 2}`;
+    return `Duplicate serial in customer report ${first.reportName} [${first.reportId}], source row ${first.sourceRow ?? first.rowIndex + 2}`;
   const sameCustomer = accountId != null && first.accountId != null && accountId === first.accountId;
-  return `${sameCustomer ? "Also in earlier report" : "Already reported sold in"} ${first.reportName} [${first.reportId}], row ${first.rowIndex + 2}` +
+  return `${sameCustomer ? "Also in earlier report" : "Already reported sold in"} ${first.reportName} [${first.reportId}], source row ${first.sourceRow ?? first.rowIndex + 2}` +
     (first.sellDate ? `, sell date ${first.sellDate}` : "") +
     (first.accountId != null ? `, reseller ID ${first.accountId}` : "");
 }

@@ -7,7 +7,10 @@
  */
 
 export interface ExplorerExportInput {
-  /** @minItems 1 */
+  /**
+     * @minItems 1
+     * @maxItems 262
+     */
   columns: string[];
   rows: ((string | number | null)[])[];
 }

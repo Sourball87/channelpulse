@@ -166,6 +166,19 @@ describe.skipIf(!base)("Dashboard and Explorer HTTP analytics", () => {
       expect(woiCells.find(cell => cell.reseller_id === secondId)).toMatchObject({
         soh: 40, sales_total: 10, avg_weekly_sales: 5, weeks_observed: 2, woi: 8, as_at_week: "2026-W31",
       });
+
+      const weeklySalesResponse = await fetch(
+        base + `/dashboard/weekly-sales?week_from=2026-W30&week_to=2026-W32&${params}`,
+        { headers },
+      );
+      expect(weeklySalesResponse.status).toBe(200);
+      const weeklySales = await weeklySalesResponse.json() as {
+        end_week: string; weeks: string[]; cells: { week_iso: string; units_sold: number }[];
+      };
+      expect(weeklySales).toMatchObject({ end_week: "2026-W32", weeks: ["2026-W30", "2026-W31", "2026-W32"] });
+      expect(weeklySales.cells.sort((a, b) => a.week_iso.localeCompare(b.week_iso)).map(cell => [cell.week_iso, cell.units_sold])).toEqual([
+        ["2026-W30", 30], ["2026-W31", 20], ["2026-W32", 20],
+      ]);
     } finally {
       await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=ANY($1::int[])", [uploadIds]);
       await pool.query("DELETE FROM uploads WHERE id=ANY($1::int[])", [uploadIds]);
@@ -236,6 +249,41 @@ describe.skipIf(!base)("Dashboard and Explorer HTTP analytics", () => {
       expect(selectedResponse.status).toBe(200);
       const selectedData = await selectedResponse.json() as { rows: { part_id: number }[] };
       expect(selectedData.rows.map((row) => row.part_id)).toEqual([partIds[0]]);
+
+      const weeklyParams = `week_iso=2026-W32&part_ids=${partIds.join(",")}&reseller_ids=${resellerIds[0]}`;
+      const allHeatmapResponse = await fetch(base + `/dashboard/weekly-sales?${weeklyParams}`, { headers });
+      expect(allHeatmapResponse.status).toBe(200);
+      const allHeatmap = await allHeatmapResponse.json() as { parts: string[] };
+      expect(new Set(allHeatmap.parts)).toEqual(new Set([`${prefix}-SSD`, `${prefix}-MONITOR`]));
+
+      const categoryHeatmapResponse = await fetch(
+        base + `/dashboard/weekly-sales?${weeklyParams}&category=${encodeURIComponent(`${prefix} SSD`)}`,
+        { headers },
+      );
+      expect(categoryHeatmapResponse.status).toBe(200);
+      const categoryHeatmap = await categoryHeatmapResponse.json() as { parts: string[] };
+      expect(categoryHeatmap.parts).toEqual([`${prefix}-SSD`]);
+
+      const categorySerialResponse = await fetch(
+        base + `/dashboard/serial-reconciliation?week_iso=2026-W32&part_ids=${partIds.join(",")}&reseller_ids=${resellerIds[0]}&category=${encodeURIComponent(`${prefix} SSD`)}`,
+        { headers },
+      );
+      expect(categorySerialResponse.status).toBe(200);
+      const categorySerial = await categorySerialResponse.json() as { rows: { part_id: number | null }[] };
+      expect(new Set(categorySerial.rows.map((row) => row.part_id))).toEqual(new Set([partIds[0]]));
+
+      const clearedHeatmapResponse = await fetch(base + `/dashboard/weekly-sales?${weeklyParams}`, { headers });
+      expect(clearedHeatmapResponse.status).toBe(200);
+      const clearedHeatmap = await clearedHeatmapResponse.json() as { parts: string[] };
+      expect(clearedHeatmap.parts).toEqual(allHeatmap.parts);
+
+      const clearedSerialResponse = await fetch(
+        base + `/dashboard/serial-reconciliation?week_iso=2026-W32&part_ids=${partIds.join(",")}&reseller_ids=${resellerIds[0]}`,
+        { headers },
+      );
+      expect(clearedSerialResponse.status).toBe(200);
+      const clearedSerial = await clearedSerialResponse.json() as { rows: { part_id: number | null }[] };
+      expect(new Set(clearedSerial.rows.map((row) => row.part_id))).toEqual(new Set(partIds));
     } finally {
       await pool.query("DELETE FROM inventory_snapshots WHERE upload_id=ANY($1::int[])", [uploadIds]);
       await pool.query("DELETE FROM uploads WHERE id=ANY($1::int[])", [uploadIds]);

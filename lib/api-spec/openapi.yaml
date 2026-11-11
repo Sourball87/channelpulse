@@ -498,11 +498,21 @@ paths:
     get:
       operationId: getDashboardWeeklySales
       tags: [dashboard]
-      summary: Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+      summary: Weekly units sold by SKU for the 12-week window or selected period, oldest first
       parameters:
         - name: week_iso
           in: query
           description: Final week of the 12-week window; defaults to the latest uploaded week
+          schema:
+            type: string
+        - name: week_from
+          in: query
+          description: First week of an inclusive period window; provide with week_to
+          schema:
+            type: string
+        - name: week_to
+          in: query
+          description: Last week of an inclusive period window; provide with week_from
           schema:
             type: string
         - name: category
@@ -1195,6 +1205,7 @@ components:
         duplicate: { type: boolean }
         nonSerialCount: { type: integer }
         nonSerialIdentifiers: { type: array, items: { type: string } }
+        missingSerialCount: { type: integer }
         recordCount: { type: integer }
     ScanbackVerificationInput:
       type: object
@@ -1657,6 +1668,7 @@ components:
         columns:
           type: array
           minItems: 1
+          maxItems: 262
           items: { type: string }
         rows:
           type: array
@@ -2099,6 +2111,7 @@ components:
             nonSerialCount: { type: integer }
             nonSerialIdentifiers: { type: array, items: { type: string } }
             historyRowsSkipped: { type: integer }
+            missingSerialCount: { type: integer }
         errors: { type: array, items: { type: string } }
         warnings: { type: array, items: { type: string } }
         sohReview:

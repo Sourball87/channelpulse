@@ -2687,7 +2687,7 @@ export const getGetDashboardWeeklySalesUrl = (params?: GetDashboardWeeklySalesPa
 }
 
 /**
- * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+ * @summary Weekly units sold by SKU for the 12-week window or selected period, oldest first
  */
 export const getDashboardWeeklySales = async (params?: GetDashboardWeeklySalesParams, options?: Parameters<typeof customFetch>[1]): Promise<WeeklySalesData> => {
 
@@ -2758,7 +2758,7 @@ export function useGetDashboardWeeklySales<TData = Awaited<ReturnType<typeof get
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+ * @summary Weekly units sold by SKU for the 12-week window or selected period, oldest first
  */
 
 export function useGetDashboardWeeklySales<TData = Awaited<ReturnType<typeof getDashboardWeeklySales>>, TError = ErrorType<void>>(

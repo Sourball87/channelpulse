@@ -180,7 +180,8 @@ export const GetUploadCenterResponse = zod.object({
   "invoicedCount": zod.int(),
   "nonSerialCount": zod.int(),
   "nonSerialIdentifiers": zod.array(zod.string()),
-  "historyRowsSkipped": zod.int()
+  "historyRowsSkipped": zod.int(),
+  "missingSerialCount": zod.int().optional()
 }),
   "errors": zod.array(zod.string()),
   "warnings": zod.array(zod.string()).optional(),
@@ -261,7 +262,8 @@ export const StageCenterFilesResponse = zod.object({
   "invoicedCount": zod.int(),
   "nonSerialCount": zod.int(),
   "nonSerialIdentifiers": zod.array(zod.string()),
-  "historyRowsSkipped": zod.int()
+  "historyRowsSkipped": zod.int(),
+  "missingSerialCount": zod.int().optional()
 }),
   "errors": zod.array(zod.string()),
   "warnings": zod.array(zod.string()).optional(),
@@ -326,7 +328,8 @@ export const CorrectCenterUploadResponse = zod.object({
   "invoicedCount": zod.int(),
   "nonSerialCount": zod.int(),
   "nonSerialIdentifiers": zod.array(zod.string()),
-  "historyRowsSkipped": zod.int()
+  "historyRowsSkipped": zod.int(),
+  "missingSerialCount": zod.int().optional()
 }),
   "errors": zod.array(zod.string()),
   "warnings": zod.array(zod.string()).optional(),
@@ -403,7 +406,8 @@ export const CommitCenterUploadResponse = zod.object({
   "invoicedCount": zod.int(),
   "nonSerialCount": zod.int(),
   "nonSerialIdentifiers": zod.array(zod.string()),
-  "historyRowsSkipped": zod.int()
+  "historyRowsSkipped": zod.int(),
+  "missingSerialCount": zod.int().optional()
 }),
   "errors": zod.array(zod.string()),
   "warnings": zod.array(zod.string()).optional(),
@@ -554,6 +558,7 @@ export const GetScanbackWorkspaceResponse = zod.object({
   "duplicate": zod.boolean(),
   "nonSerialCount": zod.int().optional(),
   "nonSerialIdentifiers": zod.array(zod.string()).optional(),
+  "missingSerialCount": zod.int().optional(),
   "recordCount": zod.int()
 })),
   "drafts": zod.array(zod.object({
@@ -802,6 +807,7 @@ export const PreviewScanbackImportResponse = zod.object({
   "duplicate": zod.boolean(),
   "nonSerialCount": zod.int().optional(),
   "nonSerialIdentifiers": zod.array(zod.string()).optional(),
+  "missingSerialCount": zod.int().optional(),
   "recordCount": zod.int()
 })
 
@@ -890,6 +896,7 @@ export const RemapScanbackImportResponse = zod.object({
   "duplicate": zod.boolean(),
   "nonSerialCount": zod.int().optional(),
   "nonSerialIdentifiers": zod.array(zod.string()).optional(),
+  "missingSerialCount": zod.int().optional(),
   "recordCount": zod.int()
 })
 
@@ -970,6 +977,7 @@ export const CommitScanbackImportResponse = zod.object({
   "duplicate": zod.boolean(),
   "nonSerialCount": zod.int().optional(),
   "nonSerialIdentifiers": zod.array(zod.string()).optional(),
+  "missingSerialCount": zod.int().optional(),
   "recordCount": zod.int()
 })
 
@@ -1050,6 +1058,7 @@ export const SupersedeScanbackImportResponse = zod.object({
   "duplicate": zod.boolean(),
   "nonSerialCount": zod.int().optional(),
   "nonSerialIdentifiers": zod.array(zod.string()).optional(),
+  "missingSerialCount": zod.int().optional(),
   "recordCount": zod.int()
 })
 
@@ -1349,7 +1358,7 @@ export const GetWoiHeatmapResponse = zod.object({
 
 
 /**
- * @summary Weekly units sold by SKU for 12 consecutive ISO weeks, oldest first
+ * @summary Weekly units sold by SKU for the 12-week window or selected period, oldest first
  */
 export const getDashboardWeeklySalesQueryPartIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
 export const getDashboardWeeklySalesQueryResellerIdsRegExp = new RegExp('^[1-9][0-9]*(,[1-9][0-9]*)*$');
@@ -1357,6 +1366,8 @@ export const getDashboardWeeklySalesQueryResellerIdsRegExp = new RegExp('^[1-9][
 
 export const GetDashboardWeeklySalesQueryParams = zod.object({
   "week_iso": zod.coerce.string().optional().describe('Final week of the 12-week window; defaults to the latest uploaded week'),
+  "week_from": zod.coerce.string().optional().describe('First week of an inclusive period window; provide with week_to'),
+  "week_to": zod.coerce.string().optional().describe('Last week of an inclusive period window; provide with week_from'),
   "category": zod.coerce.string().optional(),
   "part_ids": zod.coerce.string().regex(getDashboardWeeklySalesQueryPartIdsRegExp).optional(),
   "reseller_ids": zod.coerce.string().regex(getDashboardWeeklySalesQueryResellerIdsRegExp).optional()
@@ -1463,11 +1474,12 @@ export const GetExplorerAnalyticsResponse = zod.object({
 /**
  * @summary Export the currently visible Explorer rows to Excel
  */
+export const exportExplorerViewBodyColumnsMax = 262;
 
 
 
 export const ExportExplorerViewBody = zod.object({
-  "columns": zod.array(zod.string()).min(1),
+  "columns": zod.array(zod.string()).min(1).max(exportExplorerViewBodyColumnsMax),
   "rows": zod.array(zod.array(zod.union([zod.string(),zod.number()]).nullable()))
 })
 

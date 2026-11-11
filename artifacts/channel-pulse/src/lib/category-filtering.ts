@@ -34,13 +34,6 @@ export function filterStockCodeParts<T extends CategorizedPart>(
   return parts.filter((part) => part.category === category || selected.has(part.id));
 }
 
-export function filterExplorerRowsByCategory<T extends { category: string }>(
-  rows: readonly T[],
-  category: string | undefined,
-): T[] {
-  return category ? rows.filter((row) => row.category === category) : [...rows];
-}
-
 export function keepCategoryCompatiblePartIds(
   parts: readonly CategorizedPart[],
   selectedPartIds: readonly number[],

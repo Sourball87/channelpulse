@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Explorer", href: "/explorer", icon: TableProperties },
+  { name: "Sell Through", href: "/sell-through", icon: TableProperties },
   { name: "Trends", href: "/trends", icon: TrendingUp },
   { name: "Alerts", href: "/alerts", icon: AlertCircle },
   { name: "Uploads", href: "/upload", icon: UploadCloud },
@@ -38,7 +38,7 @@ const navigation = [
 ];
 
 // Pages that show the global filter bar
-const FILTER_PATHS = ["/", "/explorer", "/sell-through", "/trends", "/alerts"];
+const FILTER_PATHS = ["/", "/sell-through", "/trends", "/alerts"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -99,7 +99,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 })}
               </SidebarMenu>
             </div>
-            {location === "/explorer" && focusView && <FocusSidebar />}
+            {location === "/sell-through" && focusView && <FocusSidebar />}
           </SidebarContent>
           <SidebarFooter className="border-t border-sidebar-border px-3 py-3">
             <Button

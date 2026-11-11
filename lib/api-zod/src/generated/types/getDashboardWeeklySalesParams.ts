@@ -11,6 +11,14 @@ export type GetDashboardWeeklySalesParams = {
  * Final week of the 12-week window; defaults to the latest uploaded week
  */
 week_iso?: string;
+/**
+ * First week of an inclusive period window; provide with week_to
+ */
+week_from?: string;
+/**
+ * Last week of an inclusive period window; provide with week_from
+ */
+week_to?: string;
 category?: string;
 /**
  * @pattern ^[1-9][0-9]*(,[1-9][0-9]*)*$

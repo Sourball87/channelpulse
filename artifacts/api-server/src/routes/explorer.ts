@@ -141,7 +141,7 @@ router.get("/explorer/analytics", async (req, res): Promise<void> => {
 
 router.post("/explorer/export", async (req, res): Promise<void> => {
   const body = ExportExplorerViewBody.safeParse(req.body);
-  if (!body.success || body.data.columns.length > 50 || body.data.rows.length > 50_000 ||
+  if (!body.success || body.data.columns.length > 262 || body.data.rows.length > 50_000 ||
       body.data.rows.some(row => row.length !== body.data.columns.length)) {
     res.status(400).json({ error: "The Explorer export is invalid or too large." });
     return;

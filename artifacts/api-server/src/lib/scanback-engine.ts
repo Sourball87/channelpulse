@@ -87,7 +87,7 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
         if (sku) priorUnits.set(sku, (priorUnits.get(sku) ?? 0) + 1);
       }
   }
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   const running = new Map<string, number>();
   const selected = s.selectedRows ? new Set(s.selectedRows) : null;
   return ctx.claims.map(r => {
@@ -117,6 +117,12 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       o.invoicedTo = ctx.accounts?.find(a => a.id === inv.accountId)?.code ?? String(inv.accountId ?? "");
       o.gtmBuyCents = lines.get(inv.sku.trim().toUpperCase())?.gtmBuyCents ?? null;
     }
+    const firstSourceRow = seen.get(r.serial);
+    if (firstSourceRow != null) {
+      o.trackingColor = "red";
+      return reject(`Duplicate serial in this claim report; first occurrence is on source row ${firstSourceRow}`);
+    }
+    seen.set(r.serial, r.sourceRow ?? r.rowIndex + 2);
     if (used.has(r.serial)) {
       const prior = used.get(r.serial)!; o.trackingColor = "red";
       return reject(`Already approved in batch ${prior.batchId}${prior.batchReference ? ` (${prior.batchReference})` : ""}${prior.programName ? `, promotion ${prior.programName}` : ""}`);
@@ -130,8 +136,6 @@ export function verifyClaim(ctx: VerificationContext): ScanbackResult[] {
       o.trackingColor = "red";
       return reject(reportReason);
     }
-    if (seen.has(r.serial)) { o.trackingColor = "red"; return reject("Duplicate serial in this claim file"); }
-    seen.add(r.serial);
     const skuKey = (r.sku || inv?.sku || "").trim().toUpperCase();
     const unmatchedCredit = ctx.unmatchedProntoCredits?.find(credit =>
       credit.accountSkuKey === `${s.accountId}|${skuKey}`);

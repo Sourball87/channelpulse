@@ -15,7 +15,7 @@ import { customerLabel } from "@/lib/customer-display";
 import { formatWeekLabel, isoWeekDates } from "@/lib/week-display";
 import {
   CENTER_KINDS, KIND_LABEL, KIND_SHORT, formatDay, isUnfinishedWeek, isoWeekOf,
-  lastCompletedSunday, latestCompletedWeekIso, shiftSunday, shortDate,
+  lastCompletedSunday, latestCompletedWeekIso, serialShortfallChaseLine, shiftSunday, shortDate,
   usePatchCenterUpload, useResolveCredit, type CenterKind, type CenterUpload,
 } from "@/lib/upload-center";
 import { ChevronLeft, ChevronRight, ClipboardCopy, FileSpreadsheet, Lock, Pencil, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
@@ -199,6 +199,12 @@ export function WeeklyView({
         lines.push(`${i++}. ${customerLabel(code ?? "Unknown")} - verify ${report.summary.nonSerialCount} non-serial barcode/part-label entries from ${report.name}`);
       }
     }
+    const serialShortfalls = uploads.filter((u) => u.state === "committed" && u.kind === "claim" &&
+      u.weekIso === week && (u.summary.missingSerialCount ?? 0) > 0);
+    for (const report of serialShortfalls) {
+      const code = resellers.find((r) => r.id === report.accountId)?.code;
+      lines.push(serialShortfallChaseLine(customerLabel(code ?? "Unknown"), report.summary.missingSerialCount ?? 0, report.name));
+    }
     const text = lines.length ? lines.join("\n") : `All expected reports received for week ending ${ending}.`;
     try { await navigator.clipboard.writeText(text); toast({ title: "Chase list copied", description: `${lines.length} outstanding report${lines.length === 1 ? "" : "s"}.` }); }
     catch { toast({ title: "Could not copy", description: text, variant: "destructive" }); }
@@ -329,6 +335,11 @@ function SerialSummary({ u, reseller, programs, week }: { u: CenterUpload; resel
       {!!s.nonSerialCount && (
         <p className="text-[11px] text-amber-800">
           {n(s.nonSerialCount)} {customerLabel(reseller.code)} barcodes or part labels excluded from serial matching and added to the chase list.
+        </p>
+      )}
+      {!!s.missingSerialCount && (
+        <p className="text-[11px] text-amber-800" data-testid={`text-missing-serial-count-${u.id}`}>
+          {n(s.missingSerialCount)} sold without serial; included in the chase list.
         </p>
       )}
       <p className="text-[11px] text-slate-600"><span className="font-semibold tabular-nums">{n(s.invoicedCount)}</span> of {n(s.ddRangeCount)} reported serials in DD range invoiced to this customer <span className="text-muted-foreground">(coverage only, not eligibility)</span></p>

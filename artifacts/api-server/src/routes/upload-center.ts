@@ -30,7 +30,7 @@ const router = Router();
 const intake = multer({ storage: multer.memoryStorage(), limits: { files: 20, fileSize: 50 * 1024 * 1024 } });
 const emptySummary = (): CenterUpload["summary"] => ({
   skuCount: 0, soh: 0, unitsSold: 0, serialCount: 0, from: "", to: "", ddRangeCount: 0, invoicedCount: 0,
-  nonSerialCount: 0, nonSerialIdentifiers: [], historyRowsSkipped: 0,
+  nonSerialCount: 0, nonSerialIdentifiers: [], historyRowsSkipped: 0, missingSerialCount: 0,
 });
 const wrap = (fn: (c: Client, req: Request) => Promise<unknown>) => async (req: Request, res: Response) => {
   try { res.json(await transaction(c => fn(c, req))); }
@@ -223,6 +223,7 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
     e.rowCount = new Set(r.rows.map(row => row.sourceRow ?? row.rowIndex)).size;
     e.headers = r.headers;
     e.mapping = r.mapping; e.errors = r.errors.slice(0, 200).map(x => `Row ${x.row}: ${x.message}`);
+    e.warnings = [...new Set([...(e.warnings ?? []), ...r.warnings])];
     // Original raw sample fields stay internal; mapped financial samples are
     // exposed through the existing redacted import preview endpoint.
     e.preview = r.rows.slice(0, 8).map(x => ({ serial: x.serial, sku: x.sku, date: x.date }));
@@ -250,6 +251,7 @@ async function hydrate(c: Client, e: CenterUpload, cachedEvidence?: ScanbackImpo
       skuCount: new Set(r.rows.map(x => x.sku).filter(Boolean)).size, from: dates[0] ?? "", to: dates.at(-1) ?? "",
       nonSerialCount: Number(r.nonSerialCount ?? 0),
       nonSerialIdentifiers: Array.isArray(r.nonSerialIdentifiers) ? r.nonSerialIdentifiers : [],
+      missingSerialCount: Number(r.missingSerialCount ?? 0),
       historyRowsSkipped: e.summary.historyRowsSkipped ?? 0 };
     if (e.kind === "claim") {
       const first = firstReportedSales(cachedSales ?? await loadReportedSales(c));

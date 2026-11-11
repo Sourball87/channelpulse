@@ -133,8 +133,11 @@ export function parseSheets(buffer: Buffer): Sheets {
     // verification. Do not retain those columns in persistent preview data.
     const retained = isPronto(headers) ? prontoColumns(headers) : headers;
     const indices = retained.map(h => headers.indexOf(h));
-    out[name] = grid.slice(headerAt + 1).map(row => Object.fromEntries(retained.map((h, i) => [h, row[indices[i]] ?? ""])))
-      .filter(row => Object.values(row).some(v => v !== "" && v != null));
+    out[name] = grid.slice(headerAt + 1).map((row, index) => ({
+      ...Object.fromEntries(retained.map((h, i) => [h, row[indices[i]] ?? ""])),
+      __sourceRow: headerAt + index + 2,
+    })).filter(row => Object.entries(row).some(([key, value]) =>
+      key !== "__sourceRow" && value != null && String(value).trim() !== ""));
     total += out[name].length;
     if (total > 50000) throw new Error("Limit each import to 50,000 rows.");
   }
@@ -169,7 +172,7 @@ export function mapImport(
     throw new Error("Mapping contains an unknown field or column.");
   const required = base.kind === "evidence"
     ? ["serial", "sku", "date", "invoice", "quantity", "unitPrice"]
-    : base.kind === "history" ? ["serial", "sku", "date", "amount", "program", "reference"] : ["serial"];
+    : base.kind === "history" ? ["serial", "sku", "date", "amount", "program", "reference"] : ["serial", "date"];
   const errors: ScanbackImport["errors"] = [];
   const native = isPronto(headers);
   if (native && base.kind !== "evidence") throw new Error("This is a Pronto POS extract. Choose Invoice / credit evidence, not customer claims or historical approvals.");
@@ -186,11 +189,15 @@ export function mapImport(
     errors.push({ row: 0, message: "Rename/select the invoiced UNIT PRICE EX GST column. Cost, total and GST-inclusive columns are not valid evidence prices." });
   const rows: ScanbackImportRow[] = [];
   let nonSerialCount = 0;
+  let missingSerialCount = 0;
+  const missingSerialRows: number[] = [];
+  const rowWarnings: string[] = [];
   const nonSerialIdentifiers = new Set<string>();
   rawRows.forEach((row, i) => {
     if (scope && !scope.include.has(i)) return;
     const value = (key: string) => mapping[key] ? row[mapping[key]] : "";
     const text = (key: string) => String(value(key) ?? "").trim();
+    const sourceRow = Number(row.__sourceRow) || i + 2;
     let serials = scope ? splitSerials(value("serial")) : text("serial").split(/[|,;\n]+/).map(serialKey).filter(Boolean);
     if (rows.length + serials.length > 1_000_000)
       throw new Error("Limit each import to 1,000,000 serial events; split this extract.");
@@ -201,7 +208,11 @@ export function mapImport(
       (a.aliases ?? []).some(alias => alias.toUpperCase() === name));
     let accountId = scope ? scope.include.get(i)! : matches.length === 1 ? matches[0].id : options.accountId ?? null;
     let nonSerialOnlyRow = false;
-    const error = (message: string) => errors.push({ row: i + 2, message });
+    const rowErrors: string[] = [];
+    const error = (message: string) => {
+      if (base.kind === "claim") rowErrors.push(message);
+      else errors.push({ row: sourceRow, message });
+    };
     const account = accounts.find(a => a.id === accountId);
     if (base.kind === "claim" && account?.code.toLowerCase() === "digi") {
       const invalidSerials = serials.filter(s => /^(?:880|887)\d{10}$/.test(s) || /^[A-Z]{2}\d{2}-\d{5}[A-Z]$/.test(s));
@@ -209,6 +220,13 @@ export function mapImport(
       invalidSerials.forEach(identifier => nonSerialIdentifiers.add(identifier));
       nonSerialOnlyRow = invalidSerials.length > 0 && invalidSerials.length === serials.length;
       serials = serials.filter(s => !invalidSerials.includes(s));
+    }
+    const serialText = text("serial");
+    const totalLabel = /^(?:(?:grand\s*)?(?:sub[\s-]*)?totals?)\s*:?\s*$/i.test(serialText);
+    if (base.kind === "claim" && ((!serials.length && !nonSerialOnlyRow) || totalLabel)) {
+      missingSerialCount++;
+      missingSerialRows.push(sourceRow);
+      return;
     }
     if (typeof value("serial") === "number")
       error("Store serial numbers as text, not numeric cells, to preserve leading zeros and long identifiers.");
@@ -228,7 +246,9 @@ export function mapImport(
     // product-catalogue rows. A typo cannot pay unless an exact promotion line
     // and invoice both use the same code.
     if (base.kind !== "claim" && !sku) error("Stock Code is required.");
-    if (value("date") !== "" && !date) error("Invalid date for the selected date format.");
+    if (base.kind === "claim" && !date)
+      error(value("date") === "" ? "Sale date is required." : "Invalid date for the selected date format.");
+    else if (value("date") !== "" && !date) error("Invalid date for the selected date format.");
     if (base.kind !== "claim" && !date) error("Date is required.");
     if (base.kind === "evidence" && !text("invoice")) error("Invoice / credit reference is required.");
     const quantity = value("quantity") === "" ? 1 : Number(value("quantity"));
@@ -249,13 +269,17 @@ export function mapImport(
     if (base.kind === "history" && (amount == null || amount <= 0)) error("Historical approved claim amount must be positive.");
     if (base.kind === "history" && (!text("program") || !text("reference"))) error("Historical promotion and batch reference are required.");
     if (base.kind === "history" && (serials.length !== 1 || quantity !== 1)) error("Historical claims need exactly one serial and one unit per row.");
+    if (base.kind === "claim" && rowErrors.length) {
+      rowWarnings.push(`Row ${sourceRow}: ${[...new Set(rowErrors)].join(" ")} — skipped.`);
+      return;
+    }
     for (const serial of serials) rows.push({
       rowIndex: rows.length, serial, sku, date, accountId,
       quantity: base.kind === "evidence" ? Math.sign(quantity) : quantity,
       invoice: text("invoice"), unitPriceCents: price == null ? null : Math.abs(price),
       costCents: cost == null ? null : Math.abs(cost),
       amountCents: amount, program: text("program"), reference: text("reference"),
-      sourceRow: Number(row.__sourceRow) || i + 2,
+      sourceRow,
     });
   });
   const unmatchedCreditCount = scope?.preview.excludedCounts[unmatchedCreditReason] ?? 0;
@@ -267,6 +291,8 @@ export function mapImport(
     pronto: scope?.preview, prontoAccounts: scope ? options.prontoAccounts ?? {} : undefined,
     rows, errors, recordCount: rows.length, nonSerialCount, nonSerialIdentifiers: [...nonSerialIdentifiers], warnings: [
       "Review dates and column mappings before committing. No AI is used.",
+      ...(missingSerialCount ? [`${missingSerialCount} rows have no serial (rows ${missingSerialRows.join(", ")}) — skipped`] : []),
+      ...rowWarnings,
       ...(base.kind === "evidence" ? ["Unit price must be the amount invoiced to the reseller, excluding GST—not purchase cost."] : []),
       ...(nonSerialCount ? [`Not a serial — looks like a barcode: ${nonSerialCount} barcode or part-label row(s) excluded from serial matching.`] : []),
       ...(scope ? [
@@ -279,5 +305,6 @@ export function mapImport(
       ] : []),
       ...(unlistedSkus.length ? [`Not in the product catalogue (enter the exact code on a promotion to make these claimable): ${unlistedSkus.slice(0, 25).join(", ")}${unlistedSkus.length > 25 ? " …" : ""}. No product SKUs were created.`] : []),
     ],
+    missingSerialCount,
   };
 }

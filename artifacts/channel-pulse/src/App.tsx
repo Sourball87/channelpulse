@@ -2,20 +2,26 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthGate, AuthProvider } from '@/components/auth-provider';
-import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { Redirect, Route, Switch, Router as WouterRouter, useSearch } from 'wouter';
 import { AppLayout } from '@/components/layout';
 import { FilterProvider } from '@/context/filter-context';
 import NotFound from '@/pages/not-found';
 
 import Dashboard from '@/pages/dashboard';
-import Explorer from '@/pages/explorer';
+import SellThrough from '@/pages/sell-through';
 import Trends from '@/pages/trends';
 import Alerts from '@/pages/alerts';
 import UploadCenter from '@/pages/upload';
 import AdminSettings from '@/pages/admin';
 import ScanbackClaims from '@/pages/scanback';
+import { sellThroughRedirectTarget } from '@/lib/sell-through-routing';
 
 const queryClient = new QueryClient();
+
+function ExplorerRedirect() {
+  const search = useSearch();
+  return <Redirect to={sellThroughRedirectTarget(search)} replace />;
+}
 
 function Router() {
   return (
@@ -23,8 +29,8 @@ function Router() {
       <AppLayout>
         <Switch>
           <Route path="/" component={Dashboard} />
-          <Route path="/sell-through" component={Explorer} />
-          <Route path="/explorer" component={Explorer} />
+          <Route path="/sell-through" component={SellThrough} />
+          <Route path="/explorer" component={ExplorerRedirect} />
           <Route path="/trends" component={Trends} />
           <Route path="/alerts" component={Alerts} />
           <Route path="/upload" component={UploadCenter} />

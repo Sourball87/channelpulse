@@ -79,7 +79,13 @@ Reported-sale ownership is global across customers, not just claimed-serial uniq
 
 **Why:** The user requested that a serial already sold or claimed cannot be reused in a later customer report, while preserving the existing approval transaction and caps.
 
-**How to apply:** The first committed customer report owns the sale; staged previews must not reserve it, and its own first row must remain verifiable until claimed. Keep later occurrences as flagged audit facts, never new sales or payable units. Use immutable source records and the approved ledger as the tracking authority, rather than adding a separately mutable claimed-state writer.
+**How to apply:** The first committed customer report owns the sale; staged previews must not reserve it, and its own first row must remain verifiable until claimed. Flag later occurrences at upload and verification with the current and first source file/row, but do not block an otherwise valid import commit. Repeated rows remain audit facts, never new sales or payable units. Use immutable source records and the approved ledger as the tracking authority, rather than adding a separately mutable claimed-state writer.
+
+Customer claim uploads skip blank-serial and totals/subtotal rows with source-row warnings; only file-level failures should block the report.
+
+**Why:** The user explicitly requested that row-level problems not prevent a customer serial report from committing, while Pronto evidence rows that require serials remain strict.
+
+**How to apply:** Require the serial and date columns, exclude unusable claim rows with row-numbered warnings, and expose blank-serial counts on Upload Center cards and customer chase text. Do not relax evidence or Pronto serial validation.
 
 Run development HTTP financial suites serially when they share the same database.
 

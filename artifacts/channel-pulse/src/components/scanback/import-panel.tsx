@@ -244,13 +244,13 @@ export function ImportPanel({
                 <div className="max-h-[420px] overflow-auto">
                   <Table>
                     <TableHeader><TableRow>
-                      <TableHead>Row</TableHead><TableHead>Serial</TableHead><TableHead>SKU</TableHead><TableHead>Date</TableHead><TableHead>Account</TableHead>
+                      <TableHead>Source row</TableHead><TableHead>Serial</TableHead><TableHead>SKU</TableHead><TableHead>Date</TableHead><TableHead>Account</TableHead>
                       <TableHead className="text-right">Qty</TableHead><TableHead>Invoice</TableHead><TableHead className="text-right">Inv. unit ex GST</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Program / ref</TableHead>
                     </TableRow></TableHeader>
                     <TableBody>
                       {current.rows.slice(0, 50).map((r) => (<Fragment key={r.rowIndex}>
                         <TableRow className={`font-mono text-xs ${r.reuseReason ? isSameCustomerRepeat(r.reuseReason) ? "bg-amber-50/70" : "bg-rose-50/60" : ""}`} data-testid={`row-import-${r.rowIndex}`}>
-                          <TableCell>{r.rowIndex}</TableCell><TableCell>{r.serial}</TableCell><TableCell>{r.sku}</TableCell><TableCell>{r.date}</TableCell>
+                          <TableCell>{r.sourceRow ?? r.rowIndex + 2}</TableCell><TableCell>{r.serial}</TableCell><TableCell>{r.sku}</TableCell><TableCell>{r.date}</TableCell>
                           <TableCell>{r.accountId == null ? "-" : customerLabel(resById.get(r.accountId)?.code ?? r.accountId)}</TableCell>
                           <TableCell className="text-right">{r.quantity}</TableCell><TableCell>{r.invoice}</TableCell>
                           <TableCell className="text-right">{r.unitPriceCents == null ? "-" : formatCents(r.unitPriceCents)}</TableCell>

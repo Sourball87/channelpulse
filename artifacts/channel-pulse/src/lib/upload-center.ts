@@ -18,6 +18,7 @@ export interface CenterUpload {
     skuCount: number; soh: number; unitsSold: number; serialCount: number;
     from: string; to: string; ddRangeCount: number; invoicedCount: number;
     nonSerialCount: number; historyRowsSkipped: number;
+    missingSerialCount?: number;
     nonSerialIdentifiers: string[];
   };
   errors: string[];
@@ -198,6 +199,10 @@ export function shortDate(s: string | null | undefined): string {
   if (!s) return "-";
   const d = new Date(s.length <= 10 ? `${s}T00:00:00Z` : s);
   return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
+}
+
+export function serialShortfallChaseLine(customer: string, count: number, reportName: string): string {
+  return `${customer} - ${count.toLocaleString("en-AU")} sold without serial (${reportName})`;
 }
 
 /* ---------- Program-table helpers ---------- */

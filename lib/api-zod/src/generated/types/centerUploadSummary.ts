@@ -18,4 +18,5 @@ export type CenterUploadSummary = {
   nonSerialCount: number;
   nonSerialIdentifiers: string[];
   historyRowsSkipped: number;
+  missingSerialCount?: number;
 };

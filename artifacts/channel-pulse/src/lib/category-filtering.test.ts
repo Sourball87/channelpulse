@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  filterExplorerRowsByCategory,
   filterStockCodeParts,
   keepCategoryCompatiblePartIds,
   listSelectableCategories,
@@ -20,15 +19,6 @@ test("category narrows and clearing restores the Stock Code list", () => {
   assert.deepEqual(filterStockCodeParts(parts, "SSD").map((part) => part.part_no), ["SSD-A", "SSD-B"]);
   assert.deepEqual(filterStockCodeParts(parts, undefined).map((part) => part.part_no),
     ["SSD-A", "SSD-B", "MON-A", "OLD-A"]);
-});
-
-test("category narrows and clearing restores Explorer rows", () => {
-  const rows = [
-    { category: "SSD", part_no: "SSD-A" },
-    { category: "Monitor", part_no: "MON-A" },
-  ];
-  assert.deepEqual(filterExplorerRowsByCategory(rows, "SSD"), [rows[0]]);
-  assert.deepEqual(filterExplorerRowsByCategory(rows, undefined), rows);
 });
 
 test("category options match the Settings data and omit the placeholder", () => {

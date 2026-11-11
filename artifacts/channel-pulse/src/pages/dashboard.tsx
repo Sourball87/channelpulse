@@ -15,10 +15,12 @@ import { StockOnHandHeatmap } from "@/components/stock-on-hand-heatmap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, GripVertical, Pencil, RotateCcw, X } from "lucide-react";
+import { filterWoiRows } from "@/lib/woi-filtering";
 
 function woiClass(value: number): string {
   if (value < 2) return "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-200";
@@ -29,6 +31,8 @@ function woiClass(value: number): string {
 
 export default function Dashboard() {
   const [category, setCategory] = useState("All");
+  const [woiCategory, setWoiCategory] = useState("All");
+  const [hideZeroSoh, setHideZeroSoh] = useState(false);
   const [woiWeeks, setWoiWeeks] = useState<4 | 8 | 13>(4);
   const { apiParams, insightWeek, resellerIds } = useFilters();
   const isPeriod = !!apiParams.week_from && !!apiParams.week_to;
@@ -45,7 +49,7 @@ export default function Dashboard() {
   const woiParams = {
     ...apiParams,
     weeks: woiWeeks,
-    category: queryCategory,
+    category: woiCategory === "All" ? undefined : woiCategory,
   };
   const {
     data: woiData,
@@ -80,11 +84,11 @@ export default function Dashboard() {
   );
   const orderedWoiRows = useMemo(() => {
     if (!woiData) return [];
-    const rows = [...woiData.rows];
+    const rows = filterWoiRows(woiData.rows, hideZeroSoh);
     const order = isEditing ? draftPartOrder : partOrder;
     const positions = new Map(order.map((part, index) => [part.toLowerCase(), index]));
     return rows.sort((a, b) => (positions.get(a.part_no.toLowerCase()) ?? Infinity) - (positions.get(b.part_no.toLowerCase()) ?? Infinity));
-  }, [woiData, isEditing, draftPartOrder, partOrder]);
+  }, [woiData, hideZeroSoh, isEditing, draftPartOrder, partOrder]);
   const kpiCards = kpiData?.kpis ?? [];
   const reportedCount = kpiData?.reseller_statuses.filter((reseller) => reseller.reported).length ?? 0;
   const totalResellers = kpiData?.reseller_statuses.length ?? 0;
@@ -194,12 +198,29 @@ export default function Dashboard() {
                     : `SOH as at ${formatWeekLabel(woiData?.week_iso ?? insightWeek)} · sales ${woiData?.weeks.length ? formatWeekSpan(woiData.weeks[0], woiData.weeks.at(-1)) : `${woiWeeks} weeks`} (${woiData?.window_weeks ?? woiWeeks} weeks)`}
                 </p>
               </div>
-              <Select value={String(woiWeeks)} onValueChange={(value) => setWoiWeeks(Number(value) as 4 | 8 | 13)} disabled={isPeriod}>
-                <SelectTrigger className="h-8 w-[120px]" aria-label="WOI coverage window" data-testid="select-woi-window"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="4">4 weeks</SelectItem><SelectItem value="8">8 weeks</SelectItem><SelectItem value="13">13 weeks</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={woiCategory} onValueChange={setWoiCategory}>
+                  <SelectTrigger className="h-8 w-[150px]" aria-label="Filter WOI by category" data-testid="select-woi-category">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>{categories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+                </Select>
+                <label htmlFor="hide-zero-soh" className="inline-flex h-8 items-center gap-2 whitespace-nowrap text-xs text-muted-foreground">
+                  <Checkbox
+                    id="hide-zero-soh"
+                    checked={hideZeroSoh}
+                    onCheckedChange={(checked) => setHideZeroSoh(checked === true)}
+                    data-testid="checkbox-hide-zero-soh"
+                  />
+                  Hide 0 SOH SKUs
+                </label>
+                <Select value={String(woiWeeks)} onValueChange={(value) => setWoiWeeks(Number(value) as 4 | 8 | 13)} disabled={isPeriod}>
+                  <SelectTrigger className="h-8 w-[120px]" aria-label="WOI coverage window" data-testid="select-woi-window"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4">4 weeks</SelectItem><SelectItem value="8">8 weeks</SelectItem><SelectItem value="13">13 weeks</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {woiLoading ? <div className="space-y-2 p-4"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-4/5" /></div> : woiError ? (
@@ -208,7 +229,9 @@ export default function Dashboard() {
                   <Button variant="outline" size="sm" onClick={() => void retryWoi()} data-testid="button-retry-woi">Try again</Button>
                 </div>
               ) : !orderedWoiRows.length ? (
-                <div className="px-4 py-10 text-center text-sm text-muted-foreground">No inventory coverage for this selection.</div>
+                <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  {hideZeroSoh ? "No SKUs remain after hiding zero-SOH rows." : "No inventory coverage for this selection."}
+                </div>
               ) : (
                 <div className="max-h-[460px] overflow-auto">
                   <table className="w-full min-w-max border-separate border-spacing-0 text-xs" aria-label="Weeks of inventory by SKU and customer">

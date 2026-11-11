@@ -42,4 +42,14 @@ describe("12-week sales window", () => {
     expect(weeklySalesData("2026-W27", []).weeks).toHaveLength(12);
     expect(weeklySalesData(null, [])).toEqual({ end_week: null, weeks: [], parts: [], cells: [] });
   });
+  it("uses the selected inclusive period instead of extending to twelve weeks", () => {
+    const selectedWeeks = ["2026-W30", "2026-W31", "2026-W32"];
+    const result = weeklySalesData("2026-W32", [
+      { part_id: 1, part_no: "SKU-A", week_iso: "2026-W30", units_sold: 4, reported_accounts: 1 },
+      { part_id: 1, part_no: "SKU-A", week_iso: "2026-W32", units_sold: 8, reported_accounts: 1 },
+      { part_id: 1, part_no: "SKU-A", week_iso: "2026-W33", units_sold: 99, reported_accounts: 1 },
+    ], selectedWeeks);
+    expect(result.weeks).toEqual(selectedWeeks);
+    expect(result.cells.map(cell => cell.week_iso)).toEqual(["2026-W30", "2026-W32"]);
+  });
 });
