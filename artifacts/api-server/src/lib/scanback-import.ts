@@ -10,7 +10,7 @@ export interface Account { id: number; code: string; name: string; aliases?: str
 const fields: Record<string, string[]> = {
   serial: ["serial", "serials", "serialno", "serialnumber", "sn", "imei"],
   sku: ["sku", "model", "modelcode", "modelnumber", "manufacturermodel", "stockcode", "part", "partnumber", "productcode"],
-  date: ["date", "saleday", "invoicedate", "selldate", "saledate", "orderdate", "approved"],
+  date: ["date", "saleday", "invoicedate", "selldate", "saledate", "salesdate", "orderdate", "approved"],
   account: ["accountcode", "customer", "customername", "account", "reseller", "prontoaccount"],
   quantity: ["qty", "quantity", "invoiceqty"],
   invoice: ["invoice", "invoiceno", "invoicenumber", "invoicereference"],

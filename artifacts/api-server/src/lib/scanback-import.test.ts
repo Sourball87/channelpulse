@@ -92,6 +92,11 @@ describe("serial report ingestion", () => {
     expect(mapping.date).toBe("SaleDay");
   });
 
+  it("maps a SALES DATE header to the serial sale date", () => {
+    const mapping = suggestMapping(["IMEI CODE/SERIAL NO", "ITEMCODE", "SALES DATE"]);
+    expect(mapping.date).toBe("SALES DATE");
+  });
+
   it("maps SKU from the PLE serial-report ModelCode header", () => {
     const headers = ["SaleDay", "ChannelCode", "PromoterID", "ModelCode", "Sales", "SerialNumber", "InvoiceDay"];
     const mapping = suggestMapping(headers);

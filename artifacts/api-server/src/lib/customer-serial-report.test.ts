@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { createCustomerSerialWorkbook } from "./customer-serial-report";
+import { createCustomerSerialWorkbook, resolveCustomerSerialSaleDate } from "./customer-serial-report";
 
 describe("customer serial report workbook", () => {
+  it("recovers an unmapped source date using its stored date order", () => {
+    expect(resolveCustomerSerialSaleDate("", "20261026", "dmy")).toBe("2026-10-26");
+    expect(resolveCustomerSerialSaleDate("2026-10-20", "20261026", "dmy")).toBe("2026-10-20");
+  });
+
   it("shows a per-customer summary before the full lookup sheet", () => {
     const workbook = XLSX.read(createCustomerSerialWorkbook([
       {

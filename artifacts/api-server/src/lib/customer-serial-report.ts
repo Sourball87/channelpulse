@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { maskCustomerCode, maskCustomerText } from "./customer-display";
+import { parseDateValue, type DateOrder } from "./dates";
 
 export interface CustomerSerialReportRow {
   customerCode: string | null;
@@ -9,6 +10,14 @@ export interface CustomerSerialReportRow {
   saleDate: string;
   reportName: string;
   sourceRow: string | null;
+}
+
+export function resolveCustomerSerialSaleDate(
+  parsedDate: string,
+  sourceDate: unknown,
+  dateOrder: DateOrder,
+): string {
+  return parsedDate || parseDateValue(sourceDate, dateOrder);
 }
 
 function displayCustomer(row: CustomerSerialReportRow): string {

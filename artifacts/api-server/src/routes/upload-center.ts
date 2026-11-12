@@ -25,7 +25,7 @@ import type { AiNote } from "../lib/upload-review";
 import { UploadCommitConflict, commitSohUpload } from "../lib/soh-upload-commit";
 import { CommitCenterUploadBody } from "@workspace/api-zod";
 import { isValidDateString } from "../lib/dates";
-import { createCustomerSerialWorkbook } from "../lib/customer-serial-report";
+import { createCustomerSerialWorkbook, resolveCustomerSerialSaleDate } from "../lib/customer-serial-report";
 
 const router = Router();
 // The UI batches an arbitrary selection into requests. Bound each request's
@@ -61,7 +61,8 @@ router.get("/upload-center/customer-serial-report", async (req, res): Promise<vo
   }
 
   try {
-    const rows = await transaction(async c => (await c.query(`
+    const rows = await transaction(async c => {
+      const mapped = await c.query(`
       SELECT r.code AS "customerCode", r.name AS "customerName",
         report_row.item->>'serial' AS serial,
         COALESCE(report_row.item->>'sku', '') AS sku,
@@ -81,7 +82,76 @@ router.get("/upload-center/customer-serial-report", async (req, res): Promise<vo
         AND NULLIF(BTRIM(report_row.item->>'serial'), '') IS NOT NULL
       ORDER BY report_row.item->>'date', r.code, report_row.item->>'serial',
         i.payload->>'name', report_row.item->>'sourceRow'
-    `, [from, to])).rows);
+      `, [from, to]);
+
+      // Older committed imports may have a date column in the saved source
+      // sheet that was not recognized by the original mapper (for example
+      // "SALES DATE"). Re-read only that one source field without changing
+      // the immutable committed import.
+      const legacyDates = await c.query(`
+        WITH eligible AS MATERIALIZED (
+          SELECT id, payload, raw_sheets
+          FROM scanback_imports
+          WHERE payload->>'kind' = 'claim'
+            AND payload->>'state' = 'committed'
+            AND COALESCE(payload->'mapping'->>'date', '') = ''
+            AND (
+              SELECT COUNT(*)
+              FROM jsonb_array_elements_text(COALESCE(payload->'headers', '[]'::jsonb)) AS header(value)
+              WHERE regexp_replace(lower(header.value), '[^a-z0-9]', '', 'g') =
+                ANY(ARRAY['date','saleday','invoicedate','selldate','saledate','salesdate','orderdate','approved'])
+            ) = 1
+        ),
+        source_dates AS MATERIALIZED (
+          SELECT eligible.id,
+            source_row.item->>'__sourceRow' AS "sourceRow",
+            MAX(date_field.value #>> '{}') AS "sourceDate"
+          FROM eligible
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(eligible.raw_sheets->(eligible.payload->>'sheet'), '[]'::jsonb)
+          ) AS source_row(item)
+          CROSS JOIN LATERAL jsonb_each(source_row.item) AS date_field(key, value)
+          WHERE regexp_replace(lower(date_field.key), '[^a-z0-9]', '', 'g') =
+            ANY(ARRAY['date','saleday','invoicedate','selldate','saledate','salesdate','orderdate','approved'])
+          GROUP BY eligible.id, source_row.item->>'__sourceRow'
+          HAVING COUNT(*) = 1
+        )
+        SELECT r.code AS "customerCode", r.name AS "customerName",
+          report_row.item->>'serial' AS serial,
+          COALESCE(report_row.item->>'sku', '') AS sku,
+          '' AS "saleDate",
+          i.payload->>'name' AS "reportName",
+          NULLIF(report_row.item->>'sourceRow', '') AS "sourceRow",
+          source_dates."sourceDate" AS "sourceDate",
+          COALESCE(i.payload->>'dateFormat', 'dmy') AS "dateFormat"
+        FROM eligible i
+        CROSS JOIN LATERAL jsonb_array_elements(i.payload->'rows') AS report_row(item)
+        JOIN source_dates ON source_dates.id = i.id
+          AND source_dates."sourceRow" = report_row.item->>'sourceRow'
+        LEFT JOIN resellers r ON r.id = COALESCE(
+          NULLIF(report_row.item->>'accountId', '')::int,
+          NULLIF(i.payload->>'accountId', '')::int
+        )
+        WHERE NULLIF(BTRIM(report_row.item->>'date'), '') IS NULL
+          AND NULLIF(BTRIM(report_row.item->>'serial'), '') IS NOT NULL
+      `);
+
+      const recovered = legacyDates.rows.flatMap(row => {
+        const saleDate = resolveCustomerSerialSaleDate(
+          row.saleDate,
+          row.sourceDate,
+          row.dateFormat === "mdy" ? "mdy" : "dmy",
+        );
+        return saleDate >= from && saleDate <= to ? [{ ...row, saleDate }] : [];
+      });
+      return [...mapped.rows, ...recovered].sort((a, b) =>
+        a.saleDate.localeCompare(b.saleDate) ||
+        String(a.customerCode ?? "").localeCompare(String(b.customerCode ?? "")) ||
+        a.serial.localeCompare(b.serial) ||
+        a.reportName.localeCompare(b.reportName) ||
+        String(a.sourceRow ?? "").localeCompare(String(b.sourceRow ?? "")),
+      );
+    });
     const workbook = createCustomerSerialWorkbook(rows);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="customer-serial-report_${from}_to_${to}.xlsx"`);
