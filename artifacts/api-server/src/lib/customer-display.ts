@@ -19,6 +19,10 @@ const codeLabels: Record<string, string> = {
   ks: "KS", jw: "JW", digi: "DI", digidirect: "DI", di: "DI",
 };
 
+export function maskCustomerCode(code: string): string {
+  return codeLabels[code.trim().toLowerCase()] ?? maskCustomerText(code);
+}
+
 export function maskCustomerText(text: string): string {
   return patterns.reduce((value, { pattern, alias }) => value.replace(pattern, alias), text);
 }

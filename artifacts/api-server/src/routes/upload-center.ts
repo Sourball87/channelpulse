@@ -24,6 +24,8 @@ import { aiAssistEnabled, suggestFileType, suggestRecognition } from "../lib/upl
 import type { AiNote } from "../lib/upload-review";
 import { UploadCommitConflict, commitSohUpload } from "../lib/soh-upload-commit";
 import { CommitCenterUploadBody } from "@workspace/api-zod";
+import { isValidDateString } from "../lib/dates";
+import { createCustomerSerialWorkbook } from "../lib/customer-serial-report";
 
 const router = Router();
 // The UI batches an arbitrary selection into requests. Bound each request's
@@ -49,6 +51,47 @@ const wrap = (fn: (c: Client, req: Request) => Promise<unknown>) => async (req: 
     }
   }
 };
+
+router.get("/upload-center/customer-serial-report", async (req, res): Promise<void> => {
+  const from = typeof req.query.from === "string" ? req.query.from : "";
+  const to = typeof req.query.to === "string" ? req.query.to : "";
+  if (!isValidDateString(from) || !isValidDateString(to) || from > to) {
+    res.status(400).json({ error: "Choose a valid date range with the start on or before the end." });
+    return;
+  }
+
+  try {
+    const rows = await transaction(async c => (await c.query(`
+      SELECT r.code AS "customerCode", r.name AS "customerName",
+        report_row.item->>'serial' AS serial,
+        COALESCE(report_row.item->>'sku', '') AS sku,
+        report_row.item->>'date' AS "saleDate",
+        i.payload->>'name' AS "reportName",
+        NULLIF(report_row.item->>'sourceRow', '') AS "sourceRow"
+      FROM scanback_imports i
+      CROSS JOIN LATERAL jsonb_array_elements(i.payload->'rows') AS report_row(item)
+      LEFT JOIN resellers r ON r.id = COALESCE(
+        NULLIF(report_row.item->>'accountId', '')::int,
+        NULLIF(i.payload->>'accountId', '')::int
+      )
+      WHERE i.payload->>'kind' = 'claim'
+        AND i.payload->>'state' = 'committed'
+        AND report_row.item->>'date' >= $1
+        AND report_row.item->>'date' <= $2
+        AND NULLIF(BTRIM(report_row.item->>'serial'), '') IS NOT NULL
+      ORDER BY report_row.item->>'date', r.code, report_row.item->>'serial',
+        i.payload->>'name', report_row.item->>'sourceRow'
+    `, [from, to])).rows);
+    const workbook = createCustomerSerialWorkbook(rows);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="customer-serial-report_${from}_to_${to}.xlsx"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).send(workbook);
+  } catch (e) {
+    req.log.error({ err: e }, "Customer serial report export failed");
+    res.status(500).json({ error: "Could not generate the customer serial report." });
+  }
+});
 async function profiles(c: Client) {
   return (await c.query("SELECT id,name,code,aliases,filename_patterns AS \"filenamePatterns\" FROM resellers ORDER BY code")).rows;
 }

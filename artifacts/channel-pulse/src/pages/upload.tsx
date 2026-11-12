@@ -6,7 +6,7 @@ import { useGetResellers, type Reseller } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, FileText, AlertCircle, TriangleAlert, Trash2, Pencil, CheckCircle2, X, RefreshCw, ExternalLink } from "lucide-react";
+import { UploadCloud, FileText, AlertCircle, TriangleAlert, Trash2, Pencil, CheckCircle2, X, RefreshCw, ExternalLink, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -106,6 +106,13 @@ const REFERENCE_FIELDS: Record<"price" | "program", { key: string; label: string
 };
 const UNMAPPED = "__unmapped";
 
+function localDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function UploadCenter() {
   const [isDragging, setIsDragging] = useState(false);
   const [defaultWeek, setDefaultWeek] = useState("");
@@ -115,6 +122,11 @@ export default function UploadCenter() {
   const [deleteTarget, setDeleteTarget] = useState<CenterUpload | null>(null);
   const [bulkDeleteTargets, setBulkDeleteTargets] = useState<CenterUpload[] | null>(null);
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
+  const today = localDateInputValue(new Date());
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const [reportFrom, setReportFrom] = useState(monthStart);
+  const [reportTo, setReportTo] = useState(today);
+  const [reportDownloading, setReportDownloading] = useState(false);
   const [editTarget, setEditTarget] = useState<CenterUpload | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +149,38 @@ export default function UploadCenter() {
   const open = uploads.find((u) => u.id === openId) ?? null;
   const resById = new Map(resellers.map((r) => [r.id, r]));
   const pricesUpdated = (center.data?.prices ?? []).reduce<string | null>((m, p) => (!m || p.updatedAt > m ? p.updatedAt : m), null);
+  const reportRangeValid = !!reportFrom && !!reportTo && reportFrom <= reportTo;
+
+  const downloadCustomerSerialReport = async () => {
+    if (!reportRangeValid || reportDownloading) return;
+    setReportDownloading(true);
+    try {
+      const params = new URLSearchParams({ from: reportFrom, to: reportTo });
+      const response = await fetch(`/api/upload-center/customer-serial-report?${params}`, { credentials: "include" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `Download failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = `customer-serial-report_${reportFrom}_to_${reportTo}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+      toast({ title: "Customer serial report downloaded", description: `${reportFrom} to ${reportTo} (sale dates, inclusive).` });
+    } catch (error) {
+      toast({
+        title: "Could not download customer serial report",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setReportDownloading(false);
+    }
+  };
 
   const reviewFromUpload = (u: CenterUpload) => ({
     ...((u.sohReview ?? {}) as Record<string, any>),
@@ -325,6 +369,37 @@ export default function UploadCenter() {
       </header>
 
       <div className="flex-1 overflow-auto p-4 md:p-6 space-y-8">
+        <Card data-testid="card-customer-serial-report">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Consolidated customer serial report</CardTitle>
+            <CardDescription>
+              Download committed customer serial rows by sale date for claim lookups. The workbook includes customer, serial, SKU, sale date and source row.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="customer-serial-report-from" className="text-xs">Sale date from</Label>
+              <Input id="customer-serial-report-from" type="date" value={reportFrom}
+                max={reportTo || undefined} onChange={(event) => setReportFrom(event.target.value)}
+                className="w-44" data-testid="input-customer-serial-report-from" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="customer-serial-report-to" className="text-xs">Sale date to</Label>
+              <Input id="customer-serial-report-to" type="date" value={reportTo}
+                min={reportFrom || undefined} onChange={(event) => setReportTo(event.target.value)}
+                className="w-44" data-testid="input-customer-serial-report-to" />
+            </div>
+            <Button onClick={downloadCustomerSerialReport} disabled={!reportRangeValid || reportDownloading}
+              data-testid="button-download-customer-serial-report">
+              <Download className="mr-2 h-4 w-4" />
+              {reportDownloading ? "Preparing report…" : "Download Excel report"}
+            </Button>
+            {!reportRangeValid && <p className="w-full text-sm text-destructive" role="alert" data-testid="text-invalid-report-range">
+              Choose a valid start and end date.
+            </p>}
+          </CardContent>
+        </Card>
+
         {/* Drop zone */}
         <div
           data-testid="dropzone-main"

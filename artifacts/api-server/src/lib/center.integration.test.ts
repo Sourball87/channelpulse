@@ -4,6 +4,7 @@ import { pool } from "@workspace/db";
 import type { CenterUpload } from "@workspace/api-zod";
 import { computeHeaderFingerprint } from "./parser";
 import { currentWeekIso } from "./dates";
+import { maskCustomerCode } from "./customer-display";
 
 const base = process.env.UPLOAD_CENTER_INTEGRATION_URL;
 describe.skipIf(!base)("Upload Center development API", () => {
@@ -123,6 +124,23 @@ describe.skipIf(!base)("Upload Center development API", () => {
       expect((await call(`/upload-center/${evidence.id}`, "PATCH", { accountId: null })).status).toBe(409);
       const claim = find("claim");
       expect((await call(`/scanback/imports/${claim.sourceId}/commit`, "POST", {})).status).toBe(200);
+      const serialReportResponse = await fetch(
+        `${base}/upload-center/customer-serial-report?from=2026-01-01&to=2026-01-01`,
+        { headers: { Cookie: cookie } },
+      );
+      expect(serialReportResponse.status).toBe(200);
+      expect(serialReportResponse.headers.get("content-type")).toContain("spreadsheetml.sheet");
+      const serialReportWorkbook = XLSX.read(await serialReportResponse.arrayBuffer(), { type: "array" });
+      expect(XLSX.utils.sheet_to_json(serialReportWorkbook.Sheets["Customer Serials"], { header: 1 })).toContainEqual([
+        "Customer", "Serial Number", "SKU", "Sale Date", "Source Report", "Source Row",
+      ]);
+      expect(XLSX.utils.sheet_to_json(serialReportWorkbook.Sheets["Customer Serials"], { header: 1 })).toContainEqual([
+        maskCustomerCode(account.code),
+        `${prefix}A`, sku, "2026-01-01", `${prefix}-claim.csv`, "2",
+      ]);
+      expect((await fetch(`${base}/upload-center/customer-serial-report?from=2026-02-01&to=2026-01-01`, {
+        headers: { Cookie: cookie },
+      })).status).toBe(400);
       const learnedAccount = (await call("/resellers")).data.find((r: { id: number }) => r.id === account.id);
       expect(learnedAccount.aliases).toContain(channelCode);
       const price = find("price"), program = find("program");
