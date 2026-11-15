@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { displayDate } from "./date-display.ts";
 import { useResolveProntoCredit, type UnmatchedProntoCredit } from "@workspace/api-client-react";
 
 export type CenterKind = "soh" | "claim" | "evidence" | "history" | "price" | "program" | "unknown";
@@ -192,13 +193,11 @@ export function shiftSunday(d: Date, weeks: number): Date {
 }
 
 export function formatDay(d: Date): string {
-  return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return displayDate(d.toISOString().slice(0, 10));
 }
 
 export function shortDate(s: string | null | undefined): string {
-  if (!s) return "-";
-  const d = new Date(s.length <= 10 ? `${s}T00:00:00Z` : s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
+  return displayDate(s) || "-";
 }
 
 export function serialShortfallChaseLine(customer: string, count: number, reportName: string): string {

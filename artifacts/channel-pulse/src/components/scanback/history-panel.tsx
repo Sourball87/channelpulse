@@ -111,7 +111,7 @@ export function HistoryPanel({ batches, resellers }: { batches: ScanbackBatch[];
                       <TableCell><StatusPill status={r.status} /></TableCell>
                       <TableCell className="font-mono text-xs">{r.serial}</TableCell>
                       <TableCell className="font-mono text-xs">{r.sku}</TableCell>
-                      <TableCell className="text-xs">{r.date}</TableCell>
+                      <TableCell className="text-xs">{formatDate(r.date)}</TableCell>
                       <TableCell className="font-mono text-xs">{r.invoice}</TableCell>
                       <TableCell className="text-right font-mono text-xs">{formatCents(r.unitPriceCents)}</TableCell>
                       <TableCell className="text-right font-mono text-xs">{formatCents(r.gtmBuyCents)}</TableCell>

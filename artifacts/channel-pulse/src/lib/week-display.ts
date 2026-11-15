@@ -1,6 +1,6 @@
+import { displayDate } from "./date-display.ts";
+
 const DAY = 86_400_000;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const dayMonth = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
 
 /** ISO weeks start Monday; UTC calendar arithmetic avoids local-time/DST shifts. */
 export function isoWeekDates(week?: string | null): { start: Date; end: Date } | undefined {
@@ -18,11 +18,7 @@ export function isoWeekDates(week?: string | null): { start: Date; end: Date } |
 }
 
 function calendarRange(start: Date, end: Date): string {
-  if (start.getUTCFullYear() !== end.getUTCFullYear()) {
-    return `${dayMonth(start)} ${start.getUTCFullYear()}–${dayMonth(end)} ${end.getUTCFullYear()}`;
-  }
-  const first = start.getUTCMonth() === end.getUTCMonth() ? start.getUTCDate() : dayMonth(start);
-  return `${first}–${dayMonth(end)} ${end.getUTCFullYear()}`;
+  return `${displayDate(start.toISOString().slice(0, 10))} – ${displayDate(end.toISOString().slice(0, 10))}`;
 }
 
 export function formatWeekRange(week?: string | null): string {

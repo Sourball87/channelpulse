@@ -51,16 +51,16 @@ describe("customer serial report workbook", () => {
     expect(workbook.SheetNames).toEqual(["Customer Summary", "Customer Serials"]);
     expect(XLSX.utils.sheet_to_json(workbook.Sheets["Customer Summary"], { header: 1 })).toEqual([
       ["Customer", "Serial Rows", "Unique Serials", "First Sale Date", "Last Sale Date"],
-      ["KS", 2, 1, "2026-10-14", "2026-10-16"],
-      ["PL", 1, 1, "2026-10-20", "2026-10-20"],
-      ["UM", 1, 1, "2026-10-21", "2026-10-21"],
+      ["KS", 2, 1, "14 Oct 2026", "16 Oct 2026"],
+      ["PL", 1, 1, "20 Oct 2026", "20 Oct 2026"],
+      ["UM", 1, 1, "21 Oct 2026", "21 Oct 2026"],
     ]);
     expect(XLSX.utils.sheet_to_json(workbook.Sheets["Customer Serials"], { header: 1 })).toEqual([
       ["Customer", "Serial Number", "SKU", "Sale Date", "Source Report", "Source Row"],
-      ["KS", "000123456789", "MODEL-1", "2026-10-14", "KS October serial report.xlsx", "18"],
-      ["PL", "SERIAL-2", "MODEL-2", "2026-10-20", "PL October serial report.xlsx", "25"],
-      ["UM", "SERIAL-3", "MODEL-3", "2026-10-21", "UM October serial report.xlsx", "31"],
-      ["KS", "000123456789", "MODEL-1", "2026-10-16", "KS October serial report.xlsx", "22"],
+      ["KS", "000123456789", "MODEL-1", "14 Oct 2026", "KS October serial report.xlsx", "18"],
+      ["PL", "SERIAL-2", "MODEL-2", "20 Oct 2026", "PL October serial report.xlsx", "25"],
+      ["UM", "SERIAL-3", "MODEL-3", "21 Oct 2026", "UM October serial report.xlsx", "31"],
+      ["KS", "000123456789", "MODEL-1", "16 Oct 2026", "KS October serial report.xlsx", "22"],
     ]);
   });
 

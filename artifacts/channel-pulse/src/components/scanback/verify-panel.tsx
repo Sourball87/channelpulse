@@ -328,7 +328,7 @@ export function VerifyPanel({
                     <TableCell className="font-mono text-xs">{r.sku}</TableCell>
                     <TableCell className="text-xs">{r.date || "-"}</TableCell>
                     <TableCell className="text-xs">{r.invoicedAccountId != null ? customerLabel(resById.get(r.invoicedAccountId)?.code ?? r.invoicedAccountId) : r.invoicedTo ? maskCustomerText(r.invoicedTo) : "-"}</TableCell>
-                    <TableCell className="text-xs"><span className="font-mono">{r.invoice || "-"}</span>{r.invoiceDate && <span className="block text-slate-500">{r.invoiceDate}</span>}</TableCell>
+                    <TableCell className="text-xs"><span className="font-mono">{r.invoice || "-"}</span>{r.invoiceDate && <span className="block text-slate-500">{formatDate(r.invoiceDate)}</span>}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{formatCents(r.unitPriceCents)}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{formatCents(r.gtmBuyCents)}{r.costCents != null && <span className="block text-[10px] font-sans text-slate-400" title="Our cost, reference only, not the claim basis">our cost (ref) {formatCents(r.costCents)}</span>}</TableCell>
                     <TableCell className="text-right font-mono text-xs font-semibold"

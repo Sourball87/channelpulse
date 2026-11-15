@@ -30,12 +30,18 @@ describe("scanback exports", () => {
     expect(workbook.SheetNames).toEqual([
       "Programs", "Approved batches", "Approved serials", "Credit resolutions", "Resellers",
     ]);
+    expect(XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Programs, { header: 1 })[1].slice(1, 3))
+      .toEqual(["01 Sep 2026", "30 Sep 2026"]);
+    expect(XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets["Approved batches"], { header: 1 })[1].slice(3, 7))
+      .toEqual(["30 Sep 2026, 10:00 am Sydney", "invoice", "01 Sep 2026", "30 Sep 2026"]);
+    expect(data.programs[0].start).toBe("2026-09-01");
+    expect(data.batches[0].createdAt).toBe("2026-09-30T00:00:00Z");
     expect(XLSX.utils.sheet_to_json(workbook.Sheets["Approved serials"], { header: 1 })).toContainEqual([
       "SERIAL1", "REF-1", "Spring", "CA", "SKU-1", 3000,
     ]);
     expect(XLSX.utils.sheet_to_json(workbook.Sheets["Credit resolutions"], { header: 1 })).toContainEqual([
-      "credit.xlsx", 12, "CA", "SKU-1", "CR-1", "2026-09-04", -1,
-      "reviewed", "", "Checked return.", "2026-09-05T00:00:00Z", "admin",
+      "credit.xlsx", 12, "CA", "SKU-1", "CR-1", "04 Sep 2026", -1,
+      "reviewed", "", "Checked return.", "05 Sep 2026, 10:00 am Sydney", "admin",
     ]);
     expect(XLSX.utils.sheet_to_json(workbook.Sheets.Resellers, { header: 1 })).toContainEqual([
       "CA", "CA", true, 2,

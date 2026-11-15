@@ -243,7 +243,7 @@ function PromotionView({ tally, onOpenSerial }: { tally: ScanbackPromotionTally;
                       </td>
                       <td className="px-3 py-2">
                         <span className="font-mono">{p.weeksReported} of {p.weeksExpected}</span>
-                        {p.missingWeeks.length > 0 && <span className="ml-2 text-[11px] text-rose-700">missing {p.missingWeeks.join(", ")}</span>}
+                        {p.missingWeeks.length > 0 && <span className="ml-2 text-[11px] text-rose-700">missing {p.missingWeeks.map(formatDate).join(", ")}</span>}
                       </td>
                       <td className="px-3 py-2 text-right font-mono">{p.reported}</td>
                       <td className="px-3 py-2 text-right font-mono">{p.qualifying}</td>
@@ -425,7 +425,7 @@ function ReviewPane({ review, setReview, onRecheck, onApprove, onNext, onCancel,
           <p className="text-sm font-semibold">Final check — {customerLabel(s.accountCode)}</p>
           <p className="text-xs text-muted-foreground">Snapshot from latest Dicker evidence. Background refreshes do not change this snapshot.</p>
           {review.earlyNote && <p className="mt-1 text-xs text-amber-800">Early override: {review.earlyNote}</p>}
-          {s.missingWeeks.length > 0 && <p className="mt-1 text-xs font-medium text-rose-700">Missing weeks: {s.missingWeeks.join(", ")}</p>}
+          {s.missingWeeks.length > 0 && <p className="mt-1 text-xs font-medium text-rose-700">Missing weeks: {s.missingWeeks.map(formatDate).join(", ")}</p>}
           {s.claimCents !== amountToApprove && <p className="mt-1 text-xs text-muted-foreground">Promotion total including prior approvals: {formatCents(s.claimCents)}. Previously approved serials will not be paid again.</p>}
         </div>
         <dl className="flex gap-5 text-right">

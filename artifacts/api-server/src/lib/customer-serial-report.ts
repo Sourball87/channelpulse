@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { displayDate } from "./date-display";
 import { maskCustomerCode, maskCustomerText } from "./customer-display";
 import { parseDateValue, type DateOrder } from "./dates";
 
@@ -51,8 +52,8 @@ export function createCustomerSerialWorkbook(rows: CustomerSerialReportRow[]): B
           customer,
           summary.rowCount,
           summary.serials.size,
-          dates[0] ?? "",
-          dates.at(-1) ?? "",
+          displayDate(dates[0]),
+          displayDate(dates.at(-1)),
         ];
       }),
   ];
@@ -62,7 +63,7 @@ export function createCustomerSerialWorkbook(rows: CustomerSerialReportRow[]): B
       displayCustomer(row),
       row.serial,
       row.sku,
-      row.saleDate,
+      displayDate(row.saleDate),
       maskCustomerText(row.reportName),
       row.sourceRow ?? "",
     ]),

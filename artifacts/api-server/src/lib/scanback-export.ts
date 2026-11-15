@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { displayDate, displayDateTime } from "./date-display";
 import type { ScanbackBatch, ScanbackProgram, ScanbackImport } from "@workspace/api-zod";
 import { maskCustomerText } from "./customer-display";
 import { indexProntoSource } from "./scanback-pronto";
@@ -35,7 +36,7 @@ export function makeScanbackWorkbook(data: ScanbackExportData): Buffer {
       return `${reseller ? resellerLabel(reseller.code) : cap.resellerId}: ${cap.quantity ?? "unlimited"} units`;
     }).join("; ");
     programs.push([
-      maskCustomerText(program.name), program.start, program.end, program.archived, maskCustomerText(program.notes),
+      maskCustomerText(program.name), displayDate(program.start), displayDate(program.end), program.archived, maskCustomerText(program.notes),
       line.sku ?? String(line.partId ?? ""), line.gtmBuyCents, caps,
     ].map(spreadsheetSafe) as (string | number | boolean)[]);
   }
@@ -44,8 +45,8 @@ export function makeScanbackWorkbook(data: ScanbackExportData): Buffer {
     "Approved serial count", "Total cents", "Historical",
   ]];
   for (const batch of data.batches) batches.push([
-    batch.reference, maskCustomerText(batch.programName), resellerLabel(batch.accountCode), batch.createdAt,
-    batch.basis, batch.from, batch.to, batch.approvedCount, batch.totalCents, batch.historical,
+    batch.reference, maskCustomerText(batch.programName), resellerLabel(batch.accountCode), displayDateTime(batch.createdAt),
+    batch.basis, displayDate(batch.from), displayDate(batch.to), batch.approvedCount, batch.totalCents, batch.historical,
   ].map(spreadsheetSafe) as (string | number | boolean)[]);
   const serials: (string | number | boolean)[][] = [[
     "Serial", "Batch reference", "Promotion", "Reseller", "SKU", "Claim cents",
@@ -56,7 +57,9 @@ export function makeScanbackWorkbook(data: ScanbackExportData): Buffer {
   const credits = [[
     "Import", "Source row", "Reseller", "SKU", "Invoice", "Invoice date",
     "Quantity", "Resolution", "Returned serials", "Review note", "Resolved at", "Resolved by",
-  ], ...data.creditResolutions].map(row => row.map(spreadsheetSafe)) as (string | number | boolean)[][];
+  ], ...data.creditResolutions.map(row => row.map((value, index) =>
+    index === 5 ? displayDate(String(value ?? "")) : index === 10 ? displayDateTime(String(value ?? "")) : value,
+  ))].map(row => row.map(spreadsheetSafe)) as (string | number | boolean)[][];
   const resellers: (string | number | boolean)[][] = [[
     "Reseller code", "Reseller name", "Active", "Expected files per week",
   ], ...data.resellers.map(item => [

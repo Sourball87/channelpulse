@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import * as XLSX from "xlsx";
+import { displayDate } from "./date-display";
 import type {
   ScanbackImport, ScanbackProgram, ScanbackPromotionLine, ScanbackPromotionPartner,
   ScanbackPromotionTally, ScanbackPromotionTotals, ScanbackReconciliationInput,
@@ -255,16 +256,16 @@ export async function promotionWorkbook(c: Client, programId: string, accountId?
     for (const key of Object.keys(acc) as (keyof ScanbackPromotionTotals)[]) acc[key] += partner[key];
     return acc;
   }, emptyTotals());
-  append("Partner summary", [[label], ["Promotion", maskCustomerText(report.program.name)], ["Dates", report.program.start, report.program.end],
+  append("Partner summary", [[label], ["Promotion", maskCustomerText(report.program.name)], ["Dates", displayDate(report.program.start), displayDate(report.program.end)],
     ["Partner", "Weeks reported", "Missing weeks", "Serials reported", "Qualifying", "Not qualifying", "Claim $", "Cap used", "Status"],
-    ...partners.map(p => [maskCustomerText(p.accountCode), `${p.weeksReported} of ${p.weeksExpected}`, p.missingWeeks.join(", "), p.reported,
+    ...partners.map(p => [maskCustomerText(p.accountCode), `${p.weeksReported} of ${p.weeksExpected}`, p.missingWeeks.map(displayDate).join(", "), p.reported,
       p.qualifying, p.notQualifying, p.claimCents / 100, p.capUsed, p.closed ? "Closed" : report.status]),
     ["Total", "", "", sum.reported, sum.qualifying, sum.notQualifying, sum.claimCents / 100]]);
   append("Weekly breakdown", [[label], ["Partner", "Week ending", "Reported", "Missing", "Serials", "Qualifying", "Not qualifying", "Claim $"],
-    ...partners.flatMap(p => p.weeks.map(w => [maskCustomerText(p.accountCode), w.weekEnd, w.reportedWeek ? "Yes" : "No", w.missing ? "Yes" : "No",
+    ...partners.flatMap(p => p.weeks.map(w => [maskCustomerText(p.accountCode), displayDate(w.weekEnd), w.reportedWeek ? "Yes" : "No", w.missing ? "Yes" : "No",
       w.reported, w.qualifying, w.notQualifying, w.claimCents / 100]))]);
   append("Serial details", [[label], ["Partner", "Serial", "SKU", "Sold date", "DD invoice", "Invoiced price ex GST", "GTM Buy Ex", "Claim $", "Status", "Reason", "Source report", "Source line"],
-    ...partners.flatMap(p => p.lines.map(l => [maskCustomerText(p.accountCode), l.serial, l.sku, l.date, l.invoice,
+    ...partners.flatMap(p => p.lines.map(l => [maskCustomerText(p.accountCode), l.serial, l.sku, displayDate(l.date), l.invoice,
       l.unitPriceCents == null ? "" : l.unitPriceCents / 100, l.gtmBuyCents == null ? "" : l.gtmBuyCents / 100,
       isPayableLine(l) ? l.amountCents / 100 : 0, l.status, maskCustomerText(l.reason), l.importId, l.lineId]))]);
   return XLSX.write(book, { type: "buffer", bookType: "xlsx" });

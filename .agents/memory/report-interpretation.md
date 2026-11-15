@@ -3,6 +3,12 @@ name: Report interpretation
 description: Reporting-period and attribution decisions for supplier report ingestion.
 ---
 
+Use `08 Nov 2026` for displayed calendar dates on screens and in exports. Keep stored dates and matching keys in ISO format.
+
+**Why:** The user explicitly selected this format for consistent dates throughout ChannelPulse.
+
+**How to apply:** Use two-digit days, three-letter English months and four-digit years. Do not shift date-only values by timezone. Display actual timestamps in Australia/Sydney, retaining their time.
+
 Show each reporting week alongside its Monday–Sunday calendar date range, not the week the file was uploaded.
 
 **Why:** The user said week numbers were difficult to interpret and explicitly chose the report's calendar week over the upload week.

@@ -1,4 +1,5 @@
 import { pool, type PoolClient } from "@workspace/db";
+import { displayDate, displayDateTime } from "./date-display";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   ScanbackProgram, ScanbackImport, ScanbackDraft, ScanbackVerificationInput,
@@ -461,13 +462,13 @@ export function statementRows(batch: ScanbackBatch | ScanbackDraft): (string | n
     ["Promotion", isBatch ? batch.programName : metadata.programName ?? batch.settings.programId],
     ["Account", isBatch ? batch.accountCode : metadata.accountCode ?? batch.settings.accountId],
     ["Eligibility basis", isBatch ? batch.basis : batch.settings.basis],
-    ["From", isBatch ? batch.from : batch.settings.from],
-    ["To", isBatch ? batch.to : batch.settings.to],
-    ["Saved at", batch.createdAt],
+    ["From", displayDate(isBatch ? batch.from : batch.settings.from)],
+    ["To", displayDate(isBatch ? batch.to : batch.settings.to)],
+    ["Saved at", displayDateTime(batch.createdAt)],
     ["Claim total (ex GST)", batch.totalCents / 100],
     [],
     ["Serial", "Stock Code", "Sell date", "Invoice", "Invoice date", "Invoiced unit price (ex GST)", "GTM Buy Ex", "Claim (ex GST)", "Status", "Reason", "Included", "Source evidence"],
-    ...results.map(r => [r.serial, r.sku, r.date, r.invoice, r.invoiceDate, r.unitPriceCents == null ? "" : r.unitPriceCents / 100,
+    ...results.map(r => [r.serial, r.sku, displayDate(r.date), r.invoice, displayDate(r.invoiceDate), r.unitPriceCents == null ? "" : r.unitPriceCents / 100,
       r.gtmBuyCents == null ? "" : r.gtmBuyCents / 100, r.include ? r.amountCents / 100 : 0, r.status, r.reason, r.include ? "Yes" : "No", r.source]),
   ].map((row, index) => row.map((value, column) =>
     typeof value === "string" && (index < 11 || (column !== 0 && column !== 1))

@@ -21,7 +21,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FIELD_LABEL, KIND_META, MAPPING_KEYS, type MappingKey } from "./import-config";
-import { SectionEmpty, errorMessage, formatCents, formatDateTime, useRefreshWorkspace } from "./shared";
+import { SectionEmpty, errorMessage, formatCents, formatDate, formatDateTime, useRefreshWorkspace } from "./shared";
 import { ProntoAccounts } from "./pronto-accounts";
 
 const NONE = "__none";
@@ -250,7 +250,7 @@ export function ImportPanel({
                     <TableBody>
                       {current.rows.slice(0, 50).map((r) => (<Fragment key={r.rowIndex}>
                         <TableRow className={`font-mono text-xs ${r.reuseReason ? isSameCustomerRepeat(r.reuseReason) ? "bg-amber-50/70" : "bg-rose-50/60" : ""}`} data-testid={`row-import-${r.rowIndex}`}>
-                          <TableCell>{r.sourceRow ?? r.rowIndex + 2}</TableCell><TableCell>{r.serial}</TableCell><TableCell>{r.sku}</TableCell><TableCell>{r.date}</TableCell>
+                          <TableCell>{r.sourceRow ?? r.rowIndex + 2}</TableCell><TableCell>{r.serial}</TableCell><TableCell>{r.sku}</TableCell><TableCell>{formatDate(r.date)}</TableCell>
                           <TableCell>{r.accountId == null ? "-" : customerLabel(resById.get(r.accountId)?.code ?? r.accountId)}</TableCell>
                           <TableCell className="text-right">{r.quantity}</TableCell><TableCell>{r.invoice}</TableCell>
                           <TableCell className="text-right">{r.unitPriceCents == null ? "-" : formatCents(r.unitPriceCents)}</TableCell>

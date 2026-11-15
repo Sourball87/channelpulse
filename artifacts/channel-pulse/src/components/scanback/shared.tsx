@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { displayDate } from "@/lib/date-display";
 import {
   getGetScanbackWorkspaceQueryKey,
   useGetScanbackWorkspace,
@@ -38,17 +39,10 @@ export function errorMessage(e: unknown): string {
 }
 
 export function formatDate(s: string | null | undefined): string {
-  if (!s) return "-";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
+  return displayDate(s) || "-";
 }
 
-export function formatDateTime(s: string): string {
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString("en-AU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+export { displayDateTime as formatDateTime } from "@/lib/date-display";
 
 export function useScanbackWorkspace() {
   return useGetScanbackWorkspace({
