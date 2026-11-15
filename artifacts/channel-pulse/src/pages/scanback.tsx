@@ -8,11 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { UploadCloud } from "lucide-react";
 import { ProgramsPanel } from "@/components/scanback/programs-panel";
-import { VerifyPanel } from "@/components/scanback/verify-panel";
-import { HistoryPanel } from "@/components/scanback/history-panel";
+import { PromotionsPanel } from "@/components/scanback/promotions-panel";
 import { errorMessage, formatCents, useScanbackWorkspace } from "@/components/scanback/shared";
 import { useUploadCenter } from "@/lib/upload-center";
-import { ClaimsByWeekPanel } from "@/components/scanback/claims-by-week";
 
 export default function ScanbackClaims() {
   const ws = useScanbackWorkspace();
@@ -22,8 +20,9 @@ export default function ScanbackClaims() {
   const search = useSearch();
   const query = useMemo(() => new URLSearchParams(search), [search]);
   const programUploadId = query.get("programUpload") ?? undefined;
-  const [tab, setTab] = useState(() => query.get("tab") ?? (programUploadId ? "programs" : "claims"));
-  useEffect(() => { const t = query.get("tab") ?? (programUploadId ? "programs" : null); if (t) setTab(t); }, [query, programUploadId]);
+  const resolveTab = (value: string | null) => value === "programs" || value === "serials" ? value : "promotions";
+  const [tab, setTab] = useState(() => resolveTab(query.get("tab") ?? (programUploadId ? "programs" : null)));
+  useEffect(() => { setTab(resolveTab(query.get("tab") ?? (programUploadId ? "programs" : null))); }, [query, programUploadId]);
   const [, navigate] = useLocation();
   const serialParam = query.get("serial") ?? "";
   const openSerial = (serial: string) => {
@@ -35,20 +34,7 @@ export default function ScanbackClaims() {
   const data = ws.data;
   const approvedTotal = data?.batches.filter((b) => !b.historical).reduce((s, b) => s + b.totalCents, 0) ?? 0;
 
-  const preset = useMemo(() => {
-    const q = new URLSearchParams(search);
-    const report = q.get("report");
-    const reseller = q.get("reseller");
-    const promotion = q.get("promotion");
-    if (!report && !reseller && !promotion) return null;
-    const reportId = report?.replace(/^scan:/, "") ?? undefined;
-    const entry = center.data?.uploads.find((u) => u.id === report || u.sourceId === reportId);
-    return {
-      reportId: entry?.sourceId ?? reportId,
-      resellerId: reseller && /^\d+$/.test(reseller) ? Number(reseller) : undefined,
-      promotionId: promotion ?? undefined,
-    };
-  }, [search, center.data]);
+  const promotionParam = query.get("promotion") ?? undefined;
 
   return (
     <div className="flex h-full flex-col bg-muted/20">
@@ -56,7 +42,7 @@ export default function ScanbackClaims() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Scanback Claims</h1>
-            <p className="text-sm text-muted-foreground">Claim per serial = reseller invoiced unit price ex GST minus GTM Buy Ex. One serial is payable once across all promotions.</p>
+            <p className="text-sm text-muted-foreground">Claim per serial = reseller invoiced unit price ex GST minus GTM Buy Ex. Running tally during the promotion; claims are reconciled once, after it ends.</p>
           </div>
           <div className="flex items-end gap-6">
             {data && (
@@ -83,28 +69,20 @@ export default function ScanbackClaims() {
         ) : (
           <Tabs value={tab} onValueChange={setTab} className="mx-auto w-full max-w-[1440px]">
             <TabsList className="flex-wrap h-auto">
-              <TabsTrigger value="claims" data-testid="tab-claims-by-week">Claims by week</TabsTrigger>
-              <TabsTrigger value="verify" data-testid="tab-verify">Verify Claims</TabsTrigger>
+              <TabsTrigger value="promotions" data-testid="tab-promotions">Promotions</TabsTrigger>
               <TabsTrigger value="programs" data-testid="tab-programs">Programs</TabsTrigger>
-              <TabsTrigger value="history" data-testid="tab-history">Claims History</TabsTrigger>
-              <TabsTrigger value="serials" data-testid="tab-serials">Serial lookup</TabsTrigger>
+                            <TabsTrigger value="serials" data-testid="tab-serials">Serial lookup</TabsTrigger>
             </TabsList>
-            <TabsContent value="claims" className="mt-4">
-              <ClaimsByWeekPanel programs={data.programs} />
-            </TabsContent>
-            <TabsContent value="verify" className="mt-4">
-              <VerifyPanel programs={data.programs} imports={data.imports} drafts={data.drafts} resellers={resellers} onApproved={() => undefined} preset={preset} onOpenSerial={openSerial} />
+            <TabsContent value="promotions" className="mt-4">
+              <PromotionsPanel programs={data.programs} initialProgramId={promotionParam} onOpenSerial={openSerial} />
             </TabsContent>
             <TabsContent value="programs" className="mt-4 data-[state=inactive]:hidden" forceMount>
               {!partsQ.isLoading && (
                 <ProgramsPanel programs={data.programs} resellers={resellers} parts={parts}
                   prices={center.data?.prices ?? []} uploads={center.data?.uploads ?? []}
                   stats={(data.programStats ?? []) as ProgramStat[]}
-                  initialProgramId={preset?.promotionId} programUploadId={programUploadId} />
+                  initialProgramId={promotionParam} programUploadId={programUploadId} />
               )}
-            </TabsContent>
-            <TabsContent value="history" className="mt-4">
-              <HistoryPanel batches={data.batches} resellers={resellers} />
             </TabsContent>
             <TabsContent value="serials" className="mt-4">
               <SerialLookup initialSerial={serialParam} onSearch={openSerial} />

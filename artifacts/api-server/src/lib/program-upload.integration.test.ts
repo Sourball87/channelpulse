@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { pool } from "@workspace/db";
 import type { CenterUpload } from "@workspace/api-zod";
+import * as XLSX from "xlsx";
 
 const base = process.env.PROGRAM_TABLE_INTEGRATION_URL;
-const csvRow = (row: unknown[]) => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",");
 describe.skipIf(!base)("Upload Center program-table preview", () => {
   it("previews dates, duplicate SKU, ignored calculations and caps through the real upload route", async () => {
     if (base !== "http://localhost:80/api") throw new Error("Use the local development proxy only.");
@@ -25,15 +25,19 @@ describe.skipIf(!base)("Upload Center program-table preview", () => {
       const headers = ["SKU","RRP Inc","GTM Inc","Discount","DD Std Cost Ex","T1 EX","GTM Buy Ex","STA Qty","STA Cost","REV TOTAL","Part No.","",account.code,"Total"];
       const values = [`${prefix}-SKU`, "$449", "$269", "-40%", "$307", "$323", "$232", "$9", "$81,462", "$276,017", `${prefix}-SKU`, "", "7", "7"];
       const totals = Array(headers.length).fill(""); totals[12] = "7"; totals[13] = "7";
-      const csv = [
+      const rows = [
         ["Start", "28-Sep"], ["End", "31-Oct", "", "", "Allocation"], ["Allocation"], headers,
         Array(headers.length).fill(""), values, totals, Array(headers.length).fill(""),
-      ].map(csvRow).join("\n");
-      const form = new FormData(); form.append("files", new Blob([csv]), `${prefix}.csv`);
+      ];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "Program");
+      const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      const form = new FormData(); form.append("files", new Blob([new Uint8Array(bytes)]), `${prefix}.xlsx`);
       form.append("accountId", String(account.id)); form.append("weekIso", "2026-W40"); form.append("ai_assist", "false");
       const staged = await call("/upload-center/files", form);
       expect(staged.status, JSON.stringify(staged.data)).toBe(200);
-      const upload = (staged.data.uploads as CenterUpload[]).find(u => u.name === `${prefix}.csv`)!;
+      const upload = (staged.data.uploads as CenterUpload[]).find(u => u.name === `${prefix}.xlsx`)!;
+      for (const entry of staged.data.uploads as CenterUpload[]) uploadIds.add(entry.id);
       expect(upload).toMatchObject({ kind:"program", state:"preview", programSource:{startDate:expect.stringMatching(/-09-28$/),endDate:expect.stringMatching(/-10-31$/)} });
       expect(upload.programSource?.ignoredRows).toEqual(expect.arrayContaining([
         { row: 5, reason: "Blank row." }, { row: 7, reason: "Numeric totals row." },

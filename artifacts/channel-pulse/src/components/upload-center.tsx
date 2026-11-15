@@ -319,8 +319,7 @@ function SerialSummary({ u, reseller, programs, week }: { u: CenterUpload; resel
   const [chosen, setChosen] = useState("");
   const promotion = applicable.length === 1 ? applicable[0].id : chosen;
   const params = new URLSearchParams();
-  params.set("report", u.sourceId ?? u.id);
-  params.set("reseller", String(reseller.id));
+  params.set("tab", "promotions");
   if (promotion) params.set("promotion", promotion);
   return (
     <div className="space-y-1.5" data-testid={`summary-serial-${u.id}`}>
@@ -353,10 +352,10 @@ function SerialSummary({ u, reseller, programs, week }: { u: CenterUpload; resel
         {applicable.length === 1 && <span className="truncate text-[11px] text-cyan-800">{applicable[0].name}</span>}
         {applicable.length === 0 && <span className="text-[11px] text-amber-700">No active promotion for this customer and period</span>}
         {u.sourceId ? (
-          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" asChild disabled={applicable.length > 1 && !chosen} data-testid={`link-verify-${u.id}`}>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" asChild disabled={applicable.length > 1 && !chosen} data-testid={`link-promotions-${u.id}`}>
             <Link href={`/scanback?${params.toString()}`} onClick={(e) => { if (applicable.length > 1 && !chosen) e.preventDefault(); }}
               className={applicable.length > 1 && !chosen ? "pointer-events-none opacity-50" : ""}>
-              <ShieldCheck className="mr-1 h-3 w-3" /> Verify claim
+              <ShieldCheck className="mr-1 h-3 w-3" /> Open in Promotions
             </Link>
           </Button>
         ) : <span className="text-[11px] text-muted-foreground">Not linked to a claim import</span>}

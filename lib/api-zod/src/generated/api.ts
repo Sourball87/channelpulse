@@ -660,6 +660,323 @@ export const DeleteScanbackProgramResponse = zod.object({
 })
 
 
+export const GetScanbackPromotionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const getScanbackPromotionResponseProgramOneLinesItemSkuMax = 120;
+
+
+export const getScanbackPromotionResponseProgramOneLinesItemRrpIncCentsMin = 0;
+
+export const getScanbackPromotionResponseProgramOneLinesItemGtmIncCentsMin = 0;
+
+export const getScanbackPromotionResponseProgramOneLinesItemDdCostExCentsMin = 0;
+
+export const getScanbackPromotionResponseProgramOneLinesItemT1ExCentsMin = 0;
+
+export const getScanbackPromotionResponseProgramOneLinesItemCapsItemQuantityMin = 0;
+
+
+
+export const GetScanbackPromotionResponse = zod.object({
+  "program": zod.object({
+  "id": zod.string(),
+  "version": zod.int(),
+  "name": zod.string(),
+  "start": zod.string(),
+  "end": zod.string(),
+  "notes": zod.string(),
+  "archived": zod.boolean(),
+  "customerIds": zod.array(zod.int()),
+  "lines": zod.array(zod.object({
+  "sku": zod.string().min(1).max(getScanbackPromotionResponseProgramOneLinesItemSkuMax).optional(),
+  "partId": zod.int().nullish(),
+  "gtmBuyCents": zod.int().min(1),
+  "rrpIncCents": zod.int().min(getScanbackPromotionResponseProgramOneLinesItemRrpIncCentsMin).nullish(),
+  "gtmIncCents": zod.int().min(getScanbackPromotionResponseProgramOneLinesItemGtmIncCentsMin).nullish(),
+  "ddCostExCents": zod.int().min(getScanbackPromotionResponseProgramOneLinesItemDdCostExCentsMin).nullish(),
+  "t1ExCents": zod.int().min(getScanbackPromotionResponseProgramOneLinesItemT1ExCentsMin).nullish(),
+  "caps": zod.array(zod.object({
+  "resellerId": zod.int(),
+  "quantity": zod.int().min(getScanbackPromotionResponseProgramOneLinesItemCapsItemQuantityMin).nullable()
+}))
+}))
+}).and(zod.object({
+  "id": zod.string(),
+  "version": zod.int(),
+  "archived": zod.boolean(),
+  "createdAt": zod.string()
+})),
+  "today": zod.string(),
+  "status": zod.enum(['scheduled', 'live', 'ended', 'reconciled']),
+  "daysLeft": zod.int(),
+  "partners": zod.array(zod.object({
+  "reported": zod.int(),
+  "qualifying": zod.int(),
+  "notQualifying": zod.int(),
+  "claimCents": zod.int()
+}).and(zod.object({
+  "accountId": zod.int(),
+  "accountCode": zod.string(),
+  "closed": zod.boolean(),
+  "weeksReported": zod.int(),
+  "weeksExpected": zod.int(),
+  "missingWeeks": zod.array(zod.string()),
+  "weeks": zod.array(zod.object({
+  "reported": zod.int(),
+  "qualifying": zod.int(),
+  "notQualifying": zod.int(),
+  "claimCents": zod.int()
+}).and(zod.object({
+  "weekIso": zod.string(),
+  "weekEnd": zod.string(),
+  "reportedWeek": zod.boolean(),
+  "missing": zod.boolean()
+}))),
+  "lines": zod.array(zod.object({
+  "rowIndex": zod.int(),
+  "serial": zod.string(),
+  "sku": zod.string(),
+  "date": zod.string(),
+  "invoice": zod.string(),
+  "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'amber', 'green', 'neutral']).optional(),
+  "unitPriceCents": zod.int().nullable(),
+  "gtmBuyCents": zod.int().nullable(),
+  "amountCents": zod.int(),
+  "quantity": zod.number(),
+  "status": zod.enum(['eligible', 'review', 'rejected']),
+  "reason": zod.string(),
+  "include": zod.boolean(),
+  "selectable": zod.boolean(),
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
+}).and(zod.object({
+  "lineId": zod.string(),
+  "importId": zod.string()
+}))),
+  "capUsed": zod.string(),
+  "batches": zod.array(zod.object({
+  "id": zod.string(),
+  "reference": zod.string(),
+  "programName": zod.string(),
+  "accountCode": zod.string(),
+  "createdAt": zod.string(),
+  "totalCents": zod.int(),
+  "approvedCount": zod.int(),
+  "historical": zod.boolean(),
+  "basis": zod.string(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "rows": zod.array(zod.object({
+  "rowIndex": zod.int(),
+  "serial": zod.string(),
+  "sku": zod.string(),
+  "date": zod.string(),
+  "invoice": zod.string(),
+  "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'amber', 'green', 'neutral']).optional(),
+  "unitPriceCents": zod.int().nullable(),
+  "gtmBuyCents": zod.int().nullable(),
+  "amountCents": zod.int(),
+  "quantity": zod.number(),
+  "status": zod.enum(['eligible', 'review', 'rejected']),
+  "reason": zod.string(),
+  "include": zod.boolean(),
+  "selectable": zod.boolean(),
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
+}))
+})),
+  "token": zod.string().optional()
+}))),
+  "totals": zod.object({
+  "reported": zod.int(),
+  "qualifying": zod.int(),
+  "notQualifying": zod.int(),
+  "claimCents": zod.int()
+})
+})
+
+
+export const ExportScanbackPromotionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ExportScanbackPromotionQueryParams = zod.object({
+  "accountId": zod.coerce.number().int().optional()
+})
+
+export const ExportScanbackPromotionResponse = zod.unknown()
+
+
+export const ReconcileScanbackPartnerParams = zod.object({
+  "id": zod.coerce.string(),
+  "accountId": zod.coerce.number().int()
+})
+
+export const reconcileScanbackPartnerBodyEarlyNoteMax = 2000;
+
+export const reconcileScanbackPartnerBodyExclusionsItemNoteMax = 2000;
+
+export const reconcileScanbackPartnerBodyExclusionsMax = 50000;
+
+
+
+export const ReconcileScanbackPartnerBody = zod.object({
+  "earlyNote": zod.string().max(reconcileScanbackPartnerBodyEarlyNoteMax).optional(),
+  "exclusions": zod.array(zod.object({
+  "lineId": zod.string(),
+  "note": zod.string().min(1).max(reconcileScanbackPartnerBodyExclusionsItemNoteMax)
+})).max(reconcileScanbackPartnerBodyExclusionsMax).optional()
+})
+
+export const ReconcileScanbackPartnerResponse = zod.object({
+  "reported": zod.int(),
+  "qualifying": zod.int(),
+  "notQualifying": zod.int(),
+  "claimCents": zod.int()
+}).and(zod.object({
+  "accountId": zod.int(),
+  "accountCode": zod.string(),
+  "closed": zod.boolean(),
+  "weeksReported": zod.int(),
+  "weeksExpected": zod.int(),
+  "missingWeeks": zod.array(zod.string()),
+  "weeks": zod.array(zod.object({
+  "reported": zod.int(),
+  "qualifying": zod.int(),
+  "notQualifying": zod.int(),
+  "claimCents": zod.int()
+}).and(zod.object({
+  "weekIso": zod.string(),
+  "weekEnd": zod.string(),
+  "reportedWeek": zod.boolean(),
+  "missing": zod.boolean()
+}))),
+  "lines": zod.array(zod.object({
+  "rowIndex": zod.int(),
+  "serial": zod.string(),
+  "sku": zod.string(),
+  "date": zod.string(),
+  "invoice": zod.string(),
+  "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'amber', 'green', 'neutral']).optional(),
+  "unitPriceCents": zod.int().nullable(),
+  "gtmBuyCents": zod.int().nullable(),
+  "amountCents": zod.int(),
+  "quantity": zod.number(),
+  "status": zod.enum(['eligible', 'review', 'rejected']),
+  "reason": zod.string(),
+  "include": zod.boolean(),
+  "selectable": zod.boolean(),
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
+}).and(zod.object({
+  "lineId": zod.string(),
+  "importId": zod.string()
+}))),
+  "capUsed": zod.string(),
+  "batches": zod.array(zod.object({
+  "id": zod.string(),
+  "reference": zod.string(),
+  "programName": zod.string(),
+  "accountCode": zod.string(),
+  "createdAt": zod.string(),
+  "totalCents": zod.int(),
+  "approvedCount": zod.int(),
+  "historical": zod.boolean(),
+  "basis": zod.string(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "rows": zod.array(zod.object({
+  "rowIndex": zod.int(),
+  "serial": zod.string(),
+  "sku": zod.string(),
+  "date": zod.string(),
+  "invoice": zod.string(),
+  "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'amber', 'green', 'neutral']).optional(),
+  "unitPriceCents": zod.int().nullable(),
+  "gtmBuyCents": zod.int().nullable(),
+  "amountCents": zod.int(),
+  "quantity": zod.number(),
+  "status": zod.enum(['eligible', 'review', 'rejected']),
+  "reason": zod.string(),
+  "include": zod.boolean(),
+  "selectable": zod.boolean(),
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
+}))
+})),
+  "token": zod.string().optional()
+}))
+
+
+export const CloseScanbackPartnerParams = zod.object({
+  "id": zod.coerce.string(),
+  "accountId": zod.coerce.number().int()
+})
+
+export const closeScanbackPartnerBodyReferenceMax = 200;
+
+
+
+export const CloseScanbackPartnerBody = zod.object({
+  "token": zod.string(),
+  "reference": zod.string().min(1).max(closeScanbackPartnerBodyReferenceMax)
+})
+
+export const CloseScanbackPartnerResponse = zod.object({
+  "id": zod.string(),
+  "reference": zod.string(),
+  "programName": zod.string(),
+  "accountCode": zod.string(),
+  "createdAt": zod.string(),
+  "totalCents": zod.int(),
+  "approvedCount": zod.int(),
+  "historical": zod.boolean(),
+  "basis": zod.string(),
+  "from": zod.string(),
+  "to": zod.string(),
+  "rows": zod.array(zod.object({
+  "rowIndex": zod.int(),
+  "serial": zod.string(),
+  "sku": zod.string(),
+  "date": zod.string(),
+  "invoice": zod.string(),
+  "invoiceDate": zod.string(),
+  "invoicedAccountId": zod.int().nullish(),
+  "invoicedTo": zod.string().optional(),
+  "costCents": zod.int().nullish(),
+  "trackingColor": zod.enum(['red', 'orange', 'amber', 'green', 'neutral']).optional(),
+  "unitPriceCents": zod.int().nullable(),
+  "gtmBuyCents": zod.int().nullable(),
+  "amountCents": zod.int(),
+  "quantity": zod.number(),
+  "status": zod.enum(['eligible', 'review', 'rejected']),
+  "reason": zod.string(),
+  "include": zod.boolean(),
+  "selectable": zod.boolean(),
+  "source": zod.string(),
+  "notDdRange": zod.boolean().optional()
+}))
+})
+
+
 
 export const getScanbackClaimsByWeekQueryWeekRegExp = new RegExp('^(all|[0-9]{4}-W[0-9]{2})$');
 

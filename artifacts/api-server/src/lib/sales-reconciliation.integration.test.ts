@@ -7,7 +7,7 @@ const base = process.env.SALES_RECONCILIATION_INTEGRATION_URL;
 describe.skipIf(!base)("weekly serial reconciliation development API", () => {
   it("commits optional-sales SOH, reconciles serials, flags excess and updates the existing heatmap", async () => {
     if (base !== "http://localhost:80/api") throw new Error("Use the local development proxy only.");
-    const prefix = `SALESTEST${Date.now()}`, sku = `${prefix}-SKU`, week = "2050-W10", date = weekBounds(week).start;
+    const prefix = `SALESTEST${Date.now()}`, sku = `${prefix}-SKU`, week = "2001-W10", date = weekBounds(week).start;
     const ids = new Set<string>(), sources = new Set<string>(), uploadIds = new Set<number>();
     let cookie = "", partId: number | undefined;
     const call = async (path: string, body?: unknown) => {
@@ -67,7 +67,7 @@ describe.skipIf(!base)("weekly serial reconciliation development API", () => {
       expect(heatmap.data.cells.find((r: any) => r.week_iso === week)).toMatchObject({ units_sold: 3, serials_backed: true, serials_reported: 3 });
       const future = await call(path.replace(week, "2050-W11"));
       expect(future.data.pronto_note).toContain("before the selected week");
-      expect(future.data.rows.find((r: any) => r.week_iso === "2050-W11")).toMatchObject({ dd_sell_in_week: null, serials_reported: null, sell_through: null });
+      expect(future.data.rows).toEqual([]);
       expect((await call(path + "&category=Monitor")).data.rows).toEqual([]);
     } finally {
       await pool.query("DELETE FROM center_uploads WHERE id=ANY($1::text[])", [[...ids]]);

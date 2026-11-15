@@ -222,6 +222,9 @@ describe.skipIf(!base)("Upload Center development API", () => {
       cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
 
       const workbook = XLSX.utils.book_new();
+      // Explicit creation date exercises the Mon–Wed filing rule regardless
+      // of the day this opt-in suite is run.
+      workbook.Props = { CreatedDate: new Date("2026-11-10T00:00:00Z") };
       XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
         ["SKU", "SOH", "Sold Last 7 Days"], [`${prefix}-SKU`, 12, 3],
       ]), "SOH");

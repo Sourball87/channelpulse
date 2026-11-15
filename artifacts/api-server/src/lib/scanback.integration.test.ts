@@ -15,6 +15,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       batches: new Set<string>(), audits: new Set<number>(),
     };
     let sessionCookie = "";
+    let defaultAccountId: number | undefined;
     async function call(path: string, body?: unknown) {
       const headers: Record<string, string> = sessionCookie ? { Cookie: sessionCookie } : {};
       const response = await fetch(base + path, body instanceof FormData
@@ -28,9 +29,27 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         if (path === "/scanback/programs") ids.programs.add(data.id);
         if (path === "/scanback/imports/preview") ids.imports.add(data.id);
         if (path === "/scanback/verify") ids.drafts.add(data.id);
-        if (path === "/scanback/approve") ids.batches.add(data.id);
+        if (path.endsWith("/close")) ids.batches.add(data.id);
       }
       return { status: response.status, data };
+    }
+    // Legacy verifier assertions remain useful, but financial writes now go
+    // through the promotion-wide reconcile/close endpoints, never /approve.
+    async function prepareDraft(draft: any) {
+      const { programId, accountId, claimImportId } = draft.settings;
+      const wanted = new Set(draft.results.filter((r: any) => r.include).map((r: any) => `${claimImportId}:${r.rowIndex}`));
+      const tally = await call(`/scanback/promotions/${programId}`);
+      expect(tally.status, JSON.stringify(tally.data)).toBe(200);
+      const partner = tally.data.partners.find((p: any) => p.accountId === accountId);
+      const exclusions = partner.lines.filter((r: any) => !wanted.has(r.lineId) && !r.lineId.startsWith("approved:"))
+        .map((r: any) => ({ lineId: r.lineId, note: "Integration fixture selection" }));
+      const checked = await call(`/scanback/promotions/${programId}/partners/${accountId}/reconcile`, { exclusions });
+      expect(checked.status, JSON.stringify(checked.data)).toBe(200);
+      return { path: `/scanback/promotions/${programId}/partners/${accountId}/close`, token: checked.data.token };
+    }
+    async function closeDraft(draft: any, reference: string) {
+      const checked = await prepareDraft(draft);
+      return call(checked.path, { token: checked.token, reference });
     }
     async function upload(kind: string, csv: string, name: string) {
       const form = new FormData();
@@ -38,6 +57,13 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       form.append("kind", kind);
       const result = await call("/scanback/imports/preview", form);
       expect(result.status, JSON.stringify(result.data)).toBe(200);
+      if (result.data.kind === "claim" && !result.data.mapping.account && result.data.accountId == null && defaultAccountId != null) {
+        const mapped = await call(`/scanback/imports/${result.data.id}/remap`, {
+          mapping: result.data.mapping, sheet: result.data.sheet, dateFormat: result.data.dateFormat, accountId: defaultAccountId,
+        });
+        expect(mapped.status, JSON.stringify(mapped.data)).toBe(200);
+        return mapped.data;
+      }
       return result.data;
     }
     async function commit(i: { id: string; errors: unknown[] }) {
@@ -82,6 +108,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const parts = (await call("/parts")).data;
       const a = accounts[0], other = accounts[1], part = parts[0];
       expect(a && other && part).toBeTruthy();
+      defaultAccountId = a.id;
       const programInput = {
         name: prefix + " Main", start: "2026-09-01", end: "2026-09-30", notes: "", customerIds: [a.id],
         lines: [{ partId: part.id, gtmBuyCents: 7000, caps: [{ resellerId: a.id, quantity: 1 }] }],
@@ -181,10 +208,14 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       draft = (await call("/scanback/verify", { ...settings, draftId: draft.id, selectedRows: [1] })).data;
       expect(draft.results[1]).toMatchObject({ serial: prefix + "E", include: true, amountCents: 3000 });
       expect(draft.results[0].include).toBe(false);
+      const staleCheck = await call(`/scanback/promotions/${program.id}/partners/${a.id}/reconcile`, {});
+      expect(staleCheck.status).toBe(200);
       program = (await call("/scanback/programs", { ...program, notes: "Changed after verification" })).data;
-      expect((await call("/scanback/approve", { draftId: draft.id, token: draft.token, reference: prefix })).status).toBe(409);
+      expect((await call(`/scanback/promotions/${program.id}/partners/${a.id}/close`, { token: staleCheck.data.token, reference: prefix })).status).toBe(409);
+      expect((await call("/scanback/approve", { draftId: draft.id, token: draft.token, reference: prefix })).status).toBe(410);
       draft = (await call("/scanback/verify", { ...settings, draftId: draft.id, selectedRows: [1] })).data;
-      const approvals = await Promise.all([1, 2].map(() => call("/scanback/approve", { draftId: draft.id, token: draft.token, reference: prefix + " approved" })));
+      const prepared = await prepareDraft(draft);
+      const approvals = await Promise.all([1, 2].map(() => call(prepared.path, { token: prepared.token, reference: prefix + " approved" })));
       expect(approvals.map(r => r.status)).toEqual([200, 200]);
       expect(approvals[0].data.id).toBe(approvals[1].data.id);
       const approved = approvals[0].data;
@@ -192,16 +223,19 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const after = (await call("/scanback/verify", settings)).data;
       expect(after.results[0].reason).toContain("cap reached");
       expect(after.results[1].reason).toContain("Already approved");
+      program = (await call("/scanback/programs", { ...program, archived: true })).data;
       const second = (await call("/scanback/programs", {
         ...programInput, name: prefix + " Other", lines: [{ ...programInput.lines[0], caps: [] }],
       })).data;
       const otherDraft = (await call("/scanback/verify", { ...settings, programId: second.id })).data;
       expect(otherDraft.results[1].reason).toContain("Already approved");
-      // Two different drafts racing for the same unused serial must not both win.
+      // Two final closes for the same partner return ONE batch.
       const raceA = (await call("/scanback/verify", { ...settings, programId: second.id, selectedRows: [0] })).data;
       const raceB = (await call("/scanback/verify", { ...settings, programId: second.id, selectedRows: [0] })).data;
-      const race = await Promise.all([raceA, raceB].map(d => call("/scanback/approve", { draftId: d.id, token: d.token, reference: prefix + " race" })));
-      expect(race.map(r => r.status).sort()).toEqual([200, 409]);
+      const checks = [await prepareDraft(raceA), await prepareDraft(raceB)];
+      const race = await Promise.all(checks.map(check => call(check.path, { token: check.token, reference: prefix + " race" })));
+      expect(race.map(r => r.status).sort()).toEqual([200, 200]);
+      expect(race[0].data.id).toBe(race[1].data.id);
       expect(Number((await pool.query("SELECT count(*) FROM scanback_approved_serials WHERE serial=$1", [prefix + "A"])).rows[0].count)).toBe(1);
       const claimedTrail = (await call(`/scanback/serials/${prefix}A`)).data;
       expect(claimedTrail.status).toBe("CLAIMED");
@@ -245,7 +279,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const stillBlocked = (await call("/scanback/verify", { ...settings, programId: second.id, claimImportId: approvedAgain.id })).data;
       expect(stillBlocked.results[0]).toMatchObject({ trackingColor: "red", include: false });
       expect(stillBlocked.results[0].reason).toContain("Already approved");
-      program = (await call("/scanback/programs", { ...program, lines: [{ ...program.lines[0], gtmBuyCents: 5000 }] })).data;
+      expect((await call("/scanback/programs", { ...program, lines: [{ ...program.lines[0], gtmBuyCents: 5000 }] })).status).toBe(409);
       const exportResponse = await fetch(base + `/scanback/batches/${approved.id}/export/xlsx`, {
         headers: { Cookie: sessionCookie },
       });
@@ -268,7 +302,8 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       const past = workspace.batches.filter((b: { rows: { serial: string }[] }) => b.rows.some(r => r.serial.startsWith(prefix)));
       past.forEach((b: { id: string }) => ids.batches.add(b.id));
       expect(past.some((b: { historical: boolean; totalCents: number }) => b.historical && b.totalCents === 1234)).toBe(true);
-      expect(workspace.drafts.some((d: { id: string }) => d.id === draft.id)).toBe(false);
+      // Former per-report drafts may remain internal, but no longer approve.
+      expect(workspace.drafts.some((d: { id: string }) => d.id === draft.id)).toBe(true);
       // Native Pronto POS scopes evidence without hiding cross-scope ownership.
       const prontoHeader = "Invoice No,Invoice Date,Account Code,Reseller Name,Stock Code,Ship Qty,Serial Number,Item Price,Line Price Ex,EU Email\n";
       const pr = (serial: string, sourceCode = "SOURCE1", stock = sku) =>
@@ -300,7 +335,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       let extra = await upload("evidence", prontoHeader + pr("OTHERGOOD") + pr("NATIVEHELD", "OUTSIDE"), "pronto-ownership");
       extra = (await call(`/scanback/imports/${extra.id}/remap`, { ...nativeOptions, sheet: extra.sheet, mapping: extra.mapping })).data;
       await commit(extra);
-      expect((await call("/scanback/approve", { draftId: beforeScopeChange.id, token: beforeScopeChange.token, reference: prefix + " stale ownership" })).status).toBe(409);
+      expect((await call("/scanback/approve", { draftId: beforeScopeChange.id, token: beforeScopeChange.token, reference: prefix + " stale ownership" })).status).toBe(410);
       const held = (await call("/scanback/verify", { ...nativeSettings, draftId: beforeScopeChange.id })).data;
       expect(held.totalCents).toBe(3000);
       expect(held.results[1]).toMatchObject({ status: "review", include: false });
@@ -417,7 +452,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       expect(customDraft.totalCents).toBe(5000);
       expect(customDraft.results.map((r: { status: string }) => r.status)).toEqual(["eligible", "rejected"]);
       expect(customDraft.results[1].reason).toContain("cap reached");
-      const customApproval = await call("/scanback/approve", { draftId: customDraft.id, token: customDraft.token, reference: prefix + "-custom-approval" });
+      const customApproval = await closeDraft(customDraft, prefix + "-custom-approval");
       expect(customApproval.status).toBe(200);
       const approvalWorkspace = (await call("/scanback/workspace")).data;
       const stats = approvalWorkspace.programStats;
@@ -481,9 +516,7 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
         basis: "sell", from: weeklyProgram.start, to: weeklyProgram.end,
       })).data;
       expect(weeklyDraftA.results[0]).toMatchObject({ status: "eligible", unitPriceCents: 10000, gtmBuyCents: 7000, amountCents: 3000 });
-      const weeklyApproval = await call("/scanback/approve", {
-        draftId: weeklyDraftA.id, token: weeklyDraftA.token, reference: `${prefix}-weekly-approved`,
-      });
+      const weeklyApproval = await closeDraft(weeklyDraftA, `${prefix}-weekly-approved`);
       expect(weeklyApproval.status).toBe(200);
       ids.batches.add(weeklyApproval.data.id);
 
@@ -646,10 +679,12 @@ describe.skipIf(!base)("scanback HTTP financial workflow", () => {
       try {
         await cleanup.query("DELETE FROM scanback_approved_serials WHERE batch_id=ANY($1::text[])", [[...ids.batches]]);
         await cleanup.query("DELETE FROM scanback_batches WHERE id=ANY($1::text[])", [[...ids.batches]]);
-        await cleanup.query("DELETE FROM scanback_drafts WHERE id=ANY($1::text[])", [[...ids.drafts]]);
+        await cleanup.query(`DELETE FROM scanback_drafts WHERE id=ANY($1::text[])
+          OR payload->>'programId'=ANY($2::text[]) OR payload->'settings'->>'programId'=ANY($2::text[])`,
+        [[...ids.drafts], [...ids.programs]]);
         await cleanup.query("DELETE FROM scanback_imports WHERE id=ANY($1::text[])", [[...ids.imports]]);
         await cleanup.query("DELETE FROM scanback_programs WHERE id=ANY($1::text[])", [[...ids.programs]]);
-        await cleanup.query("DELETE FROM scanback_audit_log WHERE id=ANY($1::int[])", [[...ids.audits]]);
+        await cleanup.query("DELETE FROM scanback_audit_log WHERE id=ANY($1::int[]) OR entity_id=ANY($2::text[])", [[...ids.audits], [...ids.programs]]);
         await cleanup.query("COMMIT");
       } catch (e) { await cleanup.query("ROLLBACK"); throw e; }
       finally { cleanup.release(); }

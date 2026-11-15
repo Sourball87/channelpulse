@@ -566,7 +566,7 @@ export default function UploadCenter() {
               )}
               {open.kind === "history" && (
                 <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  New historical-claim uploads are retired. Existing approved claims remain available in Claims History and still count toward duplicate checks.
+                  New historical-claim uploads are retired. Existing approved claims remain visible under their promotion in Scanback Claims, Promotions tab, and still count toward duplicate checks.
                 </p>
               )}
 

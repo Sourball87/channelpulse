@@ -40,6 +40,7 @@ import type {
   ExplorerExportInput,
   ExplorerRow,
   ExportScanbackClaimsByWeekParams,
+  ExportScanbackPromotionParams,
   GetAlertsParams,
   GetDashboardHeatmapParams,
   GetDashboardKpisParams,
@@ -68,12 +69,16 @@ import type {
   ScanbackApprovalInput,
   ScanbackBatch,
   ScanbackClaimsByWeek,
+  ScanbackCloseInput,
   ScanbackDraft,
   ScanbackImport,
   ScanbackMapping,
   ScanbackProgram,
   ScanbackProgramDeleteResult,
   ScanbackProgramInput,
+  ScanbackPromotionPartner,
+  ScanbackPromotionTally,
+  ScanbackReconciliationInput,
   ScanbackSerialTrail,
   ScanbackUpload,
   ScanbackVerificationInput,
@@ -1212,6 +1217,381 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getDeleteScanbackProgramMutationOptions(options), queryClient);
+    }
+
+export const getGetScanbackPromotionUrl = (id: string,) => {
+
+
+
+
+  return `/api/scanback/promotions/${id}`
+}
+
+export const getScanbackPromotion = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ScanbackPromotionTally> => {
+
+  return customFetch<ScanbackPromotionTally>(getGetScanbackPromotionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetScanbackPromotionQueryKey = (id: string,) => {
+    return [
+    `/api/scanback/promotions/${id}`
+    ] as const;
+    }
+
+
+export const getGetScanbackPromotionQueryOptions = <TData = Awaited<ReturnType<typeof getScanbackPromotion>>, TError = ErrorType<unknown>>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackPromotion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetScanbackPromotionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getScanbackPromotion>>> = ({ signal }) => getScanbackPromotion(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getScanbackPromotion>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetScanbackPromotionQueryResult = NonNullable<Awaited<ReturnType<typeof getScanbackPromotion>>>
+export type GetScanbackPromotionQueryError = ErrorType<unknown>
+
+
+export function useGetScanbackPromotion<TData = Awaited<ReturnType<typeof getScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackPromotion>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getScanbackPromotion>>,
+          TError,
+          Awaited<ReturnType<typeof getScanbackPromotion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetScanbackPromotion<TData = Awaited<ReturnType<typeof getScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackPromotion>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getScanbackPromotion>>,
+          TError,
+          Awaited<ReturnType<typeof getScanbackPromotion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetScanbackPromotion<TData = Awaited<ReturnType<typeof getScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackPromotion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useGetScanbackPromotion<TData = Awaited<ReturnType<typeof getScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getScanbackPromotion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetScanbackPromotionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getExportScanbackPromotionUrl = (id: string,
+    params?: ExportScanbackPromotionParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/scanback/promotions/${id}/export?${stringifiedParams}` : `/api/scanback/promotions/${id}/export`
+}
+
+export const exportScanbackPromotion = async (id: string,
+    params?: ExportScanbackPromotionParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getExportScanbackPromotionUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportScanbackPromotionQueryKey = (id: string,
+    params?: ExportScanbackPromotionParams,) => {
+    return [
+    `/api/scanback/promotions/${id}/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportScanbackPromotionQueryOptions = <TData = Awaited<ReturnType<typeof exportScanbackPromotion>>, TError = ErrorType<unknown>>(id: string,
+    params?: ExportScanbackPromotionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackPromotion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportScanbackPromotionQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportScanbackPromotion>>> = ({ signal }) => exportScanbackPromotion(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportScanbackPromotion>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExportScanbackPromotionQueryResult = NonNullable<Awaited<ReturnType<typeof exportScanbackPromotion>>>
+export type ExportScanbackPromotionQueryError = ErrorType<unknown>
+
+
+export function useExportScanbackPromotion<TData = Awaited<ReturnType<typeof exportScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string,
+    params: undefined |  ExportScanbackPromotionParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackPromotion>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportScanbackPromotion>>,
+          TError,
+          Awaited<ReturnType<typeof exportScanbackPromotion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportScanbackPromotion<TData = Awaited<ReturnType<typeof exportScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string,
+    params?: ExportScanbackPromotionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackPromotion>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportScanbackPromotion>>,
+          TError,
+          Awaited<ReturnType<typeof exportScanbackPromotion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportScanbackPromotion<TData = Awaited<ReturnType<typeof exportScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string,
+    params?: ExportScanbackPromotionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackPromotion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useExportScanbackPromotion<TData = Awaited<ReturnType<typeof exportScanbackPromotion>>, TError = ErrorType<unknown>>(
+ id: string,
+    params?: ExportScanbackPromotionParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportScanbackPromotion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExportScanbackPromotionQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReconcileScanbackPartnerUrl = (id: string,
+    accountId: number,) => {
+
+
+
+
+  return `/api/scanback/promotions/${id}/partners/${accountId}/reconcile`
+}
+
+export const reconcileScanbackPartner = async (id: string,
+    accountId: number,
+    scanbackReconciliationInput: ScanbackReconciliationInput, options?: Parameters<typeof customFetch>[1]): Promise<ScanbackPromotionPartner> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ScanbackPromotionPartner>(getReconcileScanbackPartnerUrl(id,accountId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(scanbackReconciliationInput)
+  }
+);}
+
+
+
+
+
+export const getReconcileScanbackPartnerMutationKey = () => ['reconcileScanbackPartner'] as const;
+
+export const getReconcileScanbackPartnerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconcileScanbackPartner>>, TError,ReconcileScanbackPartnerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reconcileScanbackPartner>>, TError,ReconcileScanbackPartnerMutationVariables, TContext> => {
+
+const mutationKey = getReconcileScanbackPartnerMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reconcileScanbackPartner>>, ReconcileScanbackPartnerMutationVariables> = (props) => {
+          const {id,accountId,data} = props ?? {};
+
+          return  reconcileScanbackPartner(id,accountId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReconcileScanbackPartnerMutationResult = NonNullable<Awaited<ReturnType<typeof reconcileScanbackPartner>>>
+    export type ReconcileScanbackPartnerMutationBody = BodyType<ScanbackReconciliationInput>
+    export type ReconcileScanbackPartnerMutationError = ErrorType<unknown>
+    export type ReconcileScanbackPartnerMutationVariables = {id: string;accountId: number;data: BodyType<ScanbackReconciliationInput>}
+
+    export const useReconcileScanbackPartner = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconcileScanbackPartner>>, TError,ReconcileScanbackPartnerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof reconcileScanbackPartner>>,
+        TError,
+        ReconcileScanbackPartnerMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReconcileScanbackPartnerMutationOptions(options), queryClient);
+    }
+
+export const getCloseScanbackPartnerUrl = (id: string,
+    accountId: number,) => {
+
+
+
+
+  return `/api/scanback/promotions/${id}/partners/${accountId}/close`
+}
+
+export const closeScanbackPartner = async (id: string,
+    accountId: number,
+    scanbackCloseInput: ScanbackCloseInput, options?: Parameters<typeof customFetch>[1]): Promise<ScanbackBatch> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ScanbackBatch>(getCloseScanbackPartnerUrl(id,accountId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(scanbackCloseInput)
+  }
+);}
+
+
+
+
+
+export const getCloseScanbackPartnerMutationKey = () => ['closeScanbackPartner'] as const;
+
+export const getCloseScanbackPartnerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeScanbackPartner>>, TError,CloseScanbackPartnerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeScanbackPartner>>, TError,CloseScanbackPartnerMutationVariables, TContext> => {
+
+const mutationKey = getCloseScanbackPartnerMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeScanbackPartner>>, CloseScanbackPartnerMutationVariables> = (props) => {
+          const {id,accountId,data} = props ?? {};
+
+          return  closeScanbackPartner(id,accountId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseScanbackPartnerMutationResult = NonNullable<Awaited<ReturnType<typeof closeScanbackPartner>>>
+    export type CloseScanbackPartnerMutationBody = BodyType<ScanbackCloseInput>
+    export type CloseScanbackPartnerMutationError = ErrorType<unknown>
+    export type CloseScanbackPartnerMutationVariables = {id: string;accountId: number;data: BodyType<ScanbackCloseInput>}
+
+    export const useCloseScanbackPartner = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeScanbackPartner>>, TError,CloseScanbackPartnerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof closeScanbackPartner>>,
+        TError,
+        CloseScanbackPartnerMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCloseScanbackPartnerMutationOptions(options), queryClient);
     }
 
 export const getGetScanbackClaimsByWeekUrl = (params: GetScanbackClaimsByWeekParams,) => {

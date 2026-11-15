@@ -3,11 +3,11 @@ name: Scanback claims rules
 description: User-confirmed scope and payment eligibility constraints for ChannelPulse scanback claims.
 ---
 
-The first release of Scanback Claims covers Programs, verification and claims history. Pronto invoice and credit records come from spreadsheet uploads.
+Scanback Claims uses Promotions, Programs and Serial lookup. Claims are fulfilled once, AFTER a promotion ends. During the promotion the PM only uploads weekly serial reports and sees a running tally per partner. No weekly approval.
 
-**Why:** The user explicitly selected the core workflow and spreadsheet uploads when discussing their supplied claim-verifier model.
+**Why:** The user replaced the former weekly verification/history workflow with end-of-promotion reconciliation. Pronto invoice and credit records still come from spreadsheet uploads.
 
-**How to apply:** Add the section within ChannelPulse. Do not expand initial scope into every section of the standalone model or a direct Pronto connection without a new request.
+**How to apply:** Keep the live tally read-only. After the inclusive end date has passed in Australia/Sydney, reconcile across all weeks and create one approved batch per partner for the whole promotion. A single partner may reconcile early only through an explicit override with a note. Preserve existing approved batches under their promotion. Exclusions require notes; missing weeks are flagged. Reconcile all is a partner-by-partner review, not unattended approval. Keep spreadsheet evidence and do not add a direct Pronto connection without a new request.
 
 A serial can be paid only once across all promotions, not once per promotion.
 
@@ -25,7 +25,7 @@ Customer serial reports drive claim drafts; customer SOH/ST reports feed Dashboa
 
 **Why:** The user specified separate report jobs and required promotion matching to customer, sale date, and product. Customer serial exports can omit the model column, while the Pronto invoice has the authoritative SKU.
 
-**How to apply:** Generate per-customer/per-promotion drafts from committed serial reports, resolving only missing SKUs from unique same-customer Pronto invoice evidence. Leave unmatched or overlapping rows for explicit manual override; never make SOH/ST reports claim inputs.
+**How to apply:** Internal per-report drafts may remain, but expose and approve only promotion-wide reconciliation. Resolve only missing SKUs from unique same-customer Pronto invoice evidence. Leave unmatched or overlapping rows for explicit source or promotion correction; never make SOH/ST reports claim inputs.
 
 Verification fingerprints must canonicalize JSON object keys before hashing.
 

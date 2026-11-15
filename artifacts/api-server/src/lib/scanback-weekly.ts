@@ -178,10 +178,13 @@ export function buildScanbackClaimsByWeekFromContext(
     const accountId = batch.settings?.accountId ?? approved.accountId;
     if (!program.customerIds.includes(accountId)) continue;
     const reportId = batch.settings?.claimImportId;
-    if (!reportId) continue;
     for (const row of batch.rows) {
       if (!row.include || serialKey(row.serial) !== serialKey(approved.serial)) continue;
-      const key = `${reportId}|${accountId}|${row.rowIndex}|${serialKey(row.serial)}`;
+      const promotionRow = row as ScanbackResult & { importId?: string; lineId?: string };
+      const sourceId = reportId ?? promotionRow.importId;
+      if (!sourceId) continue;
+      const rowIndex = promotionRow.lineId ? Number(promotionRow.lineId.split(":").at(-1)) : row.rowIndex;
+      const key = `${sourceId}|${accountId}|${rowIndex}|${serialKey(row.serial)}`;
       approvedBySource.set(key, { row, reference: batch.reference });
     }
   }

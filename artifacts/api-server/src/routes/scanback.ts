@@ -6,7 +6,7 @@ import {
   DeleteScanbackProgramParams,
   GetScanbackClaimsByWeekQueryParams,
   ExportScanbackClaimsByWeekQueryParams,
-  SaveScanbackProgramBody, RemapScanbackImportBody, VerifyScanbackClaimBody, ApproveScanbackClaimBody,
+  SaveScanbackProgramBody, RemapScanbackImportBody, VerifyScanbackClaimBody,
   ResolveProntoCreditBody,
   type ScanbackProgram, type ScanbackImport, type ScanbackDraft, type ScanbackBatch, type ScanbackResult,
 } from "@workspace/api-zod";
@@ -25,8 +25,8 @@ import { listWeeklyExports, readWeeklyExport } from "../lib/scanback-export-stor
 import { validateProgramReferences } from "../lib/program-table";
 import {
   transaction, all, get, put, catalog, publicImport, rebuildImport, calculateDraft,
-  currentClaimReport, total, recordApprovedSerials, statementRows, requireThat, ScanbackError,
-  generateAutomaticClaimDrafts, loadVerificationContext, refreshAutomaticClaimDrafts, type Client,
+  currentClaimReport, total, statementRows, requireThat, ScanbackError,
+  generateAutomaticClaimDrafts, loadVerificationContext, refreshAutomaticClaimDrafts, hash, type Client,
 } from "../lib/scanback-store";
 
 const router = Router();
@@ -65,7 +65,7 @@ router.get("/scanback/workspace", route(async (c, _req, res) => {
   const imports = await all<ScanbackImport>(c, "scanback_imports");
   const batches = await all<ScanbackBatch>(c, "scanback_batches");
   const approvedDrafts = new Set((await c.query("SELECT draft_id FROM scanback_batches WHERE draft_id IS NOT NULL")).rows.map(r => r.draft_id));
-  const drafts = (await all<ScanbackDraft>(c, "scanback_drafts")).filter(d => !approvedDrafts.has(d.id));
+  const drafts = (await all<ScanbackDraft>(c, "scanback_drafts")).filter(d => !d.id.startsWith("promotion-close:") && !approvedDrafts.has(d.id));
   const programStats = (await c.query(`SELECT p.id AS "programId",s.account_id AS "accountId",
     COALESCE(s.sku,part.part_no) AS sku,count(*)::int AS count,sum(s.amount_cents)::bigint AS "amountCents"
     FROM scanback_approved_serials s
@@ -80,14 +80,13 @@ router.get("/scanback/workspace", route(async (c, _req, res) => {
 router.delete("/scanback/programs/:id", route(async (c, req) => {
   const { id } = parse(DeleteScanbackProgramParams, req.params);
   const program = await get<ScanbackProgram>(c, "scanback_programs", id);
-  const approved = await c.query(`SELECT s.serial FROM scanback_approved_serials s
-    JOIN scanback_batches b ON b.id=s.batch_id
-    WHERE s.program_id=$1 OR (s.program_id IS NULL AND upper(b.payload->>'programName')=upper($2))
-    LIMIT 1`, [id, program.name]);
+  const approved = await c.query(`SELECT id FROM scanback_batches
+    WHERE payload->'settings'->>'programId'=$1 OR payload->'programSnapshot'->>'id'=$1
+      OR upper(payload->>'programName')=upper($2) LIMIT 1`, [id, program.name]);
   requireThat(!approved.rowCount, "This promotion has approved claims — archive it instead", 409);
 
   const deletedDrafts = await c.query(`DELETE FROM scanback_drafts d
-    WHERE d.payload->'settings'->>'programId'=$1
+    WHERE (d.payload->'settings'->>'programId'=$1 OR d.payload->>'programId'=$1)
       AND NOT EXISTS (SELECT 1 FROM scanback_batches b WHERE b.draft_id=d.id)
     RETURNING id`, [id]);
   await c.query("DELETE FROM scanback_programs WHERE id=$1", [id]);
@@ -149,6 +148,17 @@ router.post("/scanback/programs", route(async (c, req, res) => {
   }
   const old = input.id ? await get<ScanbackProgram>(c, "scanback_programs", input.id) : null;
   if (old) requireThat(input.version === old.version, "Promotion was edited elsewhere. Refresh before saving.", 409);
+  if (old) {
+    const closed = await c.query(`SELECT id FROM scanback_batches
+      WHERE payload->>'promotionClosed'='true' AND payload->'settings'->>'programId'=$1 LIMIT 1`, [old.id]);
+    const financialTerms = (p: typeof input) => ({
+      name: p.name.trim(), start: p.start, end: p.end, customers: [...p.customerIds].sort(),
+      lines: p.lines.map(line => ({ sku: line.sku, gtmBuyCents: line.gtmBuyCents,
+        caps: [...line.caps].sort((a, b) => a.resellerId - b.resellerId) })).sort((a, b) => String(a.sku).localeCompare(String(b.sku))),
+    });
+    requireThat(!closed.rowCount || hash(financialTerms(input)) === hash(financialTerms(old)),
+    "This promotion has approved claims and closed partners. Financial terms and partner membership can no longer be changed.", 409);
+  }
   if (old) {
     const removed = old.customerIds.filter(id => !input.customerIds.includes(id));
     if (removed.length) {
@@ -412,33 +422,9 @@ router.post("/scanback/verify", route(async (c, req, res) => {
   invalidateScanbackClaimsByWeekCache();
   return draft;
 }));
-router.post("/scanback/approve", route(async (c, req, res) => {
-  const input = parse(ApproveScanbackClaimBody, req.body);
-  const draft = await get<ScanbackDraft>(c, "scanback_drafts", input.draftId);
-  requireThat(input.token === draft.token, "Verification was changed. Recheck the claim.", 409);
-  const existing = await c.query("SELECT payload FROM scanback_batches WHERE draft_id=$1", [draft.id]);
-  if (existing.rowCount) return existing.rows[0].payload;
-  const current = await calculateDraft(c, draft.settings,
-    draft.autoGenerated ? draft.scopeRowIndices : undefined);
-  requireThat(current.token === draft.token, "Evidence, program terms or prior claims changed. Re-verify before approving.", 409);
-  const included = current.results.filter(r => r.include);
-  requireThat(included.length > 0 && included.every(r => r.status === "eligible"), "Select and verify at least one eligible serial.");
-  requireThat(input.reference.trim() && input.reference.length <= 200, "Enter a claim reference (maximum 200 characters).");
-  const account = current.accounts.find(a => a.id === draft.settings.accountId)!;
-  const batch: ScanbackBatch = {
-    id: randomUUID(), reference: input.reference.trim(), programName: current.p.name, accountCode: account.code,
-    createdAt: new Date().toISOString(), totalCents: total(current.results), approvedCount: included.length, historical: false,
-    basis: "sell", from: current.p.start, to: current.p.end, rows: current.results,
-  };
-  // Extra snapshot fields are retained server-side even when callers use the
-  // public batch contract. They must never be derived from edited prices later.
-  const snapshot = { ...batch, programSnapshot: current.p, settings: draft.settings, verificationToken: draft.token };
-  await c.query("INSERT INTO scanback_batches(id,draft_id,payload) VALUES($1,$2,$3::jsonb)", [batch.id, draft.id, JSON.stringify(snapshot)]);
-  await recordApprovedSerials(c, batch, account.id, current.parts, current.p.id);
-  invalidateScanbackClaimsByWeekCache();
-  await refreshAutomaticClaimDrafts(c);
-  return batch;
-}));
+router.post("/scanback/approve", (_req, res) => {
+  res.status(410).json({ error: "Per-report approval is retired. Reconcile and close the partner from Promotions." });
+});
 function sendStatement(res: Response, data: ScanbackBatch | ScanbackDraft, format: string) {
   const rows = statementRows(data).map(row => row.map(value =>
     typeof value === "string" && /^[=+@\t\r-]/.test(value) ? "'" + value : value));

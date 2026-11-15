@@ -5,25 +5,135 @@
  * ChannelPulse - Reseller SOH & Sell-Through Monitoring API
  * OpenAPI spec version: 0.1.0
  */
-export interface AuthSession {
-  authenticated: boolean;
-}
-
-export type AdminLoginInputUsername = typeof AdminLoginInputUsername[keyof typeof AdminLoginInputUsername];
-
-
-export const AdminLoginInputUsername = {
-  admin: 'admin',
-} as const;
-
-export interface AdminLoginInput {
-  username: AdminLoginInputUsername;
+export interface ScanbackSerialExclusion {
+  lineId: string;
   /**
      * @minLength 1
-     * @maxLength 256
+     * @maxLength 2000
      */
-  password: string;
+  note: string;
 }
+
+export interface ScanbackReconciliationInput {
+  /** @maxLength 2000 */
+  earlyNote?: string;
+  /** @maxItems 50000 */
+  exclusions?: ScanbackSerialExclusion[];
+}
+
+export interface ScanbackCloseInput {
+  token: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  reference: string;
+}
+
+export type ScanbackResultTrackingColor = typeof ScanbackResultTrackingColor[keyof typeof ScanbackResultTrackingColor];
+
+
+export const ScanbackResultTrackingColor = {
+  red: 'red',
+  orange: 'orange',
+  amber: 'amber',
+  green: 'green',
+  neutral: 'neutral',
+} as const;
+
+export type ScanbackResultStatus = typeof ScanbackResultStatus[keyof typeof ScanbackResultStatus];
+
+
+export const ScanbackResultStatus = {
+  eligible: 'eligible',
+  review: 'review',
+  rejected: 'rejected',
+} as const;
+
+export interface ScanbackResult {
+  rowIndex: number;
+  serial: string;
+  sku: string;
+  date: string;
+  invoice: string;
+  invoiceDate: string;
+  /** @nullable */
+  invoicedAccountId?: number | null;
+  invoicedTo?: string;
+  /** @nullable */
+  costCents?: number | null;
+  trackingColor?: ScanbackResultTrackingColor;
+  /** @nullable */
+  unitPriceCents: number | null;
+  /** @nullable */
+  gtmBuyCents: number | null;
+  amountCents: number;
+  quantity: number;
+  status: ScanbackResultStatus;
+  reason: string;
+  include: boolean;
+  selectable: boolean;
+  source: string;
+  notDdRange?: boolean;
+}
+
+export type ScanbackPromotionLine = ScanbackResult & {
+  lineId: string;
+  importId: string;
+};
+
+export interface ScanbackPromotionTotals {
+  reported: number;
+  qualifying: number;
+  notQualifying: number;
+  claimCents: number;
+}
+
+export type ScanbackPromotionWeek = ScanbackPromotionTotals & {
+  weekIso: string;
+  weekEnd: string;
+  reportedWeek: boolean;
+  missing: boolean;
+};
+
+export interface ScanbackBatch {
+  id: string;
+  reference: string;
+  programName: string;
+  accountCode: string;
+  createdAt: string;
+  totalCents: number;
+  approvedCount: number;
+  historical: boolean;
+  basis: string;
+  from: string;
+  to: string;
+  rows: ScanbackResult[];
+}
+
+export type ScanbackPromotionPartner = ScanbackPromotionTotals & {
+  accountId: number;
+  accountCode: string;
+  closed: boolean;
+  weeksReported: number;
+  weeksExpected: number;
+  missingWeeks: string[];
+  weeks: ScanbackPromotionWeek[];
+  lines: ScanbackPromotionLine[];
+  capUsed: string;
+  batches: ScanbackBatch[];
+  token?: string;
+};
+
+export type ScanbackPromotionTallyStatus = typeof ScanbackPromotionTallyStatus[keyof typeof ScanbackPromotionTallyStatus];
+
+
+export const ScanbackPromotionTallyStatus = {
+  scheduled: 'scheduled',
+  live: 'live',
+  ended: 'ended',
+  reconciled: 'reconciled',
+} as const;
 
 export interface ScanbackCap {
   resellerId: number;
@@ -65,6 +175,54 @@ export interface ScanbackProgramLine {
      */
   t1ExCents?: number | null;
   caps: ScanbackCap[];
+}
+
+export interface ScanbackProgramInput {
+  id?: string;
+  version?: number;
+  name: string;
+  start: string;
+  end: string;
+  notes: string;
+  archived?: boolean;
+  customerIds: number[];
+  lines: ScanbackProgramLine[];
+}
+
+export type ScanbackProgram = ScanbackProgramInput & {
+  id: string;
+  version: number;
+  archived: boolean;
+  createdAt: string;
+};
+
+export interface ScanbackPromotionTally {
+  program: ScanbackProgram;
+  today: string;
+  status: ScanbackPromotionTallyStatus;
+  daysLeft: number;
+  partners: ScanbackPromotionPartner[];
+  totals: ScanbackPromotionTotals;
+}
+
+export interface AuthSession {
+  authenticated: boolean;
+}
+
+export type AdminLoginInputUsername = typeof AdminLoginInputUsername[keyof typeof AdminLoginInputUsername];
+
+
+export const AdminLoginInputUsername = {
+  admin: 'admin',
+} as const;
+
+export interface AdminLoginInput {
+  username: AdminLoginInputUsername;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  password: string;
 }
 
 export type ProgramTableMappingFields = {[key: string]: string};
@@ -157,25 +315,6 @@ export interface ScanbackProgramStat {
   count: number;
   amountCents: number;
 }
-
-export interface ScanbackProgramInput {
-  id?: string;
-  version?: number;
-  name: string;
-  start: string;
-  end: string;
-  notes: string;
-  archived?: boolean;
-  customerIds: number[];
-  lines: ScanbackProgramLine[];
-}
-
-export type ScanbackProgram = ScanbackProgramInput & {
-  id: string;
-  version: number;
-  archived: boolean;
-  createdAt: string;
-};
 
 export interface ScanbackProgramDeleteResult {
   id: string;
@@ -474,53 +613,6 @@ export interface ScanbackVerificationInput {
   selectedRows?: number[];
 }
 
-export type ScanbackResultTrackingColor = typeof ScanbackResultTrackingColor[keyof typeof ScanbackResultTrackingColor];
-
-
-export const ScanbackResultTrackingColor = {
-  red: 'red',
-  orange: 'orange',
-  amber: 'amber',
-  green: 'green',
-  neutral: 'neutral',
-} as const;
-
-export type ScanbackResultStatus = typeof ScanbackResultStatus[keyof typeof ScanbackResultStatus];
-
-
-export const ScanbackResultStatus = {
-  eligible: 'eligible',
-  review: 'review',
-  rejected: 'rejected',
-} as const;
-
-export interface ScanbackResult {
-  rowIndex: number;
-  serial: string;
-  sku: string;
-  date: string;
-  invoice: string;
-  invoiceDate: string;
-  /** @nullable */
-  invoicedAccountId?: number | null;
-  invoicedTo?: string;
-  /** @nullable */
-  costCents?: number | null;
-  trackingColor?: ScanbackResultTrackingColor;
-  /** @nullable */
-  unitPriceCents: number | null;
-  /** @nullable */
-  gtmBuyCents: number | null;
-  amountCents: number;
-  quantity: number;
-  status: ScanbackResultStatus;
-  reason: string;
-  include: boolean;
-  selectable: boolean;
-  source: string;
-  notDdRange?: boolean;
-}
-
 export interface WeeklyScanbackExport {
   name: string;
   createdAt: string;
@@ -542,21 +634,6 @@ export interface ScanbackApprovalInput {
   draftId: string;
   token: string;
   reference: string;
-}
-
-export interface ScanbackBatch {
-  id: string;
-  reference: string;
-  programName: string;
-  accountCode: string;
-  createdAt: string;
-  totalCents: number;
-  approvedCount: number;
-  historical: boolean;
-  basis: string;
-  from: string;
-  to: string;
-  rows: ScanbackResult[];
 }
 
 export interface ScanbackWorkspace {
@@ -1435,6 +1512,10 @@ export type StageCenterFiles200 = {
 
 export type DeleteCenterUpload200 = {
   success?: boolean;
+};
+
+export type ExportScanbackPromotionParams = {
+accountId?: number;
 };
 
 export type GetScanbackClaimsByWeekParams = {

@@ -199,10 +199,11 @@ export interface ScanbackVerificationData {
   reportedSalesBySerial: Map<string, ReportedSale>;
   ddRangeSkus: Set<string>;
   tokenImports: VerificationTokenImport[];
+  reportWeeksByImportId?: Map<string, string>;
 }
 
 export async function loadVerificationContext(c: Client): Promise<ScanbackVerificationData> {
-  const [programs, imports, storedDrafts, approved, batches, cat, legacySourceRows, approvedDraftRows] = await Promise.all([
+  const [programs, imports, storedDrafts, approved, batches, cat, legacySourceRows, approvedDraftRows, uploadWeeks] = await Promise.all([
     all<ScanbackProgram>(c, "scanback_programs"),
     c.query(`SELECT payload FROM scanback_imports
       WHERE payload->>'kind' IN ('claim','evidence')
@@ -217,6 +218,8 @@ export async function loadVerificationContext(c: Client): Promise<ScanbackVerifi
         AND payload ? 'pronto'
         AND NOT (payload ? 'prontoCreditRows' AND payload ? 'prontoRestrictedSerials')`),
     c.query("SELECT draft_id FROM scanback_batches WHERE draft_id IS NOT NULL"),
+    c.query(`SELECT payload->>'sourceId' AS id, payload->>'weekIso' AS week
+      FROM center_uploads WHERE payload->>'kind'='claim' AND payload->>'state'='committed'`),
   ]);
   const committedImports = imports.rows.map(row => row.payload as ScanbackImport);
   const evidenceImports = committedImports.filter(item =>
@@ -325,6 +328,7 @@ export async function loadVerificationContext(c: Client): Promise<ScanbackVerifi
     approved, approvedBySerial, parts: cat.parts, accounts: cat.accounts, accountCodesById,
     restrictedSerials, unmatchedProntoCredits, unmatchedProntoCreditsByAccountSku,
     reportedSales, reportedSalesBySerial, ddRangeSkus, tokenImports,
+    reportWeeksByImportId: new Map(uploadWeeks.rows.filter(row => row.id && row.week).map(row => [row.id, row.week])),
   };
 }
 

@@ -205,6 +205,63 @@ paths:
               schema: { $ref: "#/components/schemas/ScanbackProgramDeleteResult" }
         "404": { description: Promotion not found }
         "409": { description: Promotion has approved claims and must be archived }
+  /scanback/promotions/{id}:
+    get:
+      operationId: getScanbackPromotion
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Current promotion-wide running tally
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackPromotionTally" }
+  /scanback/promotions/{id}/export:
+    get:
+      operationId: exportScanbackPromotion
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: accountId, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Promotion or partner XLSX tally
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+  /scanback/promotions/{id}/partners/{accountId}/reconcile:
+    post:
+      operationId: reconcileScanbackPartner
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: accountId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanbackReconciliationInput" }
+      responses:
+        "200":
+          description: Final check against current evidence
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackPromotionPartner" }
+  /scanback/promotions/{id}/partners/{accountId}/close:
+    post:
+      operationId: closeScanbackPartner
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: accountId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanbackCloseInput" }
+      responses:
+        "200":
+          description: One immutable approved partner batch
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanbackBatch" }
   /scanback/claims-by-week:
     get:
       operationId: getScanbackClaimsByWeek
@@ -1002,6 +1059,79 @@ paths:
 
 components:
   schemas:
+    ScanbackReconciliationInput:
+      type: object
+      properties:
+        earlyNote: { type: string, maxLength: 2000 }
+        exclusions:
+          type: array
+          maxItems: 50000
+          items: { $ref: "#/components/schemas/ScanbackSerialExclusion" }
+    ScanbackSerialExclusion:
+      type: object
+      required: [lineId, note]
+      properties:
+        lineId: { type: string }
+        note: { type: string, minLength: 1, maxLength: 2000 }
+    ScanbackCloseInput:
+      type: object
+      required: [token, reference]
+      properties:
+        token: { type: string }
+        reference: { type: string, minLength: 1, maxLength: 200 }
+    ScanbackPromotionLine:
+      allOf:
+        - { $ref: "#/components/schemas/ScanbackResult" }
+        - type: object
+          required: [lineId, importId]
+          properties:
+            lineId: { type: string }
+            importId: { type: string }
+    ScanbackPromotionTotals:
+      type: object
+      required: [reported, qualifying, notQualifying, claimCents]
+      properties:
+        reported: { type: integer }
+        qualifying: { type: integer }
+        notQualifying: { type: integer }
+        claimCents: { type: integer }
+    ScanbackPromotionWeek:
+      allOf:
+        - { $ref: "#/components/schemas/ScanbackPromotionTotals" }
+        - type: object
+          required: [weekIso, weekEnd, reportedWeek, missing]
+          properties:
+            weekIso: { type: string }
+            weekEnd: { type: string }
+            reportedWeek: { type: boolean }
+            missing: { type: boolean }
+    ScanbackPromotionPartner:
+      allOf:
+        - { $ref: "#/components/schemas/ScanbackPromotionTotals" }
+        - type: object
+          required: [accountId, accountCode, closed, weeksReported, weeksExpected, missingWeeks, weeks, lines, capUsed, batches]
+          properties:
+            accountId: { type: integer }
+            accountCode: { type: string }
+            closed: { type: boolean }
+            weeksReported: { type: integer }
+            weeksExpected: { type: integer }
+            missingWeeks: { type: array, items: { type: string } }
+            weeks: { type: array, items: { $ref: "#/components/schemas/ScanbackPromotionWeek" } }
+            lines: { type: array, items: { $ref: "#/components/schemas/ScanbackPromotionLine" } }
+            capUsed: { type: string }
+            batches: { type: array, items: { $ref: "#/components/schemas/ScanbackBatch" } }
+            token: { type: string }
+    ScanbackPromotionTally:
+      type: object
+      required: [program, today, status, daysLeft, partners, totals]
+      properties:
+        program: { $ref: "#/components/schemas/ScanbackProgram" }
+        today: { type: string }
+        status: { type: string, enum: [scheduled, live, ended, reconciled] }
+        daysLeft: { type: integer }
+        partners: { type: array, items: { $ref: "#/components/schemas/ScanbackPromotionPartner" } }
+        totals: { $ref: "#/components/schemas/ScanbackPromotionTotals" }
     AuthSession:
       type: object
       required: [authenticated]
